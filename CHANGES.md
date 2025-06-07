@@ -1,10 +1,26 @@
 Hollo changelog
 ===============
 
+Version 0.6.1
+-------------
+
+Released on June 5, 2025.
+
+ -  Fixed `POST /oauth/token` endpoint rejecting requests with additional
+    parameters not required by RFC 6749 but commonly sent by clients.
+    The endpoint now gracefully ignores extra parameters like `scope` in
+    `authorization_code` requests and `redirect_uri` in `client_credentials`
+    requests instead of returning validation errors.
+    [[#163], [#164] by Hong Minhee]
+
+[#163]: https://github.com/fedify-dev/hollo/issues/163
+[#164]: https://github.com/fedify-dev/hollo/pull/164
+
+
 Version 0.6.0
 -------------
 
-To be released.
+Released on June 5, 2025.
 
  -  Revamped the environment variables for asset storage configuration.
     [[#115], [#121] by Emelia Smith]
@@ -14,6 +30,11 @@ To be released.
      -  Added `STORAGE_URL_BASE` environment variable, which is required.
      -  Deprecated `FS_ASSET_PATH` in favor of `FS_STORAGE_PATH`.
      -  Deprecated `ASSET_URL_BASE` in favor of `STORAGE_URL_BASE`.
+
+ -  Implemented OAuth 2.0 Authorization Code flow with support for access grants.
+    This improves the security of the OAuth authorization process by separating
+    the authorization code from the access token issuance.
+    [[#130] by Emelia Smith]
 
  -  Hollo now requires the `SECRET_KEY` environment variable to be at least 44
     characters long.  This change ensures sufficient entropy for cryptographic
@@ -43,11 +64,41 @@ To be released.
  -  The current version string is displayed at the bottom of the dashboard page.
     [[#136], [#137] by RangHo Lee]
 
- -  Increased the maximum character limit for posts from 4,096 to 10,000 characters.
+ -  Increased the maximum character limit for posts from 4,096 to 10,000
+    characters.
 
- -  Upgraded Fedify to 1.5.0 and *@fedify/postgres* to 0.3.0.
+ -  EXIF metadata of attached images are now stripped before storing them
+    to prevent privacy leaks.  [[#152] by NTSK]
+
+ -  Code blocks inside Markdown are now highlighted.  The syntax highlighting is
+    powered By [Shiki].  See also the [complete list of supported languages].
+    [[#149]]
+
+ -  Implemented OAuth 2.0 Proof Key for Code Exchange (PKCE) support with the
+    `S256` code challenge method.  This enhances security by preventing
+    authorization code interception attacks in the OAuth authorization flow.
+    [[#155] by Emelia Smith]
+
+ -  Added support for the `profile` OAuth scope for enhanced user authentication.
+    This allows applications to request limited profile information using the
+    new `/oauth/userinfo` endpoint and enables the `profile` scope to be used
+    with the `GET /api/v1/accounts/verify_credentials` endpoint.
+    [[#45], [#156] by Emelia Smith]
+
+ -  Made few Mastodon API endpoints publicly accessible without
+    authentication so that they behave more similarly to Mastodon:
+
+     -  `GET /api/v1/statuses/:id`
+     -  `GET /api/v1/statuses/:id/context`
+
+ -  Upgraded Fedify to 1.5.3 and *@fedify/postgres* to 0.3.0.
+
+ -  The minimum required version of Node.js is now 24.0.0.
 
 [*Colors* section]: https://picocss.com/docs/colors
+[Shiki]: https://shiki.style/
+[complete list of supported languages]: https://shiki.style/languages
+[#45]: https://github.com/fedify-dev/hollo/issues/45
 [#50]: https://github.com/fedify-dev/hollo/issues/50
 [#110]: https://github.com/fedify-dev/hollo/pull/110
 [#111]: https://github.com/fedify-dev/hollo/issues/111
@@ -57,8 +108,26 @@ To be released.
 [#121]: https://github.com/fedify-dev/hollo/pull/121
 [#122]: https://github.com/fedify-dev/hollo/pull/122
 [#126]: https://github.com/fedify-dev/hollo/pull/126
+[#130]: https://github.com/fedify-dev/hollo/pull/130
 [#136]: https://github.com/fedify-dev/hollo/issues/136
 [#137]: https://github.com/fedify-dev/hollo/pull/137
+[#149]: https://github.com/fedify-dev/hollo/issues/149
+[#152]: https://github.com/fedify-dev/hollo/pull/152
+[#155]: https://github.com/fedify-dev/hollo/pull/155
+[#156]: https://github.com/fedify-dev/hollo/pull/156
+
+
+Version 0.5.6
+-------------
+
+Released on April 29, 2025.
+
+ -  Fixed a bug where voting to a poll which had been shared (boosted) had not
+    been sent to the correct recipient.  [[#142]]
+
+ -  Upgrade Fedify to 1.4.10.
+
+[#142]: https://github.com/fedify-dev/hollo/issues/142
 
 
 Version 0.5.5
