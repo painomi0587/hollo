@@ -60,7 +60,7 @@ profile.get<"/:handle">(async (c) => {
       ),
     );
   const maxPage = Math.ceil(totalPosts / PAGE_SIZE);
-  if (page > maxPage) {
+  if (page > maxPage && !(page <= 1 && totalPosts < 1)) {
     return c.notFound();
   }
   const postList = await db.query.posts.findMany({
@@ -270,6 +270,11 @@ function ProfilePage({
       imageUrl={accountOwner.account.avatarUrl}
       links={[
         { rel: "alternate", type: "application/atom+xml", href: atomUrl },
+        {
+          rel: "alternate",
+          type: "application/activity+json",
+          href: `/@${accountOwner.handle}`,
+        },
       ]}
       themeColor={accountOwner.themeColor}
     >

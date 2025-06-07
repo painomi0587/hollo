@@ -290,6 +290,7 @@ export const scopeEnum = pgEnum("scope", [
   "write:statuses",
   "follow",
   "push",
+  "profile",
 ]);
 
 export type Scope = (typeof scopeEnum.enumValues)[number];
@@ -302,6 +303,7 @@ export const applications = pgTable("applications", {
   website: text("website"),
   clientId: text("client_id").notNull().unique(),
   clientSecret: text("client_secret").notNull(),
+  confidential: boolean("confidential").default(false).notNull(),
   created: timestamp("created", { withTimezone: true })
     .notNull()
     .default(currentTimestamp),
@@ -312,6 +314,46 @@ export type NewApplication = typeof applications.$inferInsert;
 
 export const applicationRelations = relations(applications, ({ many }) => ({
   accessTokens: many(accessTokens),
+}));
+
+export const accessGrants = pgTable(
+  "access_grants",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    code: text("code").notNull().unique(),
+    expiresIn: integer("expires_in").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    scopes: scopeEnum("scopes").array().notNull(),
+    codeChallenge: text("code_challenge"),
+    codeChallengeMethod: varchar("code_challenge_method", { length: 256 }),
+    applicationId: uuid("application_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    resourceOwnerId: uuid("resource_owner_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => accountOwners.id, { onDelete: "cascade" }),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    revoked: timestamp("revoked", { withTimezone: true }),
+  },
+  (table) => [index().on(table.resourceOwnerId)],
+);
+
+export type AccessGrant = typeof accessGrants.$inferSelect;
+export type NewAccessGrant = typeof accessGrants.$inferInsert;
+
+export const accessGrantRelations = relations(accessGrants, ({ one }) => ({
+  application: one(applications, {
+    fields: [accessGrants.applicationId],
+    references: [applications.id],
+  }),
+  accountOwner: one(accountOwners, {
+    fields: [accessGrants.resourceOwnerId],
+    references: [accountOwners.id],
+  }),
 }));
 
 export const grantTypeEnum = pgEnum("grant_type", [

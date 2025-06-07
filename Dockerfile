@@ -1,11 +1,11 @@
-FROM docker.io/node:23.4-alpine
+FROM docker.io/node:24.0-alpine
 
 LABEL org.opencontainers.image.title="Hollo"
 LABEL org.opencontainers.image.description="Federated single-user \
 microblogging software"
 LABEL org.opencontainers.image.url="https://docs.hollo.social/"
 LABEL org.opencontainers.image.source="https://github.com/fedify-dev/hollo"
-LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 RUN apk add --no-cache ffmpeg jq libstdc++ pnpm
 
