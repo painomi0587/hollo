@@ -162,4 +162,7 @@ jobs:
         timeout-minutes: 2
       - if: github.ref_type == 'tag'
         uses: actions/deploy-pages@v4
+      - name: Set lowercase repository name
+        id: repo
+        run: echo "value=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
 # cSpell: ignore buildx sergeysova
