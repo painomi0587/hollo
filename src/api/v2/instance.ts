@@ -35,7 +35,7 @@ app.get("/", async (c) => {
     version: metadata.version,
     source_url: "https://github.com/fedify-dev/hollo",
     description: `A Hollo instance at ${url.host}`,
-    theme_color: "#f8dad1", // TODO
+    theme_Color: "#f8dad1", // TODO
     usage: {
       users: {
         active_month: 0, // TODO
