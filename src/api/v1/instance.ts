@@ -36,7 +36,7 @@ app.get("/", async (c) => {
     description: `A Hollo instance at ${url.host}`,
     email: credential.email,
     version: metadata.version,
-    theme_color: "#f8dad1", // TODO
+    theme_Color: "#f8dad1", // TODO
     urls: {}, // TODO
     stats: {
       user_count: 0, // TODO
