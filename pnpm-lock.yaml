@@ -56,6 +56,9 @@ importers:
       '@supercharge/promise-pool':
         specifier: ^3.2.0
         version: 3.2.0
+      adm-zip:
+        specifier: ^0.5.16
+        version: 0.5.16
       argon2:
         specifier: ^0.41.1
         version: 0.41.1
@@ -2118,6 +2121,10 @@ packages:
     resolution: {integrity: sha512-cl669nCJTZBsL97OF4kUQm5g5hC2uihk0NxY3WENAC0TYdILVkAyHymAntgxGkl7K+t0cXIrH5siy5S4XkFycA==}
     engines: {node: '>=0.4.0'}
     hasBin: true
+
+  adm-zip@0.5.16:
+    resolution: {integrity: sha512-TGw5yVi4saajsSEgz25grObGHEUaDrniwvA2qwSC060KfqGPdglhvPMA2lPIoxs3PQIItj2iag35fONcQqgUaQ==}
+    engines: {node: '>=12.0'}
 
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
@@ -6028,6 +6035,8 @@ snapshots:
       acorn: 8.14.0
 
   acorn@8.14.0: {}
+
+  adm-zip@0.5.16: {}
 
   ansi-regex@5.0.1: {}
 
