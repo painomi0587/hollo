@@ -16,6 +16,9 @@ import { isUuid, uuidv7 } from "../../uuid";
 
 const app = new Hono<{ Variables: Variables }>();
 
+const MAX_IMAGE_WIDTH = Number(process.env.IMAGE_MAX_WIDTH ?? 1920);
+const MAX_IMAGE_HEIGHT = Number(process.env.IMAGE_MAX_HEIGHT ?? 1920);
+
 export async function postMedia(c: Context<{ Variables: Variables }>) {
   const disk = drive.use();
   const owner = c.get("token").accountOwner;
@@ -30,17 +33,39 @@ export async function postMedia(c: Context<{ Variables: Variables }>) {
   const description = form.get("description")?.toString();
   const id = uuidv7();
   const imageData = new Uint8Array(await file.arrayBuffer());
-  let imageBytes: Uint8Array = imageData;
-  if (file.type.startsWith("video/")) {
-    imageBytes = await makeVideoScreenshot(imageData);
-  }
 
-  const image = sharp(imageBytes).rotate();
-  const rmMetaImage = await image.keepIccProfile().toBuffer();
-  const fileMetadata = await sharp(rmMetaImage).metadata();
-  const content = file.type.startsWith("video/")
-    ? new Uint8Array(imageData)
-    : new Uint8Array(rmMetaImage);
+  let imageBytes: Uint8Array = imageData;
+  let fileMetadata: sharp.Metadata | undefined;
+
+  if (file.type.startsWith("image/")) {
+    const image = sharp(imageData).rotate();
+    fileMetadata = await image.metadata();
+    // 最大サイズを超えていたらリサイズ
+    if (
+      (fileMetadata.width && fileMetadata.width > MAX_IMAGE_WIDTH) ||
+      (fileMetadata.height && fileMetadata.height > MAX_IMAGE_HEIGHT)
+    ) {
+      imageBytes = await image
+        .resize({
+          width: Math.min(
+            fileMetadata.width ?? MAX_IMAGE_WIDTH,
+            MAX_IMAGE_WIDTH
+          ),
+          height: Math.min(
+            fileMetadata.height ?? MAX_IMAGE_HEIGHT,
+            MAX_IMAGE_HEIGHT
+          ),
+          fit: "inside",
+        })
+        .toBuffer();
+      fileMetadata = await sharp(imageBytes).metadata();
+    } else {
+      imageBytes = await image.keepIccProfile().toBuffer();
+    }
+  } else if (file.type.startsWith("video/")) {
+    imageBytes = await makeVideoScreenshot(imageData);
+    fileMetadata = await sharp(imageBytes).metadata();
+  }
 
   const extension = mime.getExtension(file.type);
   if (!extension) {
@@ -49,9 +74,9 @@ export async function postMedia(c: Context<{ Variables: Variables }>) {
   const sanitizedExt = extension.replace(/[/\\]/g, "");
   const path = `media/${id}/original.${sanitizedExt}`;
   try {
-    await disk.put(path, content, {
+    await disk.put(path, imageBytes, {
       contentType: file.type,
-      contentLength: content.byteLength,
+      contentLength: imageBytes.byteLength,
       visibility: "public",
     });
   } catch (error) {
@@ -64,10 +89,10 @@ export async function postMedia(c: Context<{ Variables: Variables }>) {
       id,
       type: file.type,
       url,
-      width: fileMetadata.width!,
-      height: fileMetadata.height!,
+      width: fileMetadata?.width!,
+      height: fileMetadata?.height!,
       description,
-      ...(await uploadThumbnail(id, image)),
+      ...(await uploadThumbnail(id, sharp(imageBytes))),
     })
     .returning();
   if (result.length < 1) {
