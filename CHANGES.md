@@ -6,6 +6,10 @@ Version 0.4.12
 
 To be released.
 
+ -  Upgrade Fedify to 1.3.20, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
+
 
 Version 0.4.11
 --------------
@@ -189,6 +193,18 @@ Released on December 30, 2024.
 
 [`discoverable`]: https://docs.joinmastodon.org/spec/activitypub/#discoverable
 [#65]: https://github.com/fedify-dev/hollo/issues/65
+
+
+Version 0.3.11
+--------------
+
+Released on August 8, 2025.
+
+ -  Upgrade Fedify to 1.3.20, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
+
+[CVE-2025-54888]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-6jcc-xgcr-q3h4
 
 
 Version 0.3.10
