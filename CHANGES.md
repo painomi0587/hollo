@@ -6,11 +6,15 @@ Version 0.6.6
 
 To be released.
 
+ -  Upgrade Fedify to 1.5.5, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
+
 
 Version 0.6.5
 -------------
 
-Released on Juily 17, 2025.
+Released on July 17, 2025.
 
  -  Fixed an HTML injection vulnerability where form elements, scripts, and
     other potentially dangerous HTML tags in federated posts were not properly
@@ -180,6 +184,16 @@ Released on June 5, 2025.
 [#156]: https://github.com/fedify-dev/hollo/pull/156
 
 
+Version 0.5.7
+-------------
+
+Released on August 8, 2025.
+
+ -  Upgrade Fedify to 1.4.13, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
+
+
 Version 0.5.6
 -------------
 
@@ -307,6 +321,16 @@ Released on February 12, 2025.
 [#106]: https://github.com/fedify-dev/hollo/pull/106
 [`GET /api/v1/mutes`]: https://docs.joinmastodon.org/methods/mutes/#get
 [`GET /api/v1/blocks`]: https://docs.joinmastodon.org/methods/blocks/#get
+
+
+Version 0.4.12
+--------------
+
+Released on August 8, 2025.
+
+ -  Upgrade Fedify to 1.3.20, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
 
 
 Version 0.4.11
@@ -491,6 +515,18 @@ Released on December 30, 2024.
 
 [`discoverable`]: https://docs.joinmastodon.org/spec/activitypub/#discoverable
 [#65]: https://github.com/fedify-dev/hollo/issues/65
+
+
+Version 0.3.11
+--------------
+
+Released on August 8, 2025.
+
+ -  Upgrade Fedify to 1.3.20, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
+
+[CVE-2025-54888]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-6jcc-xgcr-q3h4
 
 
 Version 0.3.10
