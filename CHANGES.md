@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.5.7
 -------------
 
-To be released.
+Released on August 8, 2025.
 
  -  Upgrade Fedify to 1.4.13, which includes a critical security
     fix [CVE-2025-54888] that addresses an authentication bypass
