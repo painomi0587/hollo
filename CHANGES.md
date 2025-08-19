@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.6.7
 -------------
 
-To be released.
+Released on August 19, 2025.
 
  -  Fixed timeline pollution caused by future-dated posts from malicious or
     misconfigured remote instances.  Posts with timestamps more than 5 minutes
