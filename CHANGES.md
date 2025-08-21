@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.6.8
 -------------
 
-To be released.
+Released on August 21, 2025.
 
  -  Fixed a critical bug introduced in 0.6.7 where the search query would return
     too many results, causing out-of-memory errors and query timeouts.  The issue
