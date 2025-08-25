@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.6.9
 -------------
 
-To be released.
+Released on August 25, 2025.
 
  -  Fixed a bug where ActivityPub Discovery failed to recognize XHTML
     self-closing `<link>` tags. The HTML/XHTML parser now correctly handles
