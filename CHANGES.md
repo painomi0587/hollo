@@ -6,6 +6,13 @@ Version 0.6.9
 
 To be released.
 
+ -  Fixed a bug where ActivityPub Discovery failed to recognize XHTML
+    self-closing `<link>` tags. The HTML/XHTML parser now correctly handles
+    whitespace before the self-closing slash (`/>`), improving compatibility
+    with XHTML documents that follow the self-closing tag format.
+
+ -  Upgraded Fedify to 1.5.6.
+
 
 Version 0.6.8
 -------------
