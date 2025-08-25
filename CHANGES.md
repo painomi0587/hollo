@@ -6,6 +6,11 @@ Version 0.6.10
 
 To be released.
 
+ -  Upgraded Fedifyh to 1.5.7 which fixes a bug where HTTP Signature
+    verification failed for requests having `created` or `expires` fields
+    in their `Signature` header, causing `500 Internal Server Error` responses
+    in inbox handlers.
+
 
 Version 0.6.9
 -------------
