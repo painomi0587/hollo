@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.6.10
 --------------
 
-To be released.
+Released on August 26, 2025.
 
  -  Upgraded Fedifyh to 1.5.7 which fixes a bug where HTTP Signature
     verification failed for requests having `created` or `expires` fields
