@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.6.11
 --------------
 
-To be released.
+Released on September 17, 2025.
 
  -  Fixed a bug where `Like` activities from Bluesky via BridgyFed were not
     being received due to invalid AT Protocol URIs.  This was resolved by
