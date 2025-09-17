@@ -12,8 +12,8 @@ importers:
         specifier: ^3.716.0
         version: 3.716.0(@aws-sdk/client-sso-oidc@3.716.0(@aws-sdk/client-sts@3.716.0))
       '@fedify/fedify':
-        specifier: ~1.5.7
-        version: 1.5.7(web-streams-polyfill@3.3.3)
+        specifier: ~1.5.9
+        version: 1.5.9(web-streams-polyfill@3.3.3)
       '@fedify/markdown-it-hashtag':
         specifier: ~0.2.0
         version: 0.2.0
@@ -1165,8 +1165,8 @@ packages:
     resolution: {integrity: sha512-gGD8+mwkLsavBoj/qyfhMD8Tnv9+hid59NrQ6ZrD5Zn5rWvq4LleU09GF78OqPWdSLY03ihxb6+EArcsb5VZCA==}
     engines: {bun: '>=1.1.0', deno: '>=2.0.0', node: '>=20.0.0'}
 
-  '@fedify/fedify@1.5.7':
-    resolution: {integrity: sha512-nq4vLD9XTdXYgUoNWhSvveyC97C0Lkgeem4EZvpB13LNdFwrQlh5MWCDF2SOE94H8d2b+zdALW4eFqppx80ehw==}
+  '@fedify/fedify@1.5.9':
+    resolution: {integrity: sha512-nwT3a9I2jyDMM1sS+3Qa7ehWY87n35/jqbaqPsSS61WHZOfu6K12/ktDNnVyAHEA5ZagvY3eVKzCDNubDGhtzw==}
     engines: {bun: '>=1.1.0', deno: '>=2.0.0', node: '>=20.0.0'}
 
   '@fedify/markdown-it-hashtag@0.2.0':
@@ -4793,7 +4793,7 @@ snapshots:
     transitivePeerDependencies:
       - web-streams-polyfill
 
-  '@fedify/fedify@1.5.7(web-streams-polyfill@3.3.3)':
+  '@fedify/fedify@1.5.9(web-streams-polyfill@3.3.3)':
     dependencies:
       '@deno/shim-crypto': 0.3.1
       '@deno/shim-deno': 0.18.2

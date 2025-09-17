@@ -6,6 +6,13 @@ Version 0.6.11
 
 To be released.
 
+ -  Fixed a bug where `Like` activities from Bluesky via BridgyFed were not
+    being received due to invalid AT Protocol URIs.  This was resolved by
+    upgrading Fedify to 1.5.9, which includes improved AT Protocol URI
+    handling to properly parse URIs with DID authorities.  [[#217]]
+
+[#217]: https://github.com/fedify-dev/hollo/issues/217
+
 
 Version 0.6.10
 --------------
