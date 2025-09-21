@@ -1,7 +1,7 @@
 {
   "name": "@fedify/hollo",
   "description": "Federated single-user microblogging software",
-  "version": "0.6.5-satone",
+  "version": "0.6.11-satone",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@aws-sdk/credential-providers": "^3.716.0",
-    "@fedify/fedify": "~1.5.3",
+    "@fedify/fedify": "~1.5.9",
     "@fedify/markdown-it-hashtag": "~0.2.0",
     "@fedify/markdown-it-mention": "~0.1.1",
     "@fedify/postgres": "~0.3.0",

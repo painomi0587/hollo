@@ -1,10 +1,85 @@
 Hollo changelog
 ===============
 
+Version 0.6.11
+--------------
+
+Released on September 17, 2025.
+
+ -  Fixed a bug where `Like` activities from Bluesky via BridgyFed were not
+    being received due to invalid AT Protocol URIs.  This was resolved by
+    upgrading Fedify to 1.5.9, which includes improved AT Protocol URI
+    handling to properly parse URIs with DID authorities.  [[#217]]
+
+[#217]: https://github.com/fedify-dev/hollo/issues/217
+
+
+Version 0.6.10
+--------------
+
+Released on August 26, 2025.
+
+ -  Upgraded Fedifyh to 1.5.7 which fixes a bug where HTTP Signature
+    verification failed for requests having `created` or `expires` fields
+    in their `Signature` header, causing `500 Internal Server Error` responses
+    in inbox handlers.
+
+
+Version 0.6.9
+-------------
+
+Released on August 25, 2025.
+
+ -  Fixed a bug where ActivityPub Discovery failed to recognize XHTML
+    self-closing `<link>` tags. The HTML/XHTML parser now correctly handles
+    whitespace before the self-closing slash (`/>`), improving compatibility
+    with XHTML documents that follow the self-closing tag format.
+
+ -  Upgraded Fedify to 1.5.6.
+
+
+Version 0.6.8
+-------------
+
+Released on August 21, 2025.
+
+ -  Fixed a critical bug introduced in 0.6.7 where the search query would return
+    too many results, causing out-of-memory errors and query timeouts.  The issue
+    was caused by incorrect logical operator precedence when filtering
+    future-dated posts.  [[#207], [#208] by aliceif]
+
+[#207]: https://github.com/fedify-dev/hollo/issues/207
+[#208]: https://github.com/fedify-dev/hollo/pull/208
+
+
+Version 0.6.7
+-------------
+
+Released on August 19, 2025.
+
+ -  Fixed timeline pollution caused by future-dated posts from malicious or
+    misconfigured remote instances.  Posts with timestamps more than 5 minutes
+    in the future are now filtered from all timeline endpoints while preserving
+    them in the database for future display.  [[#199], [#201] by Hyeonseo Kim]
+
+[#199]: https://github.com/fedify-dev/hollo/issues/199
+[#201]: https://github.com/fedify-dev/hollo/pull/201
+
+
+Version 0.6.6
+-------------
+
+Released on August 8, 2025.
+
+ -  Upgrade Fedify to 1.5.5, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
+
+
 Version 0.6.5
 -------------
 
-Released on Juily 17, 2025.
+Released on July 17, 2025.
 
  -  Fixed an HTML injection vulnerability where form elements, scripts, and
     other potentially dangerous HTML tags in federated posts were not properly
@@ -174,6 +249,16 @@ Released on June 5, 2025.
 [#156]: https://github.com/fedify-dev/hollo/pull/156
 
 
+Version 0.5.7
+-------------
+
+Released on August 8, 2025.
+
+ -  Upgrade Fedify to 1.4.13, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
+
+
 Version 0.5.6
 -------------
 
@@ -301,6 +386,16 @@ Released on February 12, 2025.
 [#106]: https://github.com/fedify-dev/hollo/pull/106
 [`GET /api/v1/mutes`]: https://docs.joinmastodon.org/methods/mutes/#get
 [`GET /api/v1/blocks`]: https://docs.joinmastodon.org/methods/blocks/#get
+
+
+Version 0.4.12
+--------------
+
+Released on August 8, 2025.
+
+ -  Upgrade Fedify to 1.3.20, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
 
 
 Version 0.4.11
@@ -485,6 +580,18 @@ Released on December 30, 2024.
 
 [`discoverable`]: https://docs.joinmastodon.org/spec/activitypub/#discoverable
 [#65]: https://github.com/fedify-dev/hollo/issues/65
+
+
+Version 0.3.11
+--------------
+
+Released on August 8, 2025.
+
+ -  Upgrade Fedify to 1.3.20, which includes a critical security
+    fix [CVE-2025-54888] that addresses an authentication bypass
+    vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
+
+[CVE-2025-54888]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-6jcc-xgcr-q3h4
 
 
 Version 0.3.10
