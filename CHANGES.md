@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.6.12
 --------------
 
-To be released.
+Released on October 4, 2025.
 
  -  Fixed a critical security vulnerability where direct messages were leaked
     on public post pages. The replies list below posts now correctly filters
