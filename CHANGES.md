@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.6.13
 --------------
 
-To be released.
+Released on October 7, 2025.
 
  -  Fixed a bug where replies from followers who are not followed back were not
     visible in conversation threads. The visibility filter now correctly
