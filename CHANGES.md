@@ -6,6 +6,11 @@ Version 0.6.13
 
 To be released.
 
+ -  Fixed a bug where replies from followers who are not followed back were not
+    visible in conversation threads. The visibility filter now correctly
+    includes posts that mention the authenticated user, ensuring that all
+    replies directed to the user are displayed regardless of follow-back status.
+
 
 Version 0.6.12
 --------------
