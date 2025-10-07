@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.6.14
 --------------
 
-To be released.
+Released on October 7, 2025.
 
  -  Fixed a critical security vulnerability where direct messages (DMs) were
     visible to all authenticated users regardless of whether they were
