@@ -113,7 +113,7 @@ function buildVisibilityConditions(viewerAccountId: Uuid | null | undefined) {
       ),
     ),
     and(
-      eq(posts.visibility, "direct"),
+      inArray(posts.visibility, ["private", "direct"]),
       or(
         // User's own direct posts
         eq(posts.accountId, viewerAccountId),
