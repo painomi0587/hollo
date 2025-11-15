@@ -1,6 +1,47 @@
 Hollo changelog
 ===============
 
+Version 0.6.14
+--------------
+
+Released on October 7, 2025.
+
+ -  Fixed a critical security vulnerability where direct messages (DMs) were
+    visible to all authenticated users regardless of whether they were
+    participants in the conversation. The visibility filter now correctly
+    restricts direct messages to only the sender and mentioned recipients,
+    preventing unauthorized access to private conversations.
+    [[#247], [#255] by Hyeonseo Kim]
+
+[#247]: https://github.com/fedify-dev/hollo/issues/247
+[#255]: https://github.com/fedify-dev/hollo/pull/255
+
+
+Version 0.6.13
+--------------
+
+Released on October 7, 2025.
+
+ -  Fixed a bug where replies from followers who are not followed back were not
+    visible in conversation threads. The visibility filter now correctly
+    includes posts that mention the authenticated user, ensuring that all
+    replies directed to the user are displayed regardless of follow-back status.
+
+
+Version 0.6.12
+--------------
+
+Released on October 4, 2025.
+
+ -  Fixed a critical security vulnerability where direct messages were leaked
+    on public post pages. The replies list below posts now correctly filters
+    to show only public or unlisted replies, preventing private conversations
+    from being exposed.  [[#246], [#248] by Hyeonseo Kim]
+
+[#246]: https://github.com/fedify-dev/hollo/issues/246
+[#248]: https://github.com/fedify-dev/hollo/pull/248
+
+
 Version 0.6.11
 --------------
 
@@ -926,3 +967,5 @@ Version 0.1.0
 -------------
 
 Released on October 22, 2024.  Initial release.
+
+<!-- cSpell: ignore Hyeonseo -->
