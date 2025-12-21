@@ -1,6 +1,77 @@
 Hollo changelog
 ===============
 
+Version 0.6.19
+--------------
+
+Released on December 20, 2025.
+
+ -  Upgraded Fedify to 1.6.15 to fix a ReDoS (Regular Expression Denial of
+    Service) vulnerability in Fedify's HTML parsing code.  An attacker could
+    exploit this vulnerability to cause denial of service by sending malicious
+    HTML responses during federation operations.  [[CVE-2025-68475]]
+
+[CVE-2025-68475]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-rchf-xwx2-hm93
+
+
+Version 0.6.18
+--------------
+
+Released on November 15, 2025.
+
+ -  Reverted the `/api/v1/notifications` endpoint query optimization from 0.6.17
+    due to a regression that caused server errors when serializing reactions
+    without account information. The optimization attempted to reduce query
+    complexity by separating post data loading, but inadvertently broke reaction
+    serialization for nested posts (shares and quotes). Database indexes added
+    in 0.6.17 are retained.
+
+
+Version 0.6.17
+--------------
+
+Released on November 15, 2025.
+
+ -  Significantly improved `/api/v1/notifications` endpoint performance by
+    optimizing database queries and restructuring data loading strategy.
+    The endpoint now responds in under 1.6 seconds, down from over 2.5 seconds
+    previously (approximately 40% improvement). Key optimizations include:
+
+     -  Pre-fetching muted and blocked account IDs to eliminate correlated
+        subqueries in notification type queries.
+     -  Separating post data loading into multiple targeted queries instead of
+        using deeply nested lateral joins, reducing query complexity and
+        execution time.
+     -  Adding strategic database indexes on `follows`, `mutes`, `likes`, and
+        `reactions` tables to improve query performance.
+
+
+Version 0.6.16
+--------------
+
+Released on November 12, 2025.
+
+ -  Fixed search functionality not returning any results when searching for
+    post content.
+
+ -  Fixed search results including shared posts (reposts/reblogs). Search now
+    shows only original posts and replies, excluding shares.
+
+
+Version 0.6.15
+--------------
+
+Released on November 7, 2025.
+
+ -  Significantly improved `/nodeinfo/2.1` endpoint performance by optimizing
+    database queries and adding appropriate indexes. The endpoint now responds
+    in under 1 second even with millions of federated posts, down from 5–15
+    seconds previously. This prevents load balancer health check failures and
+    external service timeouts.  [[#282]]
+
+[#282]: https://github.com/fedify-dev/hollo/issues/282
+
+
 Version 0.6.14
 --------------
 
