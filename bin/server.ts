@@ -1,9 +1,9 @@
 import { isIP } from "node:net";
 import { serve } from "@hono/node-server";
 import { behindProxy } from "x-forwarded-fetch";
-import { configureSentry } from "../src/sentry";
-
+import { startImportWorker, stopImportWorker } from "../src/import/worker";
 import app from "../src/index";
+import { configureSentry } from "../src/sentry";
 
 // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
 configureSentry(process.env["SENTRY_DSN"]);
@@ -47,5 +47,21 @@ serve(
     }
 
     console.log(`Listening on http://${host}:${info.port}/`);
+
+    // Start the import worker for background job processing
+    startImportWorker();
   },
 );
+
+// Graceful shutdown handling
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, stopping import worker...");
+  stopImportWorker();
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT received, stopping import worker...");
+  stopImportWorker();
+  process.exit(0);
+});

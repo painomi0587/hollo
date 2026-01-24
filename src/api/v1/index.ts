@@ -8,9 +8,9 @@ import { serializeAccount } from "../../entities/account";
 import { getPostRelations, serializePost } from "../../entities/status";
 import { serializeTag } from "../../entities/tag";
 import {
-  type Variables,
   scopeRequired,
   tokenRequired,
+  type Variables,
 } from "../../oauth/middleware";
 import {
   accounts as accountsTable,
@@ -92,11 +92,11 @@ app.get(
   zValidator(
     "query",
     z.object({
-      before: z.string().datetime().optional(),
+      before: z.iso.datetime().optional(),
       limit: z
         .string()
         .default("20")
-        .transform((v) => Number.parseInt(v)),
+        .transform((v) => Number.parseInt(v, 10)),
     }),
   ),
   async (c) => {
@@ -147,11 +147,11 @@ app.get(
   zValidator(
     "query",
     z.object({
-      before: z.string().datetime().optional(),
+      before: z.iso.datetime().optional(),
       limit: z
         .string()
         .default("20")
-        .transform((v) => Number.parseInt(v)),
+        .transform((v) => Number.parseInt(v, 10)),
     }),
   ),
   async (c) => {
@@ -226,7 +226,7 @@ app.get(
         .string()
         .default("40")
         .transform((v) => {
-          const parsed = Number.parseInt(v);
+          const parsed = Number.parseInt(v, 10);
           return Math.min(parsed, 80);
         }),
     }),
@@ -275,12 +275,12 @@ app.get(
   zValidator(
     "query",
     z.object({
-      until: z.string().datetime().optional(),
+      until: z.iso.datetime().optional(),
       limit: z
         .string()
         .default("40")
         .transform((v) => {
-          const parsed = Number.parseInt(v);
+          const parsed = Number.parseInt(v, 10);
           return Math.min(parsed, 80);
         }),
     }),

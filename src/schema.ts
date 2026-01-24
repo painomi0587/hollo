@@ -200,6 +200,7 @@ export const accountOwnerRelations = relations(
     markers: many(markers),
     featuredTags: many(featuredTags),
     lists: many(lists),
+    importJobs: many(importJobs),
   }),
 );
 
@@ -463,6 +464,7 @@ export const posts = pgTable(
     index().on(table.accountId, table.sharingId),
     index().on(table.replyTargetId),
     index().on(table.accountId, table.replyTargetId),
+    index().on(table.quoteTargetId).where(isNotNull(table.quoteTargetId)),
     index().on(table.visibility, table.accountId),
     index()
       .on(table.visibility, table.accountId, table.sharingId)
@@ -1077,6 +1079,145 @@ export const reportRelations = relations(reports, ({ one }) => ({
   }),
 }));
 
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "mention",
+  "status",
+  "reblog",
+  "follow",
+  "follow_request",
+  "favourite",
+  "emoji_reaction",
+  "poll",
+  "update",
+  "admin.sign_up",
+  "admin.report",
+  "quote",
+  "quoted_update",
+]);
+
+export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    accountOwnerId: uuid("account_owner_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => accountOwners.id, { onDelete: "cascade" }),
+    type: notificationTypeEnum("type").notNull(),
+    actorAccountId: uuid("actor_account_id")
+      .$type<Uuid>()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    targetPostId: uuid("target_post_id")
+      .$type<Uuid>()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    targetAccountId: uuid("target_account_id")
+      .$type<Uuid>()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    targetPollId: uuid("target_poll_id")
+      .$type<Uuid>()
+      .references(() => polls.id, { onDelete: "cascade" }),
+    groupKey: text("group_key").notNull(),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (table) => [
+    index().on(table.accountOwnerId, table.created),
+    index().on(table.accountOwnerId, table.readAt),
+    index().on(table.groupKey),
+    index().on(table.created),
+  ],
+);
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+
+export const notificationRelations = relations(notifications, ({ one }) => ({
+  accountOwner: one(accountOwners, {
+    fields: [notifications.accountOwnerId],
+    references: [accountOwners.id],
+  }),
+  actorAccount: one(accounts, {
+    fields: [notifications.actorAccountId],
+    references: [accounts.id],
+  }),
+  targetPost: one(posts, {
+    fields: [notifications.targetPostId],
+    references: [posts.id],
+  }),
+  targetAccount: one(accounts, {
+    fields: [notifications.targetAccountId],
+    references: [accounts.id],
+  }),
+  targetPoll: one(polls, {
+    fields: [notifications.targetPollId],
+    references: [polls.id],
+  }),
+}));
+
+export const notificationGroups = pgTable(
+  "notification_groups",
+  {
+    groupKey: text("group_key").primaryKey(),
+    accountOwnerId: uuid("account_owner_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => accountOwners.id, { onDelete: "cascade" }),
+    type: notificationTypeEnum("type").notNull(),
+    targetPostId: uuid("target_post_id")
+      .$type<Uuid>()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    notificationsCount: integer("notifications_count").notNull().default(0),
+    mostRecentNotificationId: uuid("most_recent_notification_id")
+      .$type<Uuid>()
+      .references(() => notifications.id, { onDelete: "cascade" }),
+    sampleAccountIds: uuid("sample_account_ids")
+      .array()
+      .$type<Uuid[]>()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    latestPageNotificationAt: timestamp("latest_page_notification_at", {
+      withTimezone: true,
+    }),
+    pageMinId: uuid("page_min_id").$type<Uuid>(),
+    pageMaxId: uuid("page_max_id").$type<Uuid>(),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    updated: timestamp("updated", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [
+    index().on(table.accountOwnerId, table.updated),
+    index().on(table.accountOwnerId, table.type),
+  ],
+);
+
+export type NotificationGroup = typeof notificationGroups.$inferSelect;
+export type NewNotificationGroup = typeof notificationGroups.$inferInsert;
+
+export const notificationGroupRelations = relations(
+  notificationGroups,
+  ({ one }) => ({
+    accountOwner: one(accountOwners, {
+      fields: [notificationGroups.accountOwnerId],
+      references: [accountOwners.id],
+    }),
+    targetPost: one(posts, {
+      fields: [notificationGroups.targetPostId],
+      references: [posts.id],
+    }),
+    mostRecentNotification: one(notifications, {
+      fields: [notificationGroups.mostRecentNotificationId],
+      references: [notifications.id],
+    }),
+  }),
+);
+
 export const timelinePosts = pgTable(
   "timeline_posts",
   {
@@ -1138,5 +1279,98 @@ export const listPostRelations = relations(listPosts, ({ one }) => ({
   post: one(posts, {
     fields: [listPosts.postId],
     references: [posts.id],
+  }),
+}));
+
+// Import Job Status Enum
+export const importJobStatusEnum = pgEnum("import_job_status", [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export type ImportJobStatus = (typeof importJobStatusEnum.enumValues)[number];
+
+// Import Job Category Enum
+export const importJobCategoryEnum = pgEnum("import_job_category", [
+  "following_accounts",
+  "lists",
+  "muted_accounts",
+  "blocked_accounts",
+  "bookmarks",
+]);
+
+export type ImportJobCategory =
+  (typeof importJobCategoryEnum.enumValues)[number];
+
+// Import Jobs Table
+export const importJobs = pgTable(
+  "import_jobs",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    accountOwnerId: uuid("account_owner_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => accountOwners.id, { onDelete: "cascade" }),
+    category: importJobCategoryEnum("category").notNull(),
+    status: importJobStatusEnum("status").notNull().default("pending"),
+    totalItems: integer("total_items").notNull().default(0),
+    processedItems: integer("processed_items").notNull().default(0),
+    successfulItems: integer("successful_items").notNull().default(0),
+    failedItems: integer("failed_items").notNull().default(0),
+    errorMessage: text("error_message"),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index().on(table.accountOwnerId, table.status),
+    index().on(table.status, table.created),
+  ],
+);
+
+export type ImportJob = typeof importJobs.$inferSelect;
+export type NewImportJob = typeof importJobs.$inferInsert;
+
+// Import Job Items Table
+export const importJobItems = pgTable(
+  "import_job_items",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    jobId: uuid("job_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => importJobs.id, { onDelete: "cascade" }),
+    status: importJobStatusEnum("status").notNull().default("pending"),
+    data: jsonb("data").notNull().$type<Record<string, unknown>>(),
+    errorMessage: text("error_message"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [index().on(table.jobId, table.status)],
+);
+
+export type ImportJobItem = typeof importJobItems.$inferSelect;
+export type NewImportJobItem = typeof importJobItems.$inferInsert;
+
+// Import Job Relations
+export const importJobRelations = relations(importJobs, ({ one, many }) => ({
+  accountOwner: one(accountOwners, {
+    fields: [importJobs.accountOwnerId],
+    references: [accountOwners.id],
+  }),
+  items: many(importJobItems),
+}));
+
+export const importJobItemRelations = relations(importJobItems, ({ one }) => ({
+  job: one(importJobs, {
+    fields: [importJobItems.jobId],
+    references: [importJobs.id],
   }),
 }));

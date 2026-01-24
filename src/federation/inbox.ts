@@ -12,6 +12,7 @@ import {
   Follow,
   Image,
   type InboxContext,
+  isActor,
   Like,
   Link,
   type Move,
@@ -21,19 +22,29 @@ import {
   type Remove,
   type Undo,
   type Update,
-  isActor,
 } from "@fedify/fedify";
 import { getLogger } from "@logtape/logtape";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import {
-  type NewLike,
-  type NewPinnedPost,
+  createEmojiReactionNotification,
+  createFavouriteNotification,
+  createFollowNotification,
+  createFollowRequestNotification,
+  createMentionNotifications,
+  createQuotedUpdateNotifications,
+  createQuoteNotification,
+  createReblogNotification,
+  createStatusNotification,
+} from "../notification";
+import {
   accountOwners,
   accounts,
   blocks,
   follows,
   likes,
+  type NewLike,
+  type NewPinnedPost,
   pinnedPosts,
   pollOptions,
   posts,
@@ -136,6 +147,11 @@ export async function onFollowed(
       { excludeBaseUris: [new URL(ctx.origin)] },
     );
     await updateAccountStats(db, { id: following.id });
+    // Create follow notification
+    await createFollowNotification(follower, following.owner);
+  } else {
+    // Create follow request notification for protected accounts
+    await createFollowRequestNotification(follower, following.owner);
   }
 }
 
@@ -143,7 +159,7 @@ export async function onUnfollowed(
   ctx: InboxContext<void>,
   undo: Undo,
 ): Promise<void> {
-  const object = await undo.getObject();
+  const object = await undo.getObject({ crossOrigin: "trust" });
   if (!(object instanceof Follow)) return;
   if (object.actorId?.href !== undo.actorId?.href || object.id == null) return;
   const actor = await undo.getActor();
@@ -191,7 +207,7 @@ export async function onFollowAccepted(
       return;
     }
   }
-  const object = await accept.getObject();
+  const object = await accept.getObject({ crossOrigin: "trust" });
   if (object instanceof Follow) {
     if (object.actorId == null) return;
     await db
@@ -239,7 +255,7 @@ export async function onFollowRejected(
       return;
     }
   }
-  const object = await reject.getObject();
+  const object = await reject.getObject({ crossOrigin: "trust" });
   if (object instanceof Follow) {
     if (object.actorId == null) return;
     await db
@@ -302,7 +318,7 @@ export async function onUnblocked(
   ctx: InboxContext<void>,
   undo: Undo,
 ): Promise<void> {
-  const object = await undo.getObject();
+  const object = await undo.getObject({ crossOrigin: "trust" });
   if (
     !(object instanceof Block) ||
     undo.actorId?.href !== object.actorId?.href
@@ -344,6 +360,62 @@ export async function onPostCreated(
     }
     return post;
   });
+
+  // Create status notification for reply target author (if this is a reply)
+  // and mention notifications for other mentioned local users
+  if (post != null) {
+    let replyTargetAuthorId: typeof post.accountId | null = null;
+
+    // If this is a reply, create a "status" notification for the original post author
+    if (post.replyTargetId != null) {
+      const replyTarget = await db.query.posts.findFirst({
+        where: eq(posts.id, post.replyTargetId),
+        with: {
+          account: { with: { owner: true } },
+        },
+      });
+
+      if (replyTarget != null) {
+        replyTargetAuthorId = replyTarget.accountId;
+
+        // Create status notification for the reply target author
+        await createStatusNotification(post.account, post, replyTarget);
+      }
+    }
+
+    // Create mention notifications for mentioned local users
+    // Skip the reply target author since they already got a "status" notification
+    if (post.mentions.length > 0) {
+      const mentionedAccountsWithOwners = await db.query.accounts.findMany({
+        where: inArray(
+          accounts.id,
+          post.mentions.map((m) => m.accountId),
+        ),
+        with: { owner: true },
+      });
+
+      await createMentionNotifications(
+        post,
+        mentionedAccountsWithOwners,
+        replyTargetAuthorId,
+      );
+    }
+
+    // Create quote notification if this post quotes another post
+    if (post.quoteTargetId != null) {
+      const quoteTarget = await db.query.posts.findFirst({
+        where: eq(posts.id, post.quoteTargetId),
+        with: {
+          account: { with: { owner: true } },
+        },
+      });
+
+      if (quoteTarget != null) {
+        await createQuoteNotification(post.account, post, quoteTarget);
+      }
+    }
+  }
+
   if (
     post?.replyTargetId != null &&
     (post.visibility === "public" || post.visibility === "unlisted")
@@ -386,7 +458,31 @@ export async function onPostUpdated(
 ): Promise<void> {
   const object = await update.getObject();
   if (!isPost(object)) return;
+
+  // Get post ID before update to find quote posts
+  const existingPost = object.id
+    ? await db.query.posts.findFirst({
+        where: eq(posts.iri, object.id.href),
+      })
+    : null;
+
+  // Persist the updated post
   await persistPost(db, object, ctx.origin, ctx);
+
+  // Create quoted_update notifications for users who quoted this post
+  if (existingPost != null) {
+    const quotePosts = await db.query.posts.findMany({
+      where: eq(posts.quoteTargetId, existingPost.id),
+      with: {
+        account: { with: { owner: true } },
+      },
+    });
+
+    if (quotePosts.length > 0) {
+      const quoteAuthors = quotePosts.map((qp) => qp.account);
+      await createQuotedUpdateNotifications(existingPost, quoteAuthors);
+    }
+  }
 }
 
 export async function onPostDeleted(
@@ -439,13 +535,17 @@ export async function onPostShared(
       { skipIfUnsigned: true },
     );
   }
+  // Create reblog notification
+  if (post?.sharing != null && post.account != null) {
+    await createReblogNotification(post.account, post.sharing);
+  }
 }
 
 export async function onPostUnshared(
   ctx: InboxContext<void>,
   undo: Undo,
 ): Promise<void> {
-  const object = await undo.getObject();
+  const object = await undo.getObject({ crossOrigin: "trust" });
   if (!(object instanceof Announce)) return;
   if (object.actorId?.href !== undo.actorId?.href) return;
   const sharer = object.actorId;
@@ -562,6 +662,11 @@ export async function onLiked(
     // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
     const postId = parsed.values["id"];
     if (!isUuid(postId)) return;
+    const post = await db.query.posts.findFirst({
+      where: eq(posts.id, postId),
+      with: { account: { with: { owner: true } } },
+    });
+    if (post == null) return;
     await db.transaction(async (tx) => {
       await tx
         .insert(likes)
@@ -574,6 +679,8 @@ export async function onLiked(
       "followers",
       { skipIfUnsigned: true },
     );
+    // Create favourite notification
+    await createFavouriteNotification(account, post);
   } else {
     inboxLogger.debug("Unsupported object on Like: {objectId}", {
       objectId: like.objectId?.href,
@@ -585,7 +692,7 @@ export async function onUnliked(
   ctx: InboxContext<void>,
   undo: Undo,
 ): Promise<void> {
-  const object = await undo.getObject();
+  const object = await undo.getObject({ crossOrigin: "trust" });
   if (
     !(object instanceof Like) ||
     object.actorId?.href !== undo.actorId?.href
@@ -678,6 +785,11 @@ export async function onEmojiReactionAdded(
       if (customEmoji != null) break;
     }
   }
+  const post = await db.query.posts.findFirst({
+    where: eq(posts.id, id),
+    with: { account: { with: { owner: true } } },
+  });
+  if (post == null) return;
   await db.insert(reactions).values({
     postId: id,
     accountId: account.id,
@@ -688,13 +800,15 @@ export async function onEmojiReactionAdded(
   await ctx.forwardActivity({ username }, "followers", {
     skipIfUnsigned: true,
   });
+  // Create emoji reaction notification
+  await createEmojiReactionNotification(account, post);
 }
 
 export async function onEmojiReactionRemoved(
   ctx: InboxContext<void>,
   undo: Undo,
 ): Promise<void> {
-  const object = await undo.getObject();
+  const object = await undo.getObject({ crossOrigin: "trust" });
   if (
     !(object instanceof Like || object instanceof EmojiReact) ||
     object.actorId?.href !== undo.actorId?.href ||

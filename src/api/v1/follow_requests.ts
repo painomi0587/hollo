@@ -10,9 +10,9 @@ import {
 import { federation } from "../../federation";
 import { updateAccountStats } from "../../federation/account";
 import {
-  type Variables,
   scopeRequired,
   tokenRequired,
+  type Variables,
 } from "../../oauth/middleware";
 import { accounts, blocks, follows, mutes } from "../../schema";
 import { isUuid } from "../../uuid";
@@ -74,7 +74,7 @@ app.post(
     if (follower.owner == null) {
       const fedCtx = federation.createContext(c.req.raw, undefined);
       await fedCtx.sendActivity(
-        owner,
+        { username: owner.handle },
         { id: new URL(follower.iri), inboxId: new URL(follower.inboxUrl) },
         new Accept({
           id: new URL(`#accepts/${follower.iri}`, owner.account.iri),
@@ -147,7 +147,7 @@ app.post(
     if (follower.owner == null) {
       const fedCtx = federation.createContext(c.req.raw, undefined);
       await fedCtx.sendActivity(
-        owner,
+        { username: owner.handle },
         { id: new URL(follower.iri), inboxId: new URL(follower.inboxUrl) },
         new Reject({
           id: new URL(`#rejects/${follower.iri}`, owner.account.iri),
