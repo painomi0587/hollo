@@ -8,6 +8,7 @@ import {
   Delete,
   EmojiReact,
   Follow,
+  isActor,
   Like,
   Move,
   Note,
@@ -15,13 +16,14 @@ import {
   Remove,
   Undo,
   Update,
-  isActor,
 } from "@fedify/fedify";
 import { getLogger } from "@logtape/logtape";
 import { db } from "../db";
 import "./actor";
 import { federation } from "./federation";
+
 export { federation } from "./federation";
+
 import {
   onAccountDeleted,
   onAccountMoved,
@@ -30,8 +32,8 @@ import {
   onEmojiReactionAdded,
   onEmojiReactionRemoved,
   onFollowAccepted,
-  onFollowRejected,
   onFollowed,
+  onFollowRejected,
   onLiked,
   onPostCreated,
   onPostDeleted,
@@ -110,7 +112,7 @@ federation
   .on(Block, onBlocked)
   .on(Move, onAccountMoved)
   .on(Undo, async (ctx, undo) => {
-    const object = await undo.getObject();
+    const object = await undo.getObject({ crossOrigin: "trust" });
     if (
       object instanceof Activity &&
       object.actorId?.href !== undo.actorId?.href

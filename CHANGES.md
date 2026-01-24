@@ -1,6 +1,185 @@
 Hollo changelog
 ===============
 
+Version 0.7.0
+-------------
+
+Released on January 24, 2026.
+
+ -  Implemented advanced search query operators for the `/api/v2/search`
+    endpoint, enabling Mastodon-compatible search filtering.  Supported
+    operators include:
+
+     -  `has:media` / `has:poll` — Filter by attachments
+     -  `is:reply` / `is:sensitive` — Filter by post characteristics
+     -  `language:xx` — Filter by ISO 639-1 language code
+     -  `from:username` — Filter by author (supports `@user`, `user@domain`)
+     -  `mentions:username` — Filter by mentioned user
+     -  `before:YYYY-MM-DD` / `after:YYYY-MM-DD` — Filter by date range
+     -  Negation with `-` prefix (e.g., `-has:media`)
+     -  `OR` operator for alternative matches
+     -  Parentheses for grouping (e.g., `(from:alice OR from:bob) has:poll`)
+
+ -  Significantly improved `/api/v1/notifications` endpoint performance by
+    implementing a materialized notifications system. The endpoint now uses
+    dedicated `notifications` and `notification_groups` tables instead of
+    generating notifications on-demand via complex SQL queries, resulting in
+    approximately 24% improvement (2.5s → 1.9s). Key changes include:
+
+     -  Added `notifications` table to store notification events as they occur
+        during federation activities (follows, likes, mentions, shares, etc).
+     -  Added `notification_groups` table for Mastodon-compatible notification
+        grouping and aggregation metadata.
+     -  Implemented automatic notification creation in federation inbox handlers
+        for all notification types.
+     -  Backfilled recent notifications (100 per type) during migration to
+        prevent empty notification lists after upgrade.
+     -  Poll expiry notifications are queried dynamically on-demand since they
+        cannot be pre-generated without background job scheduling.
+
+ -  Enabled gzip/deflate compression for all API responses, reducing response
+    sizes by 70–92% and improving overall API performance. For example,
+    `/api/v1/notifications` responses are now compressed from 767KB to 58KB,
+    `/api/v1/timelines/home` from 91KB to 14KB, resulting in faster load times
+    and reduced bandwidth usage.
+
+ -  Implemented Mastodon v2 grouped notifications API (`/api/v2/notifications`),
+    which provides server-side notification grouping to reduce client complexity
+    and improve performance. The API groups notifications of types `favourite`,
+    `follow`, `reblog`, `admin.sign_up`, and `emoji_reaction` together when they
+    target the same post or account. New endpoints include:
+
+     -  `GET /api/v2/notifications`: Get paginated grouped notifications with
+        deduplicated accounts and statuses
+     -  `GET /api/v2/notifications/:group_key`: Get a specific notification group
+     -  `GET /api/v2/notifications/:group_key/accounts`: Get all accounts in a
+        notification group
+     -  `POST /api/v2/notifications/:group_key/dismiss`: Dismiss a notification
+        group
+     -  `GET /api/v2/notifications/unread_count`: Get unread notification count
+
+ -  Fixed `POST /api/v1/statuses` and `PUT /api/v1/statuses/:id` endpoints
+    rejecting FormData requests.  These endpoints now properly accept both
+    JSON and FormData content types, improving compatibility with Mastodon
+    clients that send `multipart/form-data` requests.
+    [[#170], [#171] by Emelia Smith]
+
+ -  Fixed a bug where multiple JSON objects were written on a single line
+    in log files when `LOG_FILE` environment variable was set.  Upgraded
+    LogTape to 2.0.0 and now uses `jsonLinesFormatter` to ensure proper
+    JSON Lines format with one JSON object per line.  [[#174]]
+
+ -  Fixed `POST /api/v1/statuses` endpoint rejecting requests with `null`
+    values in optional fields. The endpoint now properly accepts `null`
+    values for fields like `media_ids`, `poll`, `spoiler_text`,
+    `in_reply_to_id`, and other optional parameters, improving
+    compatibility with Mastodon clients.  [[#177], [#179] by Lee ByeongJun]
+
+ -  Implemented asynchronous import job processing with a background worker
+    to improve the reliability and performance of account data imports
+    (following accounts, lists, muted/blocked accounts, bookmarks).
+    Large imports no longer block the HTTP request, and users can see
+    real-time progress of their imports.  [[#94], [#295] by Juyoung Jung]
+
+ -  Improved instance API responses for better third-party client compatibility.
+    [[#296] by Juyoung Jung]
+
+     -  `GET /api/v1/instance`: Added `configuration.accounts.max_featured_tags`
+        field, `thumbnail` field with Hollo logo, and implemented actual `stats`
+        values (`user_count`, `status_count`, `domain_count`) from the database.
+     -  `GET /api/v2/instance`: Added `thumbnail` object with `url`, `blurhash`,
+        and `versions` fields, `icon` array, and updated `max_featured_tags` and
+        `max_pinned_statuses` values from 0 to 10.
+
+ -  Fixed OAuth token endpoint rejecting requests from clients that send
+    credentials via both HTTP Basic authentication and request body
+    simultaneously.  The endpoint now accepts such requests if the credentials
+    are identical, improving compatibility with clients like tooot.
+    [[#296] by Juyoung Jung]
+
+ -  Upgraded Fedify to 1.10.0.
+
+ -  Added `prev` link to the `Link` header in `/api/v1/notifications` API
+    responses for Mastodon-compatible pagination.  This allows clients to
+    efficiently fetch new notifications since the last received notification,
+    improving caching capabilities and reducing server load.  [[#312]]
+
+ -  Fixed OAuth token endpoint failing to parse request body when HTTP clients
+    don't send `Content-Type` header.  Some clients like Lobsters' Sponge
+    HTTP client don't set `Content-Type` for POST requests with form data,
+    causing authentication failures.  The endpoint now correctly parses
+    URL-encoded form data even when `Content-Type` is missing or set to
+    `text/plain`.
+
+ -  Implemented Mastodon 4.5.0 quote notification types (`quote` and
+     `quoted_update`) for improved quote post interaction tracking.
+     Users now receive notifications when their posts are quoted by others
+     and when posts they've quoted are edited by the original authors.
+     Key features include:
+
+      -  Added `quote` notification type that triggers when someone quotes
+         your post, with the notification showing the quote post itself.
+      -  Added `quoted_update` notification type that triggers when a post
+         you quoted is edited, with the notification showing your quote post
+         to provide context.
+      -  Both notification types are non-groupable, meaning each quote or edit
+         generates an individual notification for better visibility.
+      -  Self-quotes (quoting your own posts) do not generate notifications
+         to avoid unnecessary noise.
+      -  Existing quote posts are automatically backfilled with notifications
+         during migration to ensure consistent notification history.
+      -  Added database index on `posts.quote_target_id` for improved query
+         performance when looking up quote relationships.
+
+ -  Removed dependency on deprecated *fluent-ffmpeg* package and now invoke
+    ffmpeg binary directly for video screenshot generation.  This change
+    improves reliability by preventing request failures when video screenshot
+    generation encounters errors.  On failure, a default screenshot (Hollo
+    logo) is now returned instead of aborting the entire upload request, and
+    ffmpeg error output is logged for debugging.  [[#333] by Peter Jeschke]
+
+ -  Fixed a bug where querying the `/api/v1/notifications` and
+    `/api/v2/notifications` endpoints with unknown notification types
+    (e.g., `types[]=reaction` from clients like Moshidon) resulted in
+    `500 Internal Server Error` responses due to database enum validation
+    failures.  The endpoints now filter out unknown notification types before
+    passing them to the database layer, returning an empty result instead of
+    an error.  [[#334] by Peter Jeschke]
+
+ -  Fixed a bug where the `/api/v2/search` endpoint did not properly enforce
+    the `limit` parameter on search results.  The endpoint now correctly
+    limits the number of returned accounts and statuses to the requested
+    limit (default 20, maximum 40), improving Mastodon API compatibility
+    and preventing potential performance issues with large result sets.
+    [[#210]]
+
+ -  Significantly improved `/api/v2/search` endpoint performance when searching
+    by URL or handle.  The endpoint now responds in approximately 1.4 seconds
+    for URL searches, down from 8–10 seconds previously (approximately 85%
+    improvement).  Key optimizations include:
+
+     -  Skip unnecessary `lookupObject` calls for non-URL/non-handle queries,
+        reducing remote federation lookups by 2–3 seconds.
+     -  Skip full-text search on `posts.content_html` column when the query
+        is a URL and the post is found in cache lookup (by IRI or URL),
+        eliminating expensive table scans that took ~8 seconds.
+     -  Added shared `HANDLE_PATTERN` regex in *src/patterns.ts* for
+        consistent WebFinger handle validation across v1 and v2 APIs.
+
+[#94]: https://github.com/fedify-dev/hollo/issues/94
+[#210]: https://github.com/fedify-dev/hollo/issues/210
+[#312]: https://github.com/fedify-dev/hollo/issues/312
+[#170]: https://github.com/fedify-dev/hollo/issues/170
+[#171]: https://github.com/fedify-dev/hollo/pull/171
+[#174]: https://github.com/fedify-dev/hollo/pull/174
+[#177]: https://github.com/fedify-dev/hollo/issues/177
+[#179]: https://github.com/fedify-dev/hollo/pull/179
+[#295]: https://github.com/fedify-dev/hollo/pull/295
+[#296]: https://github.com/fedify-dev/hollo/pull/296
+[#333]: https://github.com/fedify-dev/hollo/pull/333
+[#334]: https://github.com/fedify-dev/hollo/pull/334
+
+
 Version 0.6.19
 --------------
 

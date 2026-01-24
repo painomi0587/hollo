@@ -3,11 +3,11 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { db } from "../../db";
 import { randomBytes, requestBody } from "../../helpers";
-import { type Variables, tokenRequired } from "../../oauth/middleware";
+import { tokenRequired, type Variables } from "../../oauth/middleware";
 import {
+  applications,
   type NewApplication,
   type Scope,
-  applications,
   scopeEnum,
 } from "../../schema";
 
@@ -22,10 +22,10 @@ const applicationSchema = z.strictObject({
     .transform((v, ctx) => {
       const uris = Array.isArray(v) ? v : v.split(/\s+/g);
       for (const uri of uris) {
-        const parsed = z.string().url().safeParse(uri);
+        const parsed = z.url().safeParse(uri);
         if (parsed.error != null) {
-          for (const error of parsed.error.errors) {
-            ctx.addIssue(error);
+          for (const issue of parsed.error.issues) {
+            ctx.addIssue({ ...issue });
           }
           return z.NEVER;
         }
@@ -41,8 +41,8 @@ const applicationSchema = z.strictObject({
       for (const scope of v.split(/\s+/g)) {
         if (!scopeEnum.enumValues.includes(scope as Scope)) {
           ctx.addIssue({
-            code: z.ZodIssueCode.invalid_enum_value,
-            options: scopeEnum.enumValues,
+            code: "invalid_value",
+            values: scopeEnum.enumValues,
             received: scope,
           });
           return z.NEVER;
@@ -52,14 +52,14 @@ const applicationSchema = z.strictObject({
       return scopes;
     })
     .optional(),
-  website: z.string().url().optional(),
+  website: z.url().optional(),
 });
 
 app.post("/", async (c) => {
   const result = await requestBody(c.req, applicationSchema);
 
   if (!result.success) {
-    logger.debug("Invalid request: {error}", { error: result.error.errors });
+    logger.debug("Invalid request: {error}", { error: result.error.issues });
     return c.json({ error: "invalid_request", zod_error: result.error }, 422);
   }
 

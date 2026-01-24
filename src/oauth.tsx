@@ -8,6 +8,8 @@ import { db } from "./db.ts";
 import { requestBody } from "./helpers.ts";
 import { loginRequired } from "./login.ts";
 import { OOB_REDIRECT_URI } from "./oauth/constants.ts";
+import revokeEndpoint from "./oauth/endpoints/revoke.ts";
+import userInfoEndpoint from "./oauth/endpoints/userinfo.ts";
 import {
   calculatePKCECodeChallenge,
   createAccessGrant,
@@ -19,14 +21,10 @@ import {
   clientAuthentication,
 } from "./oauth/middleware.ts";
 import { scopesSchema } from "./oauth/validators.ts";
-import { accessGrants, accountOwners, applications } from "./schema.ts";
-import { uuid } from "./uuid.ts";
-
-import revokeEndpoint from "./oauth/endpoints/revoke.ts";
-import userInfoEndpoint from "./oauth/endpoints/userinfo.ts";
-
 import { AuthorizationPage } from "./pages/oauth/authorization.tsx";
 import { AuthorizationCodePage } from "./pages/oauth/authorization_code.tsx";
+import { accessGrants, accountOwners, applications } from "./schema.ts";
+import { uuid } from "./uuid.ts";
 
 const logger = getLogger(["hollo", "oauth"]);
 
@@ -68,7 +66,7 @@ app.get(
     z.object({
       response_type: z.enum(["code"]),
       client_id: z.string(),
-      redirect_uri: z.string().url(),
+      redirect_uri: z.url().optional(),
       scope: scopesSchema.optional(),
       state: z.string().optional(),
       // PKCE: we only support S256 code challenges
@@ -92,7 +90,10 @@ app.get(
       return c.json({ error: "invalid_scope" }, 400);
     }
 
-    if (!application.redirectUris.includes(data.redirect_uri)) {
+    // Use the first redirect URI as default if not provided
+    const redirectUri = data.redirect_uri ?? application.redirectUris[0];
+
+    if (!application.redirectUris.includes(redirectUri)) {
       return c.json({ error: "invalid_redirect_uri" }, 400);
     }
 
@@ -109,7 +110,7 @@ app.get(
       <AuthorizationPage
         accountOwners={accountOwners}
         application={application}
-        redirectUri={data.redirect_uri}
+        redirectUri={redirectUri}
         scopes={scopes}
         state={data.state}
         codeChallenge={data.code_challenge}
@@ -127,7 +128,7 @@ app.post(
     z.object({
       account_id: uuid,
       application_id: uuid,
-      redirect_uri: z.string().url(),
+      redirect_uri: z.url().optional(),
       scopes: scopesSchema,
       state: z.string().optional(),
       // we only support S256:
@@ -162,11 +163,14 @@ app.post(
       return c.json({ error: "invalid_scope" }, 400);
     }
 
-    if (!application.redirectUris.includes(form.redirect_uri)) {
+    // Use the first redirect URI as default if not provided
+    const redirectUri = form.redirect_uri ?? application.redirectUris[0];
+
+    if (!application.redirectUris.includes(redirectUri)) {
       return c.json({ error: "invalid_redirect_uri" }, 400);
     }
 
-    const url = new URL(form.redirect_uri);
+    const url = new URL(redirectUri);
     if (form.decision === "deny") {
       url.searchParams.set("error", "access_denied");
       url.searchParams.set(
@@ -178,12 +182,12 @@ app.post(
         application.id,
         accountOwner.id,
         form.scopes,
-        form.redirect_uri,
+        redirectUri,
         form.code_challenge,
         form.code_challenge_method,
       );
 
-      if (form.redirect_uri === OOB_REDIRECT_URI) {
+      if (redirectUri === OOB_REDIRECT_URI) {
         return c.html(
           <AuthorizationCodePage
             application={application}
@@ -231,7 +235,7 @@ const tokenRequestSchema = z.discriminatedUnion("grant_type", [
   // See also <https://github.com/fedify-dev/hollo/issues/163>:
   z.object({
     grant_type: z.literal("authorization_code"),
-    redirect_uri: z.string().url(),
+    redirect_uri: z.url(),
     code: z.string(),
     code_verifier: z.string().optional(),
     // client_id and client_secret are present but consumed by the
@@ -245,10 +249,17 @@ app.post("/token", clientAuthentication, async (c) => {
   const client = c.get("client");
   const result = await requestBody(c.req, tokenRequestSchema);
 
+  logger.debug("Token request received for client: {clientId}", {
+    clientId: client.clientId,
+  });
+
   if (!result.success) {
+    logger.debug("Token request validation failed: {error}", {
+      error: result.error.issues,
+    });
     if (
-      result.error.errors.length === 1 &&
-      result.error.errors[0].code === "invalid_union_discriminator"
+      result.error.issues.length === 1 &&
+      result.error.issues[0].code === "invalid_union"
     ) {
       return c.json(
         {
@@ -284,6 +295,16 @@ app.post("/token", clientAuthentication, async (c) => {
             accessGrant.applicationId !== client.id ||
             accessGrant?.revoked !== null
           ) {
+            logger.debug(
+              "Invalid grant: code not found or already revoked. " +
+                "Code exists: {exists}, application match: {appMatch}, " +
+                "revoked: {revoked}",
+              {
+                exists: accessGrant !== undefined,
+                appMatch: accessGrant?.applicationId === client.id,
+                revoked: accessGrant?.revoked,
+              },
+            );
             return c.json(INVALID_GRANT_ERROR, 400);
           }
 
@@ -311,6 +332,14 @@ app.post("/token", clientAuthentication, async (c) => {
           }
 
           if (accessGrant.redirectUri !== form.redirect_uri) {
+            logger.debug(
+              "Invalid grant: redirect_uri mismatch. " +
+                "Expected: {expected}, received: {received}",
+              {
+                expected: accessGrant.redirectUri,
+                received: form.redirect_uri,
+              },
+            );
             return c.json(INVALID_GRANT_ERROR, 400);
           }
 
