@@ -1,3 +1,4 @@
+import { getLogger } from "@logtape/logtape";
 import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { auth } from "hono/utils/basic-auth";
@@ -9,10 +10,12 @@ import {
   type Account,
   type AccountOwner,
   type Application,
-  type Scope,
   accessTokens,
   applications,
+  type Scope,
 } from "../schema.ts";
+
+const logger = getLogger(["hollo", "oauth", "middleware"]);
 
 export type Variables = {
   token: AccessToken & {
@@ -86,17 +89,38 @@ export const clientAuthentication = createMiddleware<{
   }
 
   if (clientCredentials.length > 1) {
-    return c.json(
-      {
-        error: "invalid_request",
-        error_description:
-          "The request includes includes multiple credentials or utilizes more than one mechanism for authenticating the client",
-      },
-      400,
+    // Some clients (like tooot) send credentials via both Basic auth and POST body.
+    // Allow this if all credentials have the same client_id and client_secret.
+    const firstCred = clientCredentials[0];
+    const allSameCredentials = clientCredentials.every(
+      (cred) =>
+        cred.client_id === firstCred.client_id &&
+        cred.client_secret === firstCred.client_secret,
     );
+
+    if (!allSameCredentials) {
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description:
+            "The request includes multiple credentials or utilizes more than one mechanism for authenticating the client",
+        },
+        400,
+      );
+    }
+    // Keep only the first one since they're all the same
+    clientCredentials.splice(1);
   }
 
   if (clientCredentials.length === 0) {
+    logger.debug(
+      "Client authentication failed: no credentials provided. " +
+        "Method: {method}, Content-Type: {contentType}",
+      {
+        method: c.req.method,
+        contentType: c.req.header("Content-Type"),
+      },
+    );
     return c.json(
       {
         error: "invalid_client",
@@ -130,6 +154,14 @@ export const clientAuthentication = createMiddleware<{
   }
 
   if (!client) {
+    logger.debug(
+      "Client authentication failed: client not found. " +
+        "Authentication method: {authMethod}, client_id: {clientId}",
+      {
+        authMethod: clientCredentials[0].authentication,
+        clientId: clientCredentials[0].client_id,
+      },
+    );
     return c.json(
       {
         error: "invalid_client",

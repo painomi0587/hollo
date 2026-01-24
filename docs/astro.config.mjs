@@ -6,6 +6,9 @@ import { defineConfig } from "astro/config";
 export default defineConfig({
   integrations: [
     starlight({
+      components: {
+        SocialIcons: "./src/components/SocialIcons.astro",
+      },
       title: "Hollo",
       logo: {
         dark: "./src/assets/logo-white.svg",
@@ -13,12 +16,23 @@ export default defineConfig({
         replacesTitle: true,
       },
       customCss: ["./src/styles/custom.css"],
-      social: {
-        mastodon: "https://hollo.social/@hollo",
-        discord: "https://discord.gg/hGXXxUq2jK",
-        matrix: "https://matrix.to/#/%23hollo-users:matrix.org",
-        github: "https://github.com/fedify-dev/hollo",
-      },
+      social: [
+        {
+          icon: "discord",
+          label: "Discord",
+          href: "https://discord.gg/hGXXxUq2jK",
+        },
+        {
+          icon: "matrix",
+          label: "Matrix",
+          href: "https://matrix.to/#/%23hollo-users:matrix.org",
+        },
+        {
+          icon: "github",
+          label: "GitHub",
+          href: "https://github.com/fedify-dev/hollo",
+        },
+      ],
       locales: {
         root: {
           label: "English",
@@ -107,6 +121,15 @@ export default defineConfig({
             ko: "테스트된 클라이언트",
             ja: "テスト済みクライアント",
             "zh-CN": "已测试客户端",
+          },
+        },
+        {
+          slug: "search",
+          label: "Search",
+          translations: {
+            ko: "검색",
+            ja: "検索",
+            "zh-CN": "搜索",
           },
         },
       ],
