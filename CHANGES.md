@@ -67,10 +67,16 @@ To be released.
         associated follows, mentions, likes, etc. via cascade) since the
         actor is explicitly marked as permanently gone.
 
+ -  Added `FEDIFY_DEBUG` environment variable to enable the [Fedify debugger],
+    an embedded real-time dashboard for inspecting ActivityPub traces and
+    activities.  When enabled, the debug dashboard is accessible at
+    `/__debug__/`.  Intended for development use only.
+
  -  Upgraded Fedify to 2.0.0.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
+[Fedify debugger]: https://fedify.dev/manual/debug
 
 
 Version 0.7.2

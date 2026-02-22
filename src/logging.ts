@@ -7,8 +7,10 @@ import {
   getStreamSink,
   jsonLinesFormatter,
   type LogLevel,
+  type LogRecord,
   parseLogLevel,
 } from "@logtape/logtape";
+import { federation } from "./federation/federation";
 
 // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
 const LOG_LEVEL: LogLevel = parseLogLevel(process.env["LOG_LEVEL"] ?? "info");
@@ -31,9 +33,11 @@ await configure({
         : getFileSink(LOG_FILE, {
             formatter: jsonLinesFormatter,
           }),
+    debugger: federation.sink ?? ((_: LogRecord) => {}),
   },
   filters: {},
   loggers: [
+    { category: [], sinks: ["debugger"] },
     {
       category: "fedify",
       lowestLevel: LOG_LEVEL,
