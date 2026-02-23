@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.3
 -------------
 
-To be released.
+Released on February 23, 2026.
 
  -  Temporarily changed Fedify's `firstKnock` setting to
     `draft-cavage-http-signatures-12` for outbound inbox deliveries as a
