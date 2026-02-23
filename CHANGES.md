@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.4
 -------------
 
-To be released.
+Released on February 24, 2026.
 
  -  Fixed a federation interoperability bug where follow requests to some
     Bonfire instances could remain pending even after receiving `Accept` or
