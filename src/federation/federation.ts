@@ -43,6 +43,10 @@ let federation: Federation<void> & { sink?: Sink } = createFederation<void>({
   queue: new ParallelMessageQueue(new PostgresMessageQueue(postgres), 10),
   // Only start the queue automatically if not running as a web-only node
   manuallyStartQueue: nodeType === "web",
+  // TODO: Revert to Fedify's default RFC 9421-first behavior once
+  // https://github.com/bonfire-networks/activity_pub/issues/8 is fixed and
+  // released.
+  firstKnock: "draft-cavage-http-signatures-12",
   userAgent: {
     software: `Hollo/${metadata.version}`,
   },

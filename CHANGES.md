@@ -79,6 +79,21 @@ To be released.
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 
+Version 0.7.3
+-------------
+
+Released on February 23, 2026.
+
+ -  Temporarily changed Fedify's `firstKnock` setting to
+    `draft-cavage-http-signatures-12` for outbound inbox deliveries as a
+    compatibility workaround for Bonfire's current signature handling.
+    This is intended to be reverted to Fedify's default RFC 9421-first
+    behavior after the Bonfire fix is released.
+    [[bonfire-networks/activity_pub#8]]
+
+[bonfire-networks/activity_pub#8]: https://github.com/bonfire-networks/activity_pub/issues/8
+
+
 Version 0.7.2
 -------------
 
