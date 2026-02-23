@@ -193,6 +193,29 @@ export async function onFollowAccepted(
   }
   const account = await persistAccount(db, actor, ctx.origin, ctx);
   if (account == null) return;
+  const approveFollowByFollowerIri = async (
+    followerIri: string,
+  ): Promise<boolean> => {
+    const updated = await db
+      .update(follows)
+      .set({ approved: new Date() })
+      .where(
+        and(
+          eq(
+            follows.followerId,
+            db
+              .select({ id: accounts.id })
+              .from(accounts)
+              .where(eq(accounts.iri, followerIri)),
+          ),
+          eq(follows.followingId, account.id),
+        ),
+      )
+      .returning({ followerId: follows.followerId });
+    if (updated.length < 1) return false;
+    await updateAccountStats(db, { id: updated[0].followerId });
+    return true;
+  };
   if (accept.objectId != null) {
     const updated = await db
       .update(follows)
@@ -210,24 +233,8 @@ export async function onFollowAccepted(
     }
   }
   const object = await accept.getObject({ crossOrigin: "trust" });
-  if (object instanceof Follow) {
-    if (object.actorId == null) return;
-    await db
-      .update(follows)
-      .set({ approved: new Date() })
-      .where(
-        and(
-          eq(
-            follows.followerId,
-            db
-              .select({ id: accounts.id })
-              .from(accounts)
-              .where(eq(accounts.iri, object.actorId.href)),
-          ),
-          eq(follows.followingId, account.id),
-        ),
-      );
-    await updateAccountStats(db, { iri: object.actorId.href });
+  if (object instanceof Follow && object.actorId != null) {
+    await approveFollowByFollowerIri(object.actorId.href);
   }
 }
 
@@ -242,6 +249,28 @@ export async function onFollowRejected(
   }
   const account = await persistAccount(db, actor, ctx.origin, ctx);
   if (account == null) return;
+  const deleteFollowByFollowerIri = async (
+    followerIri: string,
+  ): Promise<boolean> => {
+    const deleted = await db
+      .delete(follows)
+      .where(
+        and(
+          eq(
+            follows.followerId,
+            db
+              .select({ id: accounts.id })
+              .from(accounts)
+              .where(eq(accounts.iri, followerIri)),
+          ),
+          eq(follows.followingId, account.id),
+        ),
+      )
+      .returning({ followerId: follows.followerId });
+    if (deleted.length < 1) return false;
+    await updateAccountStats(db, { id: deleted[0].followerId });
+    return true;
+  };
   if (reject.objectId != null) {
     const deleted = await db
       .delete(follows)
@@ -258,23 +287,8 @@ export async function onFollowRejected(
     }
   }
   const object = await reject.getObject({ crossOrigin: "trust" });
-  if (object instanceof Follow) {
-    if (object.actorId == null) return;
-    await db
-      .delete(follows)
-      .where(
-        and(
-          eq(
-            follows.followerId,
-            db
-              .select({ id: accounts.id })
-              .from(accounts)
-              .where(eq(accounts.iri, object.actorId.href)),
-          ),
-          eq(follows.followingId, account.id),
-        ),
-      );
-    await updateAccountStats(db, { iri: object.actorId.href });
+  if (object instanceof Follow && object.actorId != null) {
+    await deleteFollowByFollowerIri(object.actorId.href);
   }
 }
 
