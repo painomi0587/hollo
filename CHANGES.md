@@ -6,6 +6,14 @@ Version 0.7.4
 
 To be released.
 
+ -  Fixed a federation interoperability bug where follow requests to some
+    Bonfire instances could remain pending even after receiving `Accept` or
+    `Reject` activities.  Inbox follow handlers now fall back to resolving the
+    embedded `Follow` object (with `crossOrigin: "trust"`) and match by actor
+    when the `object` ID does not match Hollo's stored follow IRI.  [[#373]]
+
+[#373]: https://github.com/fedify-dev/hollo/issues/373
+
 
 Version 0.7.3
 -------------
