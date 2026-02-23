@@ -85,6 +85,45 @@ describe("onFollowAccepted", () => {
     expect(follow).toBeDefined();
     expect(follow?.approved).not.toBeNull();
   });
+
+  it("updates the follower's followingCount when approved via embedded Follow object (Path B)", async () => {
+    expect.assertions(2);
+
+    const seeded = await seedFollow();
+
+    const followerBefore = await db.query.accounts.findFirst({
+      where: eq(accounts.id, seeded.followerId),
+    });
+    expect(followerBefore?.followingCount).toBe(0);
+
+    // Path B: Accept wraps a Follow object whose id does NOT match any stored
+    // follow IRI, so the objectId-based lookup (Path A) finds nothing and falls
+    // through to the embedded-object fallback.
+    const accept = await Accept.fromJsonLd({
+      "@context": ["https://www.w3.org/ns/activitystreams"],
+      id: `${seeded.followingIri}#accepts/${crypto.randomUUID()}`,
+      type: "Accept",
+      actor: {
+        id: seeded.followingIri,
+        type: "Person",
+        preferredUsername: "following",
+        inbox: `${seeded.followingIri}/inbox`,
+      },
+      object: {
+        id: `${seeded.followerIri}#follows/${crypto.randomUUID()}`,
+        type: "Follow",
+        actor: seeded.followerIri,
+        object: seeded.followingIri,
+      },
+    });
+
+    await onFollowAccepted(ctx, accept);
+
+    const followerAfter = await db.query.accounts.findFirst({
+      where: eq(accounts.id, seeded.followerId),
+    });
+    expect(followerAfter?.followingCount).toBe(1);
+  });
 });
 
 describe("onFollowRejected", () => {

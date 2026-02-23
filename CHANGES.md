@@ -12,7 +12,14 @@ To be released.
     embedded `Follow` object (with `crossOrigin: "trust"`) and match by actor
     when the `object` ID does not match Hollo's stored follow IRI.  [[#373]]
 
+ -  Fixed a bug where the local account's `followingCount` was not updated
+    when an `Accept` activity was processed via the fallback path that resolves
+    the embedded `Follow` object (Path B).  The handler was incorrectly passing
+    the accepting actor's account ID to `updateAccountStats` instead of the
+    local follower's account ID.  [[#374]]
+
 [#373]: https://github.com/fedify-dev/hollo/issues/373
+[#374]: https://github.com/fedify-dev/hollo/issues/374
 
 
 Version 0.7.3
