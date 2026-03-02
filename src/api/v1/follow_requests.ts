@@ -8,7 +8,10 @@ import {
   serializeRelationship,
 } from "../../entities/account";
 import { federation } from "../../federation";
-import { updateAccountStats } from "../../federation/account";
+import {
+  getFollowOrderingKey,
+  updateAccountStats,
+} from "../../federation/account";
 import {
   scopeRequired,
   tokenRequired,
@@ -73,6 +76,7 @@ app.post(
     if (result.length < 1) return c.json({ error: "Record not found" }, 404);
     if (follower.owner == null) {
       const fedCtx = federation.createContext(c.req.raw, undefined);
+      const orderingKey = getFollowOrderingKey(follower.iri, owner.account.iri);
       await fedCtx.sendActivity(
         { username: owner.handle },
         { id: new URL(follower.iri), inboxId: new URL(follower.inboxUrl) },
@@ -85,7 +89,10 @@ app.post(
             object: new URL(owner.account.iri),
           }),
         }),
-        { excludeBaseUris: [new URL(c.req.url)] },
+        {
+          orderingKey,
+          excludeBaseUris: [new URL(c.req.url)],
+        },
       );
     }
     await updateAccountStats(db, { id: owner.id });
@@ -146,6 +153,7 @@ app.post(
     if (result.length < 1) return c.json({ error: "Record not found" }, 404);
     if (follower.owner == null) {
       const fedCtx = federation.createContext(c.req.raw, undefined);
+      const orderingKey = getFollowOrderingKey(follower.iri, owner.account.iri);
       await fedCtx.sendActivity(
         { username: owner.handle },
         { id: new URL(follower.iri), inboxId: new URL(follower.inboxUrl) },
@@ -158,7 +166,10 @@ app.post(
             object: new URL(owner.account.iri),
           }),
         }),
-        { excludeBaseUris: [new URL(c.req.url)] },
+        {
+          orderingKey,
+          excludeBaseUris: [new URL(c.req.url)],
+        },
       );
     }
     const follower2 = await db.query.accounts.findFirst({

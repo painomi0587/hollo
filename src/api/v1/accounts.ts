@@ -32,6 +32,7 @@ import { federation } from "../../federation";
 import {
   blockAccount,
   followAccount,
+  getBlockOrderingKey,
   persistAccount,
   persistAccountPosts,
   REMOTE_ACTOR_FETCH_POSTS,
@@ -1051,6 +1052,7 @@ app.post(
       );
     if (acct.owner == null) {
       const fedCtx = federation.createContext(c.req.raw, undefined);
+      const orderingKey = getBlockOrderingKey(owner.account.iri, acct.iri);
       await fedCtx.sendActivity(
         { username: owner.handle },
         {
@@ -1066,7 +1068,10 @@ app.post(
             object: new URL(acct.iri),
           }),
         }),
-        { excludeBaseUris: [new URL(fedCtx.url)] },
+        {
+          orderingKey,
+          excludeBaseUris: [new URL(fedCtx.url)],
+        },
       );
     }
     const result = await db.query.accounts.findFirst({

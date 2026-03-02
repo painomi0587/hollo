@@ -135,6 +135,7 @@ export async function onFollowed(
     })
     .onConflictDoNothing();
   if (approves) {
+    const orderingKey = `follow:${follower.iri}:${following.iri}`;
     await ctx.sendActivity(
       { username: following.owner.handle },
       actor,
@@ -146,7 +147,10 @@ export async function onFollowed(
         actor: object.id,
         object: follow,
       }),
-      { excludeBaseUris: [new URL(ctx.origin)] },
+      {
+        orderingKey,
+        excludeBaseUris: [new URL(ctx.origin)],
+      },
     );
     await updateAccountStats(db, { id: following.id });
     // Create follow notification
@@ -457,6 +461,7 @@ export async function onPostCreated(
       },
     });
     if (replyTarget?.account.owner != null) {
+      const orderingKey = `post:${replyTarget.iri}`;
       await ctx.forwardActivity(
         { username: replyTarget.account.owner.handle },
         "followers",
@@ -470,7 +475,11 @@ export async function onPostCreated(
         { username: replyTarget.account.owner.handle },
         "followers",
         toUpdate(replyTarget, ctx),
-        { preferSharedInbox: true, excludeBaseUris: [new URL(ctx.origin)] },
+        {
+          orderingKey,
+          preferSharedInbox: true,
+          excludeBaseUris: [new URL(ctx.origin)],
+        },
       );
     }
   }
@@ -920,6 +929,7 @@ export async function onVoted(
     where: eq(posts.pollId, vote.pollId),
   });
   if (post?.account.owner == null || post.poll == null) return;
+  const orderingKey = `post:${post.iri}`;
   await ctx.sendActivity(
     { username: post.account.owner.handle },
     post.poll.votes.map((v) => ({
@@ -933,7 +943,11 @@ export async function onVoted(
             },
     })),
     toUpdate(post, ctx),
-    { preferSharedInbox: true, excludeBaseUris: [new URL(ctx.origin)] },
+    {
+      orderingKey,
+      preferSharedInbox: true,
+      excludeBaseUris: [new URL(ctx.origin)],
+    },
   );
 }
 

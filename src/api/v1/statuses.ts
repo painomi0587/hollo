@@ -81,6 +81,22 @@ import { isUuid, type Uuid, uuid, uuidv7 } from "../../uuid";
 const app = new Hono<{ Variables: Variables }>();
 const logger = getLogger(["hollo", "api", "v1", "statuses"]);
 
+function getPostOrderingKey(postIri: string): string {
+  return `post:${postIri}`;
+}
+
+function getLikeOrderingKey(actorIri: string, postIri: string): string {
+  return `like:${actorIri}:${postIri}`;
+}
+
+function getReactionOrderingKey(
+  actorIri: string,
+  postIri: string,
+  emoji: string,
+): string {
+  return `react:${actorIri}:${postIri}:${emoji}`;
+}
+
 /**
  * Builds visibility conditions for post queries based on viewer's permissions.
  * For unauthenticated users, only public/unlisted posts are visible.
@@ -402,16 +418,19 @@ app.post("/", tokenRequired, scopeRequired(["write:statuses"]), async (c) => {
     with: getPostRelations(owner.id),
   }))!;
   const activity = toCreate(post, fedCtx);
+  const orderingKey = getPostOrderingKey(post.iri);
   await fedCtx.sendActivity(
     { username: handle },
     getRecipients(post),
     activity,
     {
+      orderingKey,
       excludeBaseUris: [new URL(c.req.url)],
     },
   );
   if (post.visibility !== "direct") {
     await fedCtx.sendActivity({ username: handle }, "followers", activity, {
+      orderingKey,
       preferSharedInbox: true,
       excludeBaseUris: [new URL(c.req.url)],
     });
@@ -501,15 +520,18 @@ app.put("/:id", tokenRequired, scopeRequired(["write:statuses"]), async (c) => {
     with: getPostRelations(owner.id),
   });
   const activity = toUpdate(post!, fedCtx);
+  const orderingKey = getPostOrderingKey(post!.iri);
   await fedCtx.sendActivity(
     { username: owner.handle },
     getRecipients(post!),
     activity,
     {
+      orderingKey,
       excludeBaseUris: [new URL(c.req.url)],
     },
   );
   await fedCtx.sendActivity({ username: owner.handle }, "followers", activity, {
+    orderingKey,
     preferSharedInbox: true,
     excludeBaseUris: [new URL(c.req.url)],
   });
@@ -568,11 +590,13 @@ app.delete(
     });
     const fedCtx = federation.createContext(c.req.raw, undefined);
     const activity = toDelete(post, fedCtx);
+    const orderingKey = getPostOrderingKey(post.iri);
     await fedCtx.sendActivity(
       { username: owner.handle },
       getRecipients(post),
       activity,
       {
+        orderingKey,
         excludeBaseUris: [new URL(c.req.url)],
       },
     );
@@ -582,6 +606,7 @@ app.delete(
         "followers",
         activity,
         {
+          orderingKey,
           preferSharedInbox: true,
           excludeBaseUris: [new URL(c.req.url)],
         },
@@ -699,6 +724,7 @@ app.post(
       return c.json({ error: "Record not found" }, 404);
     }
     const fedCtx = federation.createContext(c.req.raw, undefined);
+    const orderingKey = getLikeOrderingKey(owner.account.iri, post.iri);
     await fedCtx.sendActivity(
       { username: owner.handle },
       {
@@ -711,6 +737,7 @@ app.post(
         object: new URL(post.iri),
       }),
       {
+        orderingKey,
         preferSharedInbox: true,
         excludeBaseUris: [new URL(c.req.url)],
       },
@@ -747,6 +774,7 @@ app.post(
       return c.json({ error: "Record not found" }, 404);
     }
     const fedCtx = federation.createContext(c.req.raw, undefined);
+    const orderingKey = getLikeOrderingKey(owner.account.iri, post.iri);
     await fedCtx.sendActivity(
       { username: owner.handle },
       {
@@ -765,6 +793,7 @@ app.post(
         }),
       }),
       {
+        orderingKey,
         preferSharedInbox: true,
         excludeBaseUris: [new URL(c.req.url)],
       },
@@ -884,11 +913,13 @@ app.post(
       where: eq(posts.id, id),
       with: getPostRelations(owner.id),
     });
+    const orderingKey = getPostOrderingKey(post!.iri);
     await fedCtx.sendActivity(
       { username: owner.handle },
       "followers",
       toAnnounce(post!, fedCtx),
       {
+        orderingKey,
         preferSharedInbox: true,
         excludeBaseUris: [new URL(c.req.url)],
       },
@@ -939,6 +970,7 @@ app.post(
       .where(eq(posts.id, originalPostId));
     const fedCtx = federation.createContext(c.req.raw, undefined);
     for (const post of postList) {
+      const orderingKey = getPostOrderingKey(post.iri);
       await fedCtx.sendActivity(
         { username: owner.handle },
         "followers",
@@ -947,6 +979,7 @@ app.post(
           object: toAnnounce(post, fedCtx),
         }),
         {
+          orderingKey,
           preferSharedInbox: true,
           excludeBaseUris: [new URL(c.req.url)],
         },
@@ -1101,6 +1134,7 @@ app.post(
       } satisfies NewPinnedPost)
       .returning();
     const fedCtx = federation.createContext(c.req.raw, undefined);
+    const orderingKey = getPostOrderingKey(post.iri);
     await fedCtx.sendActivity(
       { username: owner.handle },
       "followers",
@@ -1114,6 +1148,7 @@ app.post(
         target: fedCtx.getFeaturedUri(owner.handle),
       }),
       {
+        orderingKey,
         preferSharedInbox: true,
         excludeBaseUris: [new URL(c.req.url)],
       },
@@ -1157,6 +1192,7 @@ app.post(
       with: getPostRelations(owner.id),
     });
     const fedCtx = federation.createContext(c.req.raw, undefined);
+    const orderingKey = getPostOrderingKey(post!.iri);
     await fedCtx.sendActivity(
       { username: owner.handle },
       "followers",
@@ -1170,6 +1206,7 @@ app.post(
         target: fedCtx.getFeaturedUri(owner.handle),
       }),
       {
+        orderingKey,
         preferSharedInbox: true,
         excludeBaseUris: [new URL(c.req.url)],
       },
@@ -1276,7 +1313,13 @@ async function addEmojiReaction(
     content: emojiCode,
     tags: tag == null ? [] : [tag],
   });
+  const orderingKey = getReactionOrderingKey(
+    owner.account.iri,
+    post.iri,
+    emojiCode,
+  );
   await fedCtx.sendActivity({ username: owner.handle }, "followers", activity, {
+    orderingKey,
     preferSharedInbox: true,
     excludeBaseUris: [new URL(c.req.url)],
   });
@@ -1293,7 +1336,11 @@ async function addEmojiReaction(
             },
     },
     activity,
-    { preferSharedInbox: true, excludeBaseUris: [new URL(c.req.url)] },
+    {
+      orderingKey,
+      preferSharedInbox: true,
+      excludeBaseUris: [new URL(c.req.url)],
+    },
   );
   return c.json(serializePost(post, owner, c.req.url));
 }
@@ -1369,7 +1416,13 @@ async function removeEmojiReaction(
             ],
     }),
   });
+  const orderingKey = getReactionOrderingKey(
+    owner.account.iri,
+    post.iri,
+    reaction.emoji,
+  );
   await fedCtx.sendActivity({ username: owner.handle }, "followers", activity, {
+    orderingKey,
     preferSharedInbox: true,
     excludeBaseUris: [new URL(c.req.url)],
   });
@@ -1386,7 +1439,11 @@ async function removeEmojiReaction(
             },
     },
     activity,
-    { preferSharedInbox: true, excludeBaseUris: [new URL(c.req.url)] },
+    {
+      orderingKey,
+      preferSharedInbox: true,
+      excludeBaseUris: [new URL(c.req.url)],
+    },
   );
   return c.json(serializePost(post, owner, c.req.url));
 }

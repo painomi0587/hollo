@@ -58,6 +58,20 @@ export const REFRESH_ACTORS_ON_INTERACTION =
   refreshOnInteractionEnv === "1" ||
   refreshOnInteractionEnv === "yes";
 
+export function getFollowOrderingKey(
+  followerIri: string,
+  followingIri: string,
+): string {
+  return `follow:${followerIri}:${followingIri}`;
+}
+
+export function getBlockOrderingKey(
+  blockerIri: string,
+  blockeeIri: string,
+): string {
+  return `block:${blockerIri}:${blockeeIri}`;
+}
+
 export async function persistAccount(
   db: PgDatabase<
     PostgresJsQueryResultHKT,
@@ -389,6 +403,7 @@ export async function followAccount(
   await updateAccountStats(db, following);
   const follow = result[0];
   if (following.owner == null) {
+    const orderingKey = getFollowOrderingKey(follower.iri, following.iri);
     await ctx.sendActivity(
       { username: follower.owner.handle },
       [
@@ -402,7 +417,10 @@ export async function followAccount(
         actor: new URL(follower.iri),
         object: new URL(following.iri),
       }),
-      { excludeBaseUris: [new URL(ctx.origin)] },
+      {
+        orderingKey,
+        excludeBaseUris: [new URL(ctx.origin)],
+      },
     );
   }
   return follow;
@@ -434,6 +452,7 @@ export async function unfollowAccount(
   await updateAccountStats(db, follower);
   await updateAccountStats(db, following);
   if (following.owner == null) {
+    const orderingKey = getFollowOrderingKey(follower.iri, following.iri);
     await ctx.sendActivity(
       { username: follower.owner.handle },
       [
@@ -451,7 +470,10 @@ export async function unfollowAccount(
           object: new URL(following.iri),
         }),
       }),
-      { excludeBaseUris: [new URL(ctx.origin)] },
+      {
+        orderingKey,
+        excludeBaseUris: [new URL(ctx.origin)],
+      },
     );
   }
   return result[0];
@@ -480,6 +502,7 @@ export async function removeFollower(
     )
     .returning();
   if (result.length < 1) return null;
+  const orderingKey = getFollowOrderingKey(follower.iri, following.iri);
   await ctx.sendActivity(
     { username: following.owner.handle },
     {
@@ -501,7 +524,10 @@ export async function removeFollower(
         object: new URL(following.iri),
       }),
     }),
-    { excludeBaseUris: [new URL(ctx.origin)] },
+    {
+      orderingKey,
+      excludeBaseUris: [new URL(ctx.origin)],
+    },
   );
   return result[0];
 }
@@ -537,6 +563,7 @@ export async function blockAccount(
       { ...blocker.account, owner: blocker },
       blockee,
     );
+    const orderingKey = getBlockOrderingKey(blocker.account.iri, blockee.iri);
     await ctx.sendActivity(
       { username: blocker.handle },
       { id: new URL(blockee.iri), inboxId: new URL(blockee.inboxUrl) },
@@ -545,7 +572,10 @@ export async function blockAccount(
         actor: new URL(blocker.account.iri),
         object: new URL(blockee.iri),
       }),
-      { excludeBaseUris: [new URL(ctx.origin)] },
+      {
+        orderingKey,
+        excludeBaseUris: [new URL(ctx.origin)],
+      },
     );
   }
   return result[0];

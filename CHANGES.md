@@ -72,6 +72,13 @@ To be released.
     activities.  When enabled, the debug dashboard is accessible at
     `/__debug__/`.  Intended for development use only.
 
+ -  Added outbound activity ordering keys for stateful federation actions,
+    using Fedify 2.0's ordered message delivery support.  This ensures
+    remote servers process related actions in order, including post
+    create/update/delete, reblog/unreblog, like/unlike,
+    emoji reaction/unreaction, follow request lifecycle messages,
+    block/unblock, and post updates triggered by replies and poll votes.
+
  -  Upgraded Fedify to 2.0.0.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
