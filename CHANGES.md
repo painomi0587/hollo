@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.5
 -------------
 
-To be released.
+Released on March 3, 2026.
 
  -  Fixed a bug where posts from blocked accounts could still appear in
     timeline inboxes (`/api/v1/timelines/home` and list timelines) when
