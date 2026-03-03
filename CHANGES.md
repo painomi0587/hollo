@@ -86,6 +86,18 @@ To be released.
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 
+Version 0.7.5
+-------------
+
+Released on March 3, 2026.
+
+ -  Fixed a bug where posts from blocked accounts could still appear in
+    timeline inboxes (`/api/v1/timelines/home` and list timelines) when
+    `TIMELINE_INBOXES` was enabled.  Timeline filtering now consistently
+    excludes blocked accounts, including shared posts and replies related
+    to blocked accounts.
+
+
 Version 0.7.4
 -------------
 
