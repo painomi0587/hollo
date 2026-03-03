@@ -6,6 +6,12 @@ Version 0.7.5
 
 To be released.
 
+ -  Fixed a bug where posts from blocked accounts could still appear in
+    timeline inboxes (`/api/v1/timelines/home` and list timelines) when
+    `TIMELINE_INBOXES` was enabled.  Timeline filtering now consistently
+    excludes blocked accounts, including shared posts and replies related
+    to blocked accounts.
+
 
 Version 0.7.4
 -------------
