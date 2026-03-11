@@ -79,11 +79,32 @@ To be released.
     emoji reaction/unreaction, follow request lifecycle messages,
     block/unblock, and post updates triggered by replies and poll votes.
 
- -  Upgraded Fedify to 2.0.3.
+ -  Upgraded Fedify to 2.0.5.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
 [Fedify debugger]: https://fedify.dev/manual/debug
+
+
+Version 0.7.6
+-------------
+
+Released on March 11, 2026.
+
+ -  Fixed a federation interoperability bug where reactions (`Like` and
+    `EmojiReact`) to remote posts could be ignored when the activity `object`
+    used a remote IRI that did not match Hollo's local URI pattern.
+    Inbox handlers now fall back to resolving posts by `posts.iri`, so remote
+    self-reactions (e.g., Misskey users reacting to their own remote notes)
+    are persisted and shown correctly in Mastodon-compatible clients.  [[#394]]
+
+ -  Hardened inbox reaction processing to tolerate duplicate deliveries by
+    making `Like`/`EmojiReact` inserts idempotent, preventing duplicate-key
+    failures during federation retries.
+
+ -  Upgraded Fedify to 1.10.4.
+
+[#394]: https://github.com/fedify-dev/hollo/issues/394
 
 
 Version 0.7.5
