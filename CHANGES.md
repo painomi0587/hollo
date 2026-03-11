@@ -17,6 +17,8 @@ To be released.
     making `Like`/`EmojiReact` inserts idempotent, preventing duplicate-key
     failures during federation retries.
 
+ -  Upgraded Fedify to 1.10.4.
+
 [#394]: https://github.com/fedify-dev/hollo/issues/394
 
 
