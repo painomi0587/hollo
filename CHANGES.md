@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.6
 -------------
 
-To be released.
+Released on March 11, 2026.
 
  -  Fixed a federation interoperability bug where reactions (`Like` and
     `EmojiReact`) to remote posts could be ignored when the activity `object`
