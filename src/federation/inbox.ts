@@ -38,6 +38,8 @@ import {
   createStatusNotification,
 } from "../notification";
 import {
+  type Account,
+  type AccountOwner,
   accountOwners,
   accounts,
   blocks,
@@ -45,6 +47,7 @@ import {
   likes,
   type NewLike,
   type NewPinnedPost,
+  type Post,
   pinnedPosts,
   pollOptions,
   posts,
@@ -67,6 +70,60 @@ import {
 } from "./post";
 
 const inboxLogger = getLogger(["hollo", "inbox"]);
+
+type ResolvedReactionTarget = {
+  post: Post & { account: Account & { owner: AccountOwner | null } };
+  localRecipientHandle: string | null;
+};
+
+async function resolveReactionTarget(
+  ctx: InboxContext<void>,
+  objectId: URL,
+): Promise<ResolvedReactionTarget | null> {
+  const parsed = ctx.parseUri(objectId);
+  if (
+    parsed?.type === "object" &&
+    (parsed.class === Note ||
+      parsed.class === Article ||
+      parsed.class === Question ||
+      parsed.class === ChatMessage)
+  ) {
+    // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+    const postId = parsed.values["id"];
+    if (isUuid(postId)) {
+      const post = await db.query.posts.findFirst({
+        where: eq(posts.id, postId),
+        with: { account: { with: { owner: true } } },
+      });
+      if (post != null) {
+        // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+        const handle = parsed.values["username"];
+        return {
+          post,
+          localRecipientHandle: typeof handle === "string" ? handle : null,
+        };
+      }
+    }
+  }
+
+  const post = await db.query.posts.findFirst({
+    where: eq(posts.iri, objectId.href),
+    with: { account: { with: { owner: true } } },
+  });
+  if (post == null) {
+    inboxLogger.debug("Reaction target post not found: {objectId}", {
+      objectId: objectId.href,
+    });
+    return null;
+  }
+  inboxLogger.debug("Resolved reaction target by IRI fallback: {objectId}", {
+    objectId: objectId.href,
+  });
+  return {
+    post,
+    localRecipientHandle: post.account.owner?.handle ?? null,
+  };
+}
 
 export async function onAccountUpdated(
   ctx: InboxContext<void>,
@@ -659,47 +716,37 @@ export async function onLiked(
     return;
   }
   if (like.objectId == null) return;
-  const parsed = ctx.parseUri(like.objectId);
-  if (parsed == null) return;
-  const { type } = parsed;
-  if (
-    type === "object" &&
-    (parsed.class === Note ||
-      parsed.class === Article ||
-      parsed.class === Question ||
-      parsed.class === ChatMessage)
-  ) {
-    const actor = await like.getActor();
-    if (actor == null) return;
-    const account = await persistAccount(db, actor, ctx.origin, ctx);
-    if (account == null) return;
-    // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-    const postId = parsed.values["id"];
-    if (!isUuid(postId)) return;
-    const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
-      with: { account: { with: { owner: true } } },
-    });
-    if (post == null) return;
-    await db.transaction(async (tx) => {
-      await tx
-        .insert(likes)
-        .values({ postId, accountId: account.id } satisfies NewLike);
-      await updatePostStats(tx, { id: postId });
-    });
+  const target = await resolveReactionTarget(ctx, like.objectId);
+  if (target == null) return;
+  const actor = await like.getActor();
+  if (actor == null) return;
+  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  if (account == null) return;
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(likes)
+      .values({
+        postId: target.post.id,
+        accountId: account.id,
+      } satisfies NewLike)
+      .onConflictDoNothing({
+        target: [likes.postId, likes.accountId],
+      });
+    await updatePostStats(tx, { id: target.post.id });
+  });
+  if (target.localRecipientHandle != null) {
     await ctx.forwardActivity(
-      // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-      { username: parsed.values["username"] },
+      { username: target.localRecipientHandle },
       "followers",
       { skipIfUnsigned: true },
     );
-    // Create favourite notification
-    await createFavouriteNotification(account, post);
   } else {
-    inboxLogger.debug("Unsupported object on Like: {objectId}", {
-      objectId: like.objectId?.href,
+    inboxLogger.debug("Skip forwarding Like for non-local target: {objectId}", {
+      objectId: like.objectId.href,
     });
   }
+  // Create favourite notification
+  await createFavouriteNotification(account, target.post);
 }
 
 export async function onUnliked(
@@ -719,39 +766,31 @@ export async function onUnliked(
     return;
   }
   if (like.objectId == null) return;
-  const parsed = ctx.parseUri(like.objectId);
-  if (parsed == null) return;
-  const { type } = parsed;
-  if (
-    type === "object" &&
-    (parsed.class === Note ||
-      parsed.class === Article ||
-      parsed.class === Question ||
-      parsed.class === ChatMessage)
-  ) {
-    const actor = await like.getActor();
-    if (actor == null) return;
-    const account = await persistAccount(db, actor, ctx.origin, ctx);
-    if (account == null) return;
-    // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-    const postId = parsed.values["id"];
-    if (!isUuid(postId)) return;
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(likes)
-        .where(and(eq(likes.postId, postId), eq(likes.accountId, account.id)));
-      await updatePostStats(tx, { id: postId });
-    });
+  const target = await resolveReactionTarget(ctx, like.objectId);
+  if (target == null) return;
+  const actor = await like.getActor();
+  if (actor == null) return;
+  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  if (account == null) return;
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(likes)
+      .where(
+        and(eq(likes.postId, target.post.id), eq(likes.accountId, account.id)),
+      );
+    await updatePostStats(tx, { id: target.post.id });
+  });
+  if (target.localRecipientHandle != null) {
     await ctx.forwardActivity(
-      // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-      { username: parsed.values["username"] },
+      { username: target.localRecipientHandle },
       "followers",
       { skipIfUnsigned: true },
     );
   } else {
-    inboxLogger.debug("Unsupported object on Undo<Like>: {objectId}", {
-      objectId: like.objectId?.href,
-    });
+    inboxLogger.debug(
+      "Skip forwarding Undo<Like> for non-local target: {objectId}",
+      { objectId: like.objectId.href },
+    );
   }
 }
 
@@ -760,21 +799,8 @@ export async function onEmojiReactionAdded(
   react: EmojiReact | Like,
 ): Promise<void> {
   if (react.content == null || react.objectId == null) return;
-  const object = ctx.parseUri(react.objectId);
-  if (
-    object?.type !== "object" ||
-    (object.class !== Note &&
-      object.class !== Article &&
-      object.class !== Question &&
-      object.class !== ChatMessage)
-  ) {
-    inboxLogger.debug("Unsupported object on EmojiReact: {objectId}", {
-      objectId: react.objectId?.href,
-    });
-    return;
-  }
-  const { username, id } = object.values;
-  if (!isUuid(id)) return;
+  const target = await resolveReactionTarget(ctx, react.objectId);
+  if (target == null) return;
   const emoji = react.content.toString().trim();
   if (emoji === "") return;
   const actor = await react.getActor();
@@ -799,23 +825,34 @@ export async function onEmojiReactionAdded(
       if (customEmoji != null) break;
     }
   }
-  const post = await db.query.posts.findFirst({
-    where: eq(posts.id, id),
-    with: { account: { with: { owner: true } } },
-  });
-  if (post == null) return;
-  await db.insert(reactions).values({
-    postId: id,
-    accountId: account.id,
-    emoji,
-    customEmoji: customEmoji?.href,
-    emojiIri: emojiIri?.href,
-  });
-  await ctx.forwardActivity({ username }, "followers", {
-    skipIfUnsigned: true,
-  });
+  await db
+    .insert(reactions)
+    .values({
+      postId: target.post.id,
+      accountId: account.id,
+      emoji,
+      customEmoji: customEmoji?.href,
+      emojiIri: emojiIri?.href,
+    })
+    .onConflictDoNothing({
+      target: [reactions.postId, reactions.accountId, reactions.emoji],
+    });
+  if (target.localRecipientHandle != null) {
+    await ctx.forwardActivity(
+      { username: target.localRecipientHandle },
+      "followers",
+      {
+        skipIfUnsigned: true,
+      },
+    );
+  } else {
+    inboxLogger.debug(
+      "Skip forwarding EmojiReact for non-local target: {objectId}",
+      { objectId: react.objectId.href },
+    );
+  }
   // Create emoji reaction notification
-  await createEmojiReactionNotification(account, post);
+  await createEmojiReactionNotification(account, target.post);
 }
 
 export async function onEmojiReactionRemoved(
@@ -826,7 +863,8 @@ export async function onEmojiReactionRemoved(
   if (
     !(object instanceof Like || object instanceof EmojiReact) ||
     object.actorId?.href !== undo.actorId?.href ||
-    object.content == null
+    object.content == null ||
+    object.objectId == null
   ) {
     return;
   }
@@ -834,30 +872,31 @@ export async function onEmojiReactionRemoved(
   if (actor == null) return;
   const account = await persistAccount(db, actor, ctx.origin, ctx);
   if (account == null) return;
-  const post = ctx.parseUri(object.objectId);
-  if (
-    post?.type !== "object" ||
-    (post.class !== Note &&
-      post.class !== Article &&
-      post.class !== Question &&
-      post.class !== ChatMessage)
-  ) {
-    return;
-  }
-  const { username, id } = post.values;
-  if (!isUuid(id)) return;
+  const target = await resolveReactionTarget(ctx, object.objectId);
+  if (target == null) return;
   await db
     .delete(reactions)
     .where(
       and(
-        eq(reactions.postId, id),
+        eq(reactions.postId, target.post.id),
         eq(reactions.accountId, account.id),
         eq(reactions.emoji, object.content.toString().trim()),
       ),
     );
-  await ctx.forwardActivity({ username }, "followers", {
-    skipIfUnsigned: true,
-  });
+  if (target.localRecipientHandle != null) {
+    await ctx.forwardActivity(
+      { username: target.localRecipientHandle },
+      "followers",
+      {
+        skipIfUnsigned: true,
+      },
+    );
+  } else {
+    inboxLogger.debug(
+      "Skip forwarding Undo<EmojiReact> for non-local target: {objectId}",
+      { objectId: object.objectId.href },
+    );
+  }
 }
 
 export async function onVoted(
