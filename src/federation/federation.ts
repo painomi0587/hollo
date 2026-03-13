@@ -6,6 +6,10 @@ import { postgres } from "../db";
 export const federation = createFederation<void>({
   kv: new PostgresKvStore(postgres),
   queue: new ParallelMessageQueue(new PostgresMessageQueue(postgres), 10),
+  // TODO: Revert to Fedify's default RFC 9421-first behavior once
+  // https://github.com/bonfire-networks/activity_pub/issues/8 is fixed and
+  // released.
+  firstKnock: "draft-cavage-http-signatures-12",
   userAgent: {
     software: `Hollo/${metadata.version}`,
   },

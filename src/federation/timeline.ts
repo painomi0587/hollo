@@ -78,8 +78,8 @@ export function shouldExcludePostFromTimeline(
   }
   for (const block of owner.account.blocks) {
     if (
-      block.accountId === post.accountId ||
-      block.accountId === post.sharing?.accountId
+      block.blockedAccountId === post.accountId ||
+      block.blockedAccountId === post.sharing?.accountId
     ) {
       return true;
     }
@@ -136,7 +136,7 @@ export function shouldIncludePostInTimeline(
           (f) => f.followingId === replyTarget.accountId,
         ) &&
           !owner.account.blocks.some(
-            (b) => b.accountId === replyTarget.accountId,
+            (b) => b.blockedAccountId === replyTarget.accountId,
           ) &&
           !owner.account.mutes.some(
             (m) => m.mutedAccountId === replyTarget.accountId,

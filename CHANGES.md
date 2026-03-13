@@ -1,6 +1,114 @@
 Hollo changelog
 ===============
 
+Version 0.7.7
+-------------
+
+Released on March 13, 2026.
+
+ -  Fixed video thumbnail generation failing for some MP4/MOV files by writing
+    the video data to a temporary file instead of piping it via stdin (`pipe:0`),
+    which does not support seeking.  [[#397], [#398] by NTSK]
+
+[#397]: https://github.com/fedify-dev/hollo/issues/397
+[#398]: https://github.com/fedify-dev/hollo/pull/398
+
+
+Version 0.7.6
+-------------
+
+Released on March 11, 2026.
+
+ -  Fixed a federation interoperability bug where reactions (`Like` and
+    `EmojiReact`) to remote posts could be ignored when the activity `object`
+    used a remote IRI that did not match Hollo's local URI pattern.
+    Inbox handlers now fall back to resolving posts by `posts.iri`, so remote
+    self-reactions (e.g., Misskey users reacting to their own remote notes)
+    are persisted and shown correctly in Mastodon-compatible clients.  [[#394]]
+
+ -  Hardened inbox reaction processing to tolerate duplicate deliveries by
+    making `Like`/`EmojiReact` inserts idempotent, preventing duplicate-key
+    failures during federation retries.
+
+ -  Upgraded Fedify to 1.10.4.
+
+[#394]: https://github.com/fedify-dev/hollo/issues/394
+
+
+Version 0.7.5
+-------------
+
+Released on March 3, 2026.
+
+ -  Fixed a bug where posts from blocked accounts could still appear in
+    timeline inboxes (`/api/v1/timelines/home` and list timelines) when
+    `TIMELINE_INBOXES` was enabled.  Timeline filtering now consistently
+    excludes blocked accounts, including shared posts and replies related
+    to blocked accounts.
+
+
+Version 0.7.4
+-------------
+
+Released on February 24, 2026.
+
+ -  Fixed a federation interoperability bug where follow requests to some
+    Bonfire instances could remain pending even after receiving `Accept` or
+    `Reject` activities.  Inbox follow handlers now fall back to resolving the
+    embedded `Follow` object (with `crossOrigin: "trust"`) and match by actor
+    when the `object` ID does not match Hollo's stored follow IRI.  [[#373]]
+
+ -  Fixed a bug where the local account's `followingCount` was not updated
+    when an `Accept` activity was processed via the fallback path that resolves
+    the embedded `Follow` object (Path B).  The handler was incorrectly passing
+    the accepting actor's account ID to `updateAccountStats` instead of the
+    local follower's account ID.  [[#374]]
+
+[#373]: https://github.com/fedify-dev/hollo/issues/373
+[#374]: https://github.com/fedify-dev/hollo/issues/374
+
+
+Version 0.7.3
+-------------
+
+Released on February 23, 2026.
+
+ -  Temporarily changed Fedify's `firstKnock` setting to
+    `draft-cavage-http-signatures-12` for outbound inbox deliveries as a
+    compatibility workaround for Bonfire's current signature handling.
+    This is intended to be reverted to Fedify's default RFC 9421-first
+    behavior after the Bonfire fix is released.
+    [[bonfire-networks/activity_pub#8]]
+
+[bonfire-networks/activity_pub#8]: https://github.com/bonfire-networks/activity_pub/issues/8
+
+
+Version 0.7.2
+-------------
+
+Released on February 10, 2026.
+
+ -  Fixed a security vulnerability where DMs and followers-only posts were
+    exposed through the ActivityPub outbox endpoint without authorization.
+    The outbox now only serves public and unlisted posts.  Any unauthenticated
+    request to the outbox could previously retrieve all posts regardless of
+    their visibility setting.  [[CVE-2026-25808]]
+
+
+Version 0.7.1
+-------------
+
+Released on February 4, 2026.
+
+ -  Fixed emoji reaction notifications not displaying emoji information in
+    Mastodon-compatible clients. The `/api/v1/notifications` endpoint now
+    includes top-level `emoji` and `emoji_url` fields for `emoji_reaction`
+    notifications, compatible with Pleroma/Akkoma clients like Phanpy.
+    [[#358]]
+
+[#358]: https://github.com/fedify-dev/hollo/issues/358
+
+
 Version 0.7.0
 -------------
 
@@ -178,6 +286,20 @@ Released on January 24, 2026.
 [#296]: https://github.com/fedify-dev/hollo/pull/296
 [#333]: https://github.com/fedify-dev/hollo/pull/333
 [#334]: https://github.com/fedify-dev/hollo/pull/334
+
+
+Version 0.6.20
+--------------
+
+Released on February 10, 2026.
+
+ -  Fixed a security vulnerability where DMs and followers-only posts were
+    exposed through the ActivityPub outbox endpoint without authorization.
+    The outbox now only serves public and unlisted posts.  Any unauthenticated
+    request to the outbox could previously retrieve all posts regardless of
+    their visibility setting.  [[CVE-2026-25808]]
+
+[CVE-2026-25808]: https://github.com/fedify-dev/hollo/security/advisories/GHSA-6r2w-3pcj-v4v5
 
 
 Version 0.6.19
