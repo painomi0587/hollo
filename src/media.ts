@@ -80,9 +80,10 @@ export function calculateThumbnailSize(
 export async function makeVideoScreenshot(
   videoData: Uint8Array,
 ): Promise<Uint8Array> {
-  const tmpDir = await mkdtemp(join(tmpdir(), "hollo-"));
-  const inFile = join(tmpDir, "video");
+  let tmpDir: string | undefined;
   try {
+    tmpDir = await mkdtemp(join(tmpdir(), "hollo-"));
+    const inFile = join(tmpDir, "video");
     await writeFile(inFile, videoData);
     const resultBuffer: Buffer = await new Promise((resolve) => {
       const process = spawn("ffmpeg", [
@@ -140,12 +141,14 @@ export async function makeVideoScreenshot(
     });
     return defaultScreenshot;
   } finally {
-    try {
-      await rm(tmpDir, { recursive: true, force: true });
-    } catch (cleanupError) {
-      logger.warn("Failed to clean up temporary directory: {error}", {
-        error: cleanupError,
-      });
+    if (tmpDir) {
+      try {
+        await rm(tmpDir, { recursive: true, force: true });
+      } catch (cleanupError) {
+        logger.warn("Failed to clean up temporary directory: {error}", {
+          error: cleanupError,
+        });
+      }
     }
   }
 }
