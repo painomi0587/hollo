@@ -86,6 +86,19 @@ To be released.
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 
+Version 0.7.7
+-------------
+
+Released on March 13, 2026.
+
+ -  Fixed video thumbnail generation failing for some MP4/MOV files by writing
+    the video data to a temporary file instead of piping it via stdin (`pipe:0`),
+    which does not support seeking.  [[#397], [#398] by NTSK]
+
+[#397]: https://github.com/fedify-dev/hollo/issues/397
+[#398]: https://github.com/fedify-dev/hollo/pull/398
+
+
 Version 0.7.6
 -------------
 
