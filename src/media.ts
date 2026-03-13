@@ -103,9 +103,6 @@ export async function makeVideoScreenshot(
         logger.error(
           "Could not build pipes to ffmpeg, can't create a video screenshot",
         );
-        logger.error("ffmpeg output: {stderr}", {
-          stderr: Buffer.concat(stderrChunks).toString(),
-        });
         resolve(defaultScreenshot);
         return;
       }
