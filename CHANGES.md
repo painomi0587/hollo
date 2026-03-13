@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.7
 -------------
 
-To be released.
+Released on March 13, 2026.
 
  -  Fixed video thumbnail generation failing for some MP4/MOV files by writing
     the video data to a temporary file instead of piping it via stdin (`pipe:0`),
