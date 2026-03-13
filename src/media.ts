@@ -140,6 +140,12 @@ export async function makeVideoScreenshot(
     });
     return defaultScreenshot;
   } finally {
-    await rm(tmpDir, { recursive: true, force: true });
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch (cleanupError) {
+      logger.warn("Failed to clean up temporary directory: {error}", {
+        error: cleanupError,
+      });
+    }
   }
 }
