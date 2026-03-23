@@ -79,7 +79,7 @@ To be released.
     emoji reaction/unreaction, follow request lifecycle messages,
     block/unblock, and post updates triggered by replies and poll votes.
 
- -  Upgraded Fedify to 2.0.6.
+ -  Upgraded Fedify to 2.0.7.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
