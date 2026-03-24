@@ -1,3 +1,4 @@
+import type { UnverifiedActivityHandler } from "@fedify/fedify";
 import {
   Accept,
   Activity,
@@ -56,8 +57,24 @@ import { isPost } from "./post";
 
 const inboxLogger = getLogger(["hollo", "federation", "inbox"]);
 
+export const onUnverifiedActivity: UnverifiedActivityHandler<void> = (
+  _ctx,
+  activity,
+  reason,
+) => {
+  if (
+    activity instanceof Delete &&
+    reason.type === "keyFetchError" &&
+    "status" in reason.result &&
+    reason.result.status === 410
+  ) {
+    return new Response(null, { status: 202 });
+  }
+};
+
 federation
   .setInboxListeners("/@{identifier}/inbox", "/inbox")
+  .onUnverifiedActivity(onUnverifiedActivity)
   .setSharedKeyDispatcher(async (_) => {
     const anyOwner = await db.query.accountOwners.findFirst();
     return anyOwner == null ? null : { username: anyOwner.handle };

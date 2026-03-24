@@ -1,3 +1,5 @@
+import type { UnverifiedActivityReason } from "@fedify/fedify";
+import { Delete, Follow } from "@fedify/vocab";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanDatabase } from "../../tests/helpers";
@@ -5,7 +7,7 @@ import { createAccount } from "../../tests/helpers/oauth";
 import db from "../db";
 import * as Schema from "../schema";
 import type { Uuid } from "../uuid";
-import { onOutboxPermanentFailure } from "./index";
+import { onOutboxPermanentFailure, onUnverifiedActivity } from "./index";
 
 async function createRemoteAccount(
   username: string,
@@ -57,6 +59,17 @@ async function createFollow(
     followerId,
     approved: new Date(),
   });
+}
+
+function createKeyFetchErrorReason(status: number): UnverifiedActivityReason {
+  return {
+    type: "keyFetchError",
+    keyId: new URL("https://remote.test/@alice#main-key"),
+    result: {
+      status,
+      response: new Response(null, { status }),
+    },
+  };
 }
 
 describe("onOutboxPermanentFailure", () => {
@@ -291,5 +304,85 @@ describe("onOutboxPermanentFailure", () => {
 
       expect(true).toBe(true);
     });
+  });
+});
+
+describe("onUnverifiedActivity", () => {
+  it("should acknowledge Delete activities whose actor key returns 410 Gone", async () => {
+    expect.assertions(1);
+
+    const response = await onUnverifiedActivity(
+      null as never,
+      new Delete({
+        actor: new URL("https://remote.test/@alice"),
+        object: new URL("https://remote.test/@alice"),
+      }),
+      createKeyFetchErrorReason(410),
+    );
+
+    expect(response?.status).toBe(202);
+  });
+
+  it("should ignore Delete activities whose actor key returns 404", async () => {
+    expect.assertions(1);
+
+    const response = await onUnverifiedActivity(
+      null as never,
+      new Delete({
+        actor: new URL("https://remote.test/@alice"),
+        object: new URL("https://remote.test/@alice"),
+      }),
+      createKeyFetchErrorReason(404),
+    );
+
+    expect(response).toBeUndefined();
+  });
+
+  it("should ignore non-Delete activities even if the key fetch returns 410", async () => {
+    expect.assertions(1);
+
+    const response = await onUnverifiedActivity(
+      null as never,
+      new Follow({
+        actor: new URL("https://remote.test/@alice"),
+        object: new URL("https://hollo.test/@owner"),
+      }),
+      createKeyFetchErrorReason(410),
+    );
+
+    expect(response).toBeUndefined();
+  });
+
+  it("should ignore invalid signatures", async () => {
+    expect.assertions(1);
+
+    const response = await onUnverifiedActivity(
+      null as never,
+      new Delete({
+        actor: new URL("https://remote.test/@alice"),
+        object: new URL("https://remote.test/@alice"),
+      }),
+      {
+        type: "invalidSignature",
+        keyId: new URL("https://remote.test/@alice#main-key"),
+      },
+    );
+
+    expect(response).toBeUndefined();
+  });
+
+  it("should ignore unsigned activities", async () => {
+    expect.assertions(1);
+
+    const response = await onUnverifiedActivity(
+      null as never,
+      new Delete({
+        actor: new URL("https://remote.test/@alice"),
+        object: new URL("https://remote.test/@alice"),
+      }),
+      { type: "noSignature" },
+    );
+
+    expect(response).toBeUndefined();
   });
 });

@@ -67,6 +67,12 @@ To be released.
         associated follows, mentions, likes, etc. via cascade) since the
         actor is explicitly marked as permanently gone.
 
+ -  Improved inbox handling for deleted remote actors using Fedify 2.1.0's
+    unverified activity hooks.  Hollo now acknowledges unverifiable `Delete`
+    activities with `202 Accepted` when the signing key fetch fails with
+    `410 Gone`, preventing repeated delivery retries for actors that have
+    already been permanently deleted.
+
  -  Added `FEDIFY_DEBUG` environment variable to enable the [Fedify debugger],
     an embedded real-time dashboard for inspecting ActivityPub traces and
     activities.  When enabled, the debug dashboard is accessible at
@@ -79,7 +85,7 @@ To be released.
     emoji reaction/unreaction, follow request lifecycle messages,
     block/unblock, and post updates triggered by replies and poll votes.
 
- -  Upgraded Fedify to 2.0.7.
+ -  Upgraded Fedify to 2.1.0.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
