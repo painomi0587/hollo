@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.8
 -------------
 
-To be released.
+Released on March 27, 2026.
 
  -  Upgraded Fedify to 1.10.5 for security reasons.  [[CVE-2026-34148]]
 
