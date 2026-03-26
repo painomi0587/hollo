@@ -6,6 +6,10 @@ Version 0.7.8
 
 To be released.
 
+ -  Upgraded Fedify to 1.10.5 for security reasons.  [[CVE-2026-34148]]
+
+[CVE-2026-34148]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-gm9m-gwc4-hwgp
+
 
 Version 0.7.7
 -------------
