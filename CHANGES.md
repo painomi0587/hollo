@@ -6,6 +6,16 @@ Version 0.7.9
 
 To be released.
 
+ -  Reduced the risk of long-running PostgreSQL transactions during federation
+    processing.  Federation inbox handlers and remote actor post imports no
+    longer wrap remote post/account persistence in explicit transactions, which
+    could otherwise stay open while fetching remote ActivityPub objects,
+    preview cards, and media attachments.  This should reduce `INSERT waiting`
+    pile-ups and improve resilience when remote servers are slow or
+    unresponsive.  [[#411]]
+
+[#411]: https://github.com/fedify-dev/hollo/issues/411
+
 
 Version 0.7.8
 -------------
