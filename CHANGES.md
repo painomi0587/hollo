@@ -14,7 +14,11 @@ To be released.
     pile-ups and improve resilience when remote servers are slow or
     unresponsive.  [[#411]]
 
+ -  Fixed a bug where timeline markers hadn't allowed partial updates.
+    [[#412] by Nicole Mikołajczyk]
+
 [#411]: https://github.com/fedify-dev/hollo/issues/411
+[#412]: https://github.com/fedify-dev/hollo/pull/412
 
 
 Version 0.7.8
