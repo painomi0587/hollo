@@ -1,10 +1,20 @@
 import type { Medium } from "../schema";
 
+function normalizeAttachmentType(type: string): string {
+  if (["image", "video", "audio", "gifv", "unknown"].includes(type)) {
+    return type;
+  }
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  return "unknown";
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: JSON
 export function serializeMedium(medium: Medium): Record<string, any> {
   return {
     id: medium.id,
-    type: medium.type.replace(/\/.*$/, ""),
+    type: normalizeAttachmentType(medium.type),
     url: medium.url,
     preview_url: medium.thumbnailUrl,
     remote_url: null,

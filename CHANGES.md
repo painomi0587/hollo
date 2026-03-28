@@ -17,8 +17,15 @@ To be released.
  -  Fixed a bug where timeline markers hadn't allowed partial updates.
     [[#412] by Nicole Mikołajczyk]
 
+ -  Fixed a Mastodon API compatibility bug where some serialized statuses had
+    emitted `null` mention URLs or unsupported attachment types, which could
+    break rendering in Moshidon custom lists.  Mention URLs now fall back to
+    the account IRI, and unsupported media types are normalized to
+    `unknown`.  [[#414]]
+
 [#411]: https://github.com/fedify-dev/hollo/issues/411
 [#412]: https://github.com/fedify-dev/hollo/pull/412
+[#414]: https://github.com/fedify-dev/hollo/issues/414
 
 
 Version 0.7.8
