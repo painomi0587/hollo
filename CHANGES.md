@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.9
 -------------
 
-To be released.
+Released on March 29, 2026.
 
  -  Reduced the risk of long-running PostgreSQL transactions during federation
     processing.  Federation inbox handlers and remote actor post imports no
