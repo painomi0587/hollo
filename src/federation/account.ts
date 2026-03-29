@@ -271,16 +271,14 @@ export async function persistAccountPosts(
       } else if (activity instanceof Announce) {
         const item = await activity.getObject(options);
         if (!isPost(item)) continue;
-        await db.transaction(async (tx) => {
-          const post = await persistSharingPost(tx, activity, item, baseUrl, {
-            ...options,
-            account,
-          });
-          if (post?.sharingId != null) {
-            await updatePostStats(tx, { id: post.sharingId });
-          }
-          if (post != null) i++;
+        const post = await persistSharingPost(db, activity, item, baseUrl, {
+          ...options,
+          account,
         });
+        if (post?.sharingId != null) {
+          await updatePostStats(db, { id: post.sharingId });
+        }
+        if (post != null) i++;
       }
       if (i >= fetchPosts) break;
     }

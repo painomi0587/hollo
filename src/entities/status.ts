@@ -343,7 +343,7 @@ export function serializePost(
     mentions: post.mentions.map((mention) => ({
       id: mention.accountId,
       username: mention.account.handle.replaceAll(/(?:^@)|(?:@[^@]+$)/g, ""),
-      url: mention.account.url,
+      url: mention.account.url ?? mention.account.iri,
       acct:
         mention.account.owner == null
           ? mention.account.handle.replace(/^@/, "")
