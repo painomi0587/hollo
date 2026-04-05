@@ -424,13 +424,12 @@ export async function onPostCreated(
 ): Promise<void> {
   const object = await create.getObject();
   if (!isPost(object)) return;
-  const post = await db.transaction(async (tx) => {
-    const post = await persistPost(tx, object, ctx.origin, ctx);
-    if (post?.replyTargetId != null) {
-      await updatePostStats(tx, { id: post.replyTargetId });
-    }
-    return post;
-  });
+  // Avoid wrapping persistPost() in an explicit transaction.
+  // It may fetch remote ActivityPub objects, preview cards, and media files.
+  const post = await persistPost(db, object, ctx.origin, ctx);
+  if (post?.replyTargetId != null) {
+    await updatePostStats(db, { id: post.replyTargetId });
+  }
 
   // Create status notification for reply target author (if this is a reply)
   // and mention notifications for other mentioned local users
@@ -586,19 +585,10 @@ export async function onPostShared(
 ): Promise<void> {
   const object = await announce.getObject();
   if (!isPost(object)) return;
-  const post = await db.transaction(async (tx) => {
-    const post = await persistSharingPost(
-      tx,
-      announce,
-      object,
-      ctx.origin,
-      ctx,
-    );
-    if (post?.sharingId != null) {
-      await updatePostStats(tx, { id: post.sharingId });
-    }
-    return post;
-  });
+  const post = await persistSharingPost(db, announce, object, ctx.origin, ctx);
+  if (post?.sharingId != null) {
+    await updatePostStats(db, { id: post.sharingId });
+  }
   if (post?.sharing?.account?.owner != null) {
     await ctx.forwardActivity(
       { username: post.sharing.account.owner.handle },
@@ -669,16 +659,14 @@ export async function onPostPinned(
   const accountList = await db.query.accounts.findMany({
     where: eq(accounts.featuredUrl, add.targetId.href),
   });
-  await db.transaction(async (tx) => {
-    const post = await persistPost(tx, object, ctx.origin, ctx);
-    if (post == null) return;
-    for (const account of accountList) {
-      await tx.insert(pinnedPosts).values({
-        postId: post.id,
-        accountId: account.id,
-      } satisfies NewPinnedPost);
-    }
-  });
+  const post = await persistPost(db, object, ctx.origin, ctx);
+  if (post == null) return;
+  for (const account of accountList) {
+    await db.insert(pinnedPosts).values({
+      postId: post.id,
+      accountId: account.id,
+    } satisfies NewPinnedPost);
+  }
 }
 
 export async function onPostUnpinned(
@@ -691,20 +679,18 @@ export async function onPostUnpinned(
   const accountList = await db.query.accounts.findMany({
     where: eq(accounts.featuredUrl, remove.targetId.href),
   });
-  await db.transaction(async (tx) => {
-    const post = await persistPost(tx, object, ctx.origin, ctx);
-    if (post == null) return;
-    for (const account of accountList) {
-      await tx
-        .delete(pinnedPosts)
-        .where(
-          and(
-            eq(pinnedPosts.postId, post.id),
-            eq(pinnedPosts.accountId, account.id),
-          ),
-        );
-    }
-  });
+  const post = await persistPost(db, object, ctx.origin, ctx);
+  if (post == null) return;
+  for (const account of accountList) {
+    await db
+      .delete(pinnedPosts)
+      .where(
+        and(
+          eq(pinnedPosts.postId, post.id),
+          eq(pinnedPosts.accountId, account.id),
+        ),
+      );
+  }
 }
 
 export async function onLiked(
