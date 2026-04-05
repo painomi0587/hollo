@@ -30,7 +30,7 @@ app.post(
   scopeRequired(["write:statuses"]),
   zValidator(
     "json",
-    z.record(
+    z.partialRecord(
       z.enum(["notifications", "home"]),
       z.object({
         last_read_id: z.string(),

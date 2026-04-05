@@ -1,6 +1,43 @@
 Hollo changelog
 ===============
 
+Version 0.7.9
+-------------
+
+Released on March 29, 2026.
+
+ -  Reduced the risk of long-running PostgreSQL transactions during federation
+    processing.  Federation inbox handlers and remote actor post imports no
+    longer wrap remote post/account persistence in explicit transactions, which
+    could otherwise stay open while fetching remote ActivityPub objects,
+    preview cards, and media attachments.  This should reduce `INSERT waiting`
+    pile-ups and improve resilience when remote servers are slow or
+    unresponsive.  [[#411]]
+
+ -  Fixed a bug where timeline markers hadn't allowed partial updates.
+    [[#412] by Nicole Mikołajczyk]
+
+ -  Fixed a Mastodon API compatibility bug where some serialized statuses had
+    emitted `null` mention URLs or unsupported attachment types, which could
+    break rendering in Moshidon custom lists.  Mention URLs now fall back to
+    the account IRI, and unsupported media types are normalized to
+    `unknown`.  [[#414]]
+
+[#411]: https://github.com/fedify-dev/hollo/issues/411
+[#412]: https://github.com/fedify-dev/hollo/pull/412
+[#414]: https://github.com/fedify-dev/hollo/issues/414
+
+
+Version 0.7.8
+-------------
+
+Released on March 27, 2026.
+
+ -  Upgraded Fedify to 1.10.5 for security reasons.  [[CVE-2026-34148]]
+
+[CVE-2026-34148]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-gm9m-gwc4-hwgp
+
+
 Version 0.7.7
 -------------
 
