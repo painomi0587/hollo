@@ -85,11 +85,20 @@ To be released.
     emoji reaction/unreaction, follow request lifecycle messages,
     block/unblock, and post updates triggered by replies and poll votes.
 
- -  Upgraded Fedify to 2.1.1.
+ -  Upgraded Fedify to 2.1.5.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
 [Fedify debugger]: https://fedify.dev/manual/debug
+
+
+Version 0.7.10
+--------------
+
+Released on April 8, 2026.
+
+ -  Upgraded Fedify to 1.10.8 for performance improvements and interoperability
+    fixes.
 
 
 Version 0.7.9
