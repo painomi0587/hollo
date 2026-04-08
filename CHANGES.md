@@ -6,6 +6,9 @@ Version 0.7.10
 
 To be released.
 
+ -  Upgraded Fedify to 1.10.8 for performance improvements and interoperability
+    fixes.
+
 
 Version 0.7.9
 -------------

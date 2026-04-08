@@ -12,11 +12,11 @@ importers:
         specifier: ^3.966.0
         version: 3.966.0
       '@fedify/fedify':
-        specifier: ~1.10.5
-        version: 1.10.5
+        specifier: ~1.10.8
+        version: 1.10.8
       '@fedify/hono':
-        specifier: ~1.10.5
-        version: 1.10.5(@fedify/fedify@1.10.5)(hono@4.11.4)
+        specifier: ~1.10.8
+        version: 1.10.8(@fedify/fedify@1.10.8)(hono@4.11.4)
       '@fedify/markdown-it-hashtag':
         specifier: ~0.3.0
         version: 0.3.0
@@ -24,8 +24,8 @@ importers:
         specifier: ~0.3.0
         version: 0.3.0
       '@fedify/postgres':
-        specifier: ~1.10.5
-        version: 1.10.5(@fedify/fedify@1.10.5)(postgres@3.4.8)
+        specifier: ~1.10.8
+        version: 1.10.8(@fedify/fedify@1.10.8)(postgres@3.4.8)
       '@hexagon/base64':
         specifier: ^2.0.4
         version: 2.0.4
@@ -1325,14 +1325,14 @@ packages:
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
     engines: {node: '>=14'}
 
-  '@fedify/fedify@1.10.5':
-    resolution: {integrity: sha512-9WUJ5qBGe1su+5WbWHpdv8RAWLvPKa2JM3f4ToLlDnTFTfE5VQi+602IlCmxsYoU7ffHdkxsqjPtACo4ha8V9w==}
+  '@fedify/fedify@1.10.8':
+    resolution: {integrity: sha512-h339lDbV7/tAzd00F2iacXqoytW2l8zB+MtSR8pgWs6jb7pueXuwE9eTFyvCBKYlw8d32UknUctVErtuUnebzw==}
     engines: {bun: '>=1.1.0', deno: '>=2.0.0', node: '>=22.0.0'}
 
-  '@fedify/hono@1.10.5':
-    resolution: {integrity: sha512-6m98pX+uwYZom7aSwLsiPM5xaBFXNWZhEdBcqUFwaPSaS99MeWBjzAZ5yrTkrz80lS0VBWBlm4qJ34YFIX7FeA==}
+  '@fedify/hono@1.10.8':
+    resolution: {integrity: sha512-D4rY9G85hC5+RdOT1voLNn33riHpyefJDf0zzu0w/FxdbvjNT1b69YMpeg5Y1IIpzyEvRSOQa8szyKoI9LRMaQ==}
     peerDependencies:
-      '@fedify/fedify': ^1.10.5
+      '@fedify/fedify': ^1.10.8
       hono: ^4.0.0
 
   '@fedify/markdown-it-hashtag@0.3.0':
@@ -1341,10 +1341,10 @@ packages:
   '@fedify/markdown-it-mention@0.3.0':
     resolution: {integrity: sha512-4uVELsxh9AW0hzC6BVFqN59YWj6M/p6AZpwb/CQDjvcinfHyQp2yYtGDV4fBgsE5WC/ukpvU1pBNH20ts8TK4w==}
 
-  '@fedify/postgres@1.10.5':
-    resolution: {integrity: sha512-muwEMBPP1lWVl24Fg4it+CPorYCQ0evVRN3A0pavGTFT3YZvdqJDNgzaotWv9Jj5X+RLIDXoU4H4xHQnKcxCWw==}
+  '@fedify/postgres@1.10.8':
+    resolution: {integrity: sha512-c3u/d/6Bh6/ClGeuRM8GCnQiQwdKlfkJCmh/tD7Ffilb9sT1wM8TfNj35klE8Ngud6Rc35+QicMCrTDeYvZG2A==}
     peerDependencies:
-      '@fedify/fedify': ^1.10.5
+      '@fedify/fedify': ^1.10.8
       postgres: ^3.4.7
 
   '@hexagon/base64@2.0.4':
@@ -6670,7 +6670,7 @@ snapshots:
 
   '@fastify/busboy@2.1.1': {}
 
-  '@fedify/fedify@1.10.5':
+  '@fedify/fedify@1.10.8':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       '@js-temporal/polyfill': 0.5.1
@@ -6693,9 +6693,9 @@ snapshots:
       url-template: 3.1.1
       urlpattern-polyfill: 10.1.0
 
-  '@fedify/hono@1.10.5(@fedify/fedify@1.10.5)(hono@4.11.4)':
+  '@fedify/hono@1.10.8(@fedify/fedify@1.10.8)(hono@4.11.4)':
     dependencies:
-      '@fedify/fedify': 1.10.5
+      '@fedify/fedify': 1.10.8
       hono: 4.11.4
 
   '@fedify/markdown-it-hashtag@0.3.0':
@@ -6706,9 +6706,9 @@ snapshots:
     dependencies:
       markdown-it: 14.1.0
 
-  '@fedify/postgres@1.10.5(@fedify/fedify@1.10.5)(postgres@3.4.8)':
+  '@fedify/postgres@1.10.8(@fedify/fedify@1.10.8)(postgres@3.4.8)':
     dependencies:
-      '@fedify/fedify': 1.10.5
+      '@fedify/fedify': 1.10.8
       '@js-temporal/polyfill': 0.5.1
       '@logtape/logtape': 1.3.6
       postgres: 3.4.8
