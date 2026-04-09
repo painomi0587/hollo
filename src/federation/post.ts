@@ -8,7 +8,6 @@ import {
   Create,
   Delete,
   Document,
-  type DocumentLoader,
   Emoji,
   Hashtag,
   Image,
@@ -68,7 +67,11 @@ import {
 } from "../schema";
 import { extractPreviewLink } from "../text";
 import { type Uuid, uuidv7 } from "../uuid";
-import { persistAccount, persistAccountByIri } from "./account";
+import {
+  type PersistAccountOptions,
+  persistAccount,
+  persistAccountByIri,
+} from "./account";
 import { iterateCollection } from "./collection";
 import { toDate, toTemporalInstant } from "./date";
 import { toEmoji } from "./emoji";
@@ -95,12 +98,9 @@ export async function persistPost(
   >,
   object: ASPost,
   baseUrl: URL | string,
-  options: {
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
+  options: PersistAccountOptions & {
     account?: Account & { owner: AccountOwner | null };
     replyTarget?: Post;
-    skipUpdate?: boolean;
   } = {},
 ): Promise<
   | (Post & {
@@ -481,10 +481,8 @@ export async function persistSharingPost(
   announce: Announce,
   object: ASPost,
   baseUrl: URL | string,
-  options: {
+  options: PersistAccountOptions & {
     account?: Account & { owner: AccountOwner | null };
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
   } = {},
 ): Promise<
   | (Post & {
@@ -567,9 +565,7 @@ export async function persistPollVote(
   >,
   object: Note,
   baseUrl: URL | string,
-  options: {
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
+  options: PersistAccountOptions & {
     account?: Account;
   } = {},
 ): Promise<PollVote | null> {

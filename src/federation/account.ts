@@ -16,6 +16,8 @@ import {
   Reject,
   Undo,
 } from "@fedify/vocab";
+import { lookupWebFinger } from "@fedify/webfinger";
+import { getLogger } from "@logtape/logtape";
 import {
   and,
   count,
@@ -23,6 +25,7 @@ import {
   eq,
   inArray,
   isNotNull,
+  ne,
   sql,
 } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
@@ -38,6 +41,8 @@ import {
   persistSharingPost,
   updatePostStats,
 } from "./post";
+
+const logger = getLogger(["hollo", "federation", "account"]);
 
 export const REMOTE_ACTOR_FETCH_POSTS = Number.parseInt(
   // biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
@@ -57,6 +62,121 @@ export const REFRESH_ACTORS_ON_INTERACTION =
   refreshOnInteractionEnv === "true" ||
   refreshOnInteractionEnv === "1" ||
   refreshOnInteractionEnv === "yes";
+
+export type PersistAccountHandleConflictPolicy = "throw" | "skip";
+
+export class AccountHandleConflictError extends Error {
+  readonly actorIri: string;
+  readonly handle: string;
+  readonly conflictingAccount: schema.Account & {
+    owner: schema.AccountOwner | null;
+  };
+  readonly reason: "local" | "unverified";
+
+  constructor(
+    actorIri: string,
+    handle: string,
+    conflictingAccount: schema.Account & {
+      owner: schema.AccountOwner | null;
+    },
+    reason: "local" | "unverified",
+  ) {
+    super(
+      reason === "local"
+        ? `Refusing to reassign canonical handle ${handle} from local account ${conflictingAccount.iri} to remote actor ${actorIri}.`
+        : `Could not verify that remote actor ${actorIri} canonically owns ${handle}; stale row ${conflictingAccount.iri} was kept.`,
+    );
+    this.name = "AccountHandleConflictError";
+    this.actorIri = actorIri;
+    this.handle = handle;
+    this.conflictingAccount = conflictingAccount;
+    this.reason = reason;
+  }
+}
+
+export type PersistAccountOptions = {
+  contextLoader?: DocumentLoader;
+  documentLoader?: DocumentLoader;
+  skipUpdate?: boolean;
+  handleConflictPolicy?: PersistAccountHandleConflictPolicy;
+};
+
+function getAcctUri(handle: string): string {
+  return `acct:${handle.replace(/^@/, "")}`;
+}
+
+function isActivityStreamsSelfLink(link: {
+  rel: string;
+  type?: string;
+  href?: string;
+}): boolean {
+  return (
+    link.rel === "self" &&
+    link.href != null &&
+    (link.type === "application/activity+json" ||
+      link.type?.match(
+        /^application\/ld\+json\s*;\s*profile="https:\/\/www\.w3\.org\/ns\/activitystreams"$/,
+      ) != null)
+  );
+}
+
+async function verifyCanonicalHandleOwnership(
+  handle: string,
+  actorIri: string,
+): Promise<boolean> {
+  const acctUri = getAcctUri(handle);
+  const descriptor = await lookupWebFinger(acctUri);
+  if (descriptor == null || descriptor.subject !== acctUri) {
+    return false;
+  }
+  return (
+    descriptor.aliases?.includes(actorIri) === true ||
+    descriptor.links?.some(
+      (link) => isActivityStreamsSelfLink(link) && link.href === actorIri,
+    ) === true
+  );
+}
+
+async function deleteRemoteAccountForHandleReassignment(
+  db: PgDatabase<
+    PostgresJsQueryResultHKT,
+    typeof schema,
+    ExtractTablesWithRelations<typeof schema>
+  >,
+  account: schema.Account,
+): Promise<void> {
+  const affectedFollowings = await db
+    .select({ followingId: schema.follows.followingId })
+    .from(schema.follows)
+    .where(eq(schema.follows.followerId, account.id));
+  const affectedFollowers = await db
+    .select({ followerId: schema.follows.followerId })
+    .from(schema.follows)
+    .where(eq(schema.follows.followingId, account.id));
+  await db
+    .update(schema.accounts)
+    .set({ successorId: null })
+    .where(eq(schema.accounts.successorId, account.id));
+  await db.delete(schema.accounts).where(eq(schema.accounts.id, account.id));
+  for (const { followingId } of affectedFollowings) {
+    await updateAccountStats(db, { id: followingId });
+  }
+  for (const { followerId } of affectedFollowers) {
+    await updateAccountStats(db, { id: followerId });
+  }
+}
+
+function skipAccountConflict(error: AccountHandleConflictError): void {
+  logger.warning(
+    "Skipping account refresh for actor {actorIri} with canonical handle {handle}; conflicting account {conflictingIri} remains because {reason}.",
+    {
+      actorIri: error.actorIri,
+      handle: error.handle,
+      conflictingIri: error.conflictingAccount.iri,
+      reason: error.reason,
+    },
+  );
+}
 
 export function getFollowOrderingKey(
   followerIri: string,
@@ -80,11 +200,7 @@ export async function persistAccount(
   >,
   actor: Actor,
   baseUrl: string | URL,
-  options: {
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
-    skipUpdate?: boolean;
-  } = {},
+  options: PersistAccountOptions = {},
 ): Promise<(schema.Account & { owner: schema.AccountOwner | null }) | null> {
   const opts = { ...options, suppressError: true };
   if (
@@ -94,9 +210,10 @@ export async function persistAccount(
   ) {
     return null;
   }
+  const actorId = actor.id;
   const existingAccount = await db.query.accounts.findFirst({
     with: { owner: true },
-    where: eq(schema.accounts.iri, actor.id.href),
+    where: eq(schema.accounts.iri, actorId.href),
   });
   if (options.skipUpdate && existingAccount != null) return existingAccount;
   if (existingAccount?.owner != null) return existingAccount;
@@ -106,6 +223,42 @@ export async function persistAccount(
   } catch (e) {
     if (e instanceof TypeError) return null;
     throw e;
+  }
+  const conflictingAccount = await db.query.accounts.findFirst({
+    with: { owner: true },
+    where: and(
+      eq(schema.accounts.handle, handle),
+      ne(schema.accounts.iri, actorId.href),
+    ),
+  });
+  if (conflictingAccount?.owner != null) {
+    const error = new AccountHandleConflictError(
+      actorId.href,
+      handle,
+      conflictingAccount,
+      "local",
+    );
+    if (options.handleConflictPolicy === "skip") {
+      skipAccountConflict(error);
+      return existingAccount ?? null;
+    }
+    throw error;
+  }
+  if (
+    conflictingAccount != null &&
+    !(await verifyCanonicalHandleOwnership(handle, actorId.href))
+  ) {
+    const error = new AccountHandleConflictError(
+      actorId.href,
+      handle,
+      conflictingAccount,
+      "unverified",
+    );
+    if (options.handleConflictPolicy === "skip") {
+      skipAccountConflict(error);
+      return existingAccount ?? null;
+    }
+    throw error;
   }
   const avatar = await actor.getIcon(opts);
   const cover = await actor.getImage(opts);
@@ -143,7 +296,7 @@ export async function persistAccount(
       emojis[tag.name.toString()] = href;
     }
   }
-  const nodeInfo = await getNodeInfo(actor.id, {
+  const nodeInfo = await getNodeInfo(actorId, {
     parse: "best-effort",
   });
   const instanceValues: Omit<schema.NewInstance, "host"> = {
@@ -156,7 +309,7 @@ export async function persistAccount(
   await db
     .insert(schema.instances)
     .values({
-      host: actor.id.host,
+      host: actorId.host,
       ...instanceValues,
     })
     .onConflictDoUpdate({
@@ -183,27 +336,32 @@ export async function persistAccount(
     postsCount: (await actor.getOutbox(opts))?.totalItems ?? 0,
     successorId,
     aliases: actor?.aliasIds?.map((alias) => alias.href) ?? [],
-    instanceHost: actor.id.host,
+    instanceHost: actorId.host,
     fieldHtmls,
     emojis,
     published: toDate(actor.published),
     fetched: new Date(),
   };
-  await db
-    .insert(schema.accounts)
-    .values({
-      id: uuidv7(),
-      iri: actor.id.href,
-      ...values,
-    })
-    .onConflictDoUpdate({
-      target: schema.accounts.iri,
-      set: values,
-      setWhere: eq(schema.accounts.iri, actor.id.href),
-    });
+  await db.transaction(async (tx) => {
+    if (conflictingAccount != null) {
+      await deleteRemoteAccountForHandleReassignment(tx, conflictingAccount);
+    }
+    await tx
+      .insert(schema.accounts)
+      .values({
+        id: uuidv7(),
+        iri: actorId.href,
+        ...values,
+      })
+      .onConflictDoUpdate({
+        target: schema.accounts.iri,
+        set: values,
+        setWhere: eq(schema.accounts.iri, actorId.href),
+      });
+  });
   const account = await db.query.accounts.findFirst({
     with: { owner: true },
-    where: eq(schema.accounts.iri, actor.id.href),
+    where: eq(schema.accounts.iri, actorId.href),
   });
   if (account == null) return null;
   const [{ posts }] = await db
@@ -246,11 +404,7 @@ export async function persistAccountPosts(
   account: schema.Account & { owner: schema.AccountOwner | null },
   fetchPosts: number,
   baseUrl: URL | string,
-  options: {
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
-    suppressError?: boolean;
-  } = {},
+  options: PersistAccountOptions & { suppressError?: boolean } = {},
 ): Promise<void> {
   if (fetchPosts < 1) return;
   const actor = await lookupObject(account.iri, options);
@@ -293,10 +447,7 @@ export async function persistAccountByIri(
   >,
   iri: string,
   baseUrl: URL | string,
-  options: {
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
-  } = {},
+  options: PersistAccountOptions = {},
 ): Promise<schema.Account | null> {
   const account = await db.query.accounts.findFirst({
     where: eq(schema.accounts.iri, iri),
@@ -611,16 +762,16 @@ export function refreshActorAsync(
   >,
   account: schema.Account,
   baseUrl: URL | string,
-  options: {
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
-  } = {},
+  options: Omit<PersistAccountOptions, "handleConflictPolicy"> = {},
 ): void {
   // Fire-and-forget: don't await the promise
   lookupObject(account.iri, options)
     .then(async (actor) => {
       if (!isActor(actor) || actor.id == null) return;
-      await persistAccount(db, actor, baseUrl, options);
+      await persistAccount(db, actor, baseUrl, {
+        ...options,
+        handleConflictPolicy: "skip",
+      });
     })
     .catch(() => {
       // Silently ignore errors - refreshing actor metadata is not critical

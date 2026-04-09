@@ -32,6 +32,9 @@ importers:
       '@fedify/vocab':
         specifier: ^2.1.5
         version: 2.1.5
+      '@fedify/webfinger':
+        specifier: ^2.1.5
+        version: 2.1.5
       '@hexagon/base64':
         specifier: ^2.0.4
         version: 2.0.4

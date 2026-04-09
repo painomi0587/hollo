@@ -87,8 +87,18 @@ To be released.
 
  -  Upgraded Fedify to 2.1.5.
 
+ -  Fixed remote account force refresh and actor refresh getting stuck when a
+    canonical fediverse handle had moved to a new actor IRI while a stale
+    remote account row still claimed the old handle.  Hollo now verifies the
+    canonical handle owner via WebFinger, deletes the stale remote account and
+    its dependent data, and then updates or inserts the current actor.  When
+    the conflict cannot be verified safely, force refresh now shows an explicit
+    canonical handle conflict error instead of failing with a raw database
+    unique-constraint error.  [[#424]]
+
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
+[#424]: https://github.com/fedify-dev/hollo/issues/424
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 
