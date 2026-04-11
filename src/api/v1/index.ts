@@ -92,6 +92,28 @@ app.get("/announcements", (c) => {
   return c.json([]);
 });
 
+app.get("/trends/tags", (c) => {
+  return c.json([]);
+});
+
+app.get("/trends/statuses", (c) => {
+  return c.json([]);
+});
+
+app.get("/trends/links", (c) => {
+  return c.json([]);
+});
+
+// Mastodon clients also request /trends without a subpath,
+// which is equivalent to /trends/tags:
+app.get("/trends", (c) => {
+  return c.json([]);
+});
+
+app.get("/suggestions", (c) => {
+  return c.json([]);
+});
+
 app.get(
   "/favourites",
   tokenRequired,

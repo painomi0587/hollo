@@ -47,6 +47,10 @@ app.route("/notifications", notificationsRoutes);
 
 app.post("/media", tokenRequired, scopeRequired(["write:media"]), postMedia);
 
+app.get("/suggestions", (c) => {
+  return c.json([]);
+});
+
 app.get(
   "/search",
   tokenRequired,
