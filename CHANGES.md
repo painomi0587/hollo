@@ -100,12 +100,18 @@ To be released.
     endpoint now also applies its existing `tagged` query parameter to filter
     account timelines by hashtag.  [[#420]]
 
+ -  Added an account-level preference for whether content warnings should be
+    expanded by default.  The setting is available in the dashboard account
+    editor and is now returned from `GET /api/v1/preferences`, which helps
+    clients like Phanpy honor each account's preferred CW behavior.  [[#425]]
+
  -  Upgraded Fedify to 2.1.5.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
 [#420]: https://github.com/fedify-dev/hollo/issues/420
 [#424]: https://github.com/fedify-dev/hollo/issues/424
+[#425]: https://github.com/fedify-dev/hollo/issues/425
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 

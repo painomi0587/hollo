@@ -183,6 +183,7 @@ export const accountOwners = pgTable("account_owners", {
   visibility: postVisibilityEnum("visibility").notNull().default("public"),
   language: text("language").notNull().default("en"),
   discoverable: boolean().notNull().default(false),
+  expandSpoilers: boolean("expand_spoilers").notNull().default(false),
   themeColor: themeColorEnum("theme_color").notNull(),
 });
 

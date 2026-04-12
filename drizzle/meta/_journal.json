@@ -554,6 +554,13 @@
       "when": 1770422400000,
       "tag": "0078_add_quotes_count",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1775993648845,
+      "tag": "0079_account_owners_expand_spoilers",
+      "breakpoints": true
     }
   ]
 }

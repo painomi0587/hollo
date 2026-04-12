@@ -76,6 +76,7 @@ accounts.post("/", async (c) => {
   const bio = form.get("bio")?.toString()?.trim();
   const protected_ = form.get("protected") != null;
   const discoverable = form.get("discoverable") != null;
+  const expandSpoilers = form.get("expandSpoilers") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -92,6 +93,7 @@ accounts.post("/", async (c) => {
           bio,
           protected: protected_,
           discoverable,
+          expandSpoilers,
           language,
           visibility,
           themeColor,
@@ -161,6 +163,7 @@ accounts.post("/", async (c) => {
         visibility: visibility ?? "public",
         themeColor,
         discoverable,
+        expandSpoilers,
       })
       .returning();
     return [account[0], owner[0]];
@@ -217,7 +220,12 @@ function AccountListPage({ accountOwners }: AccountListPageProps) {
 accounts.get("/new", (c) => {
   return c.html(
     <NewAccountPage
-      values={{ language: "en", themeColor: "azure", news: true }}
+      values={{
+        language: "en",
+        themeColor: "azure",
+        news: true,
+        expandSpoilers: false,
+      }}
       officialAccount={HOLLO_OFFICIAL_ACCOUNT}
     />,
   );
@@ -280,6 +288,8 @@ function AccountPage(props: AccountPageProps) {
             props.values?.protected ?? props.accountOwner.account.protected,
           discoverable:
             props.values?.discoverable ?? props.accountOwner.discoverable,
+          expandSpoilers:
+            props.values?.expandSpoilers ?? props.accountOwner.expandSpoilers,
           language: props.values?.language ?? props.accountOwner.language,
           visibility: props.values?.visibility ?? props.accountOwner.visibility,
           themeColor: props.values?.themeColor ?? props.accountOwner.themeColor,
@@ -306,6 +316,7 @@ accounts.post("/:id", async (c) => {
   const bio = form.get("bio")?.toString()?.trim();
   const protected_ = form.get("protected") != null;
   const discoverable = form.get("discoverable") != null;
+  const expandSpoilers = form.get("expandSpoilers") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -322,6 +333,8 @@ accounts.post("/:id", async (c) => {
           name,
           bio,
           protected: protected_,
+          discoverable,
+          expandSpoilers,
           language,
           visibility,
           themeColor,
@@ -358,7 +371,14 @@ accounts.post("/:id", async (c) => {
       .where(eq(accountsTable.id, accountId));
     await tx
       .update(accountOwners)
-      .set({ bio, language, visibility, themeColor, discoverable })
+      .set({
+        bio,
+        language,
+        visibility,
+        themeColor,
+        discoverable,
+        expandSpoilers,
+      })
       .where(eq(accountOwners.id, accountId));
   });
   await fedCtx.sendActivity(

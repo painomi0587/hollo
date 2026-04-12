@@ -14,6 +14,7 @@ export interface AccountFormProps {
     bio?: string;
     protected?: boolean;
     discoverable?: boolean;
+    expandSpoilers?: boolean;
     language?: string;
     visibility?: PostVisibility;
     themeColor?: ThemeColor;
@@ -102,6 +103,18 @@ export function AccountForm(props: AccountFormProps) {
           />{" "}
           Allow your account to be discovered in the public directory
         </label>
+      </fieldset>
+      <fieldset>
+        <label>
+          <input
+            type="checkbox"
+            name="expandSpoilers"
+            value="true"
+            checked={props.values?.expandSpoilers}
+          />{" "}
+          Expand content warnings by default
+        </label>
+        <small>Some clients, like Phanpy, use this server preference.</small>
       </fieldset>
       <fieldset class="grid">
         <label>

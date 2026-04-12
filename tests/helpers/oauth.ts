@@ -28,6 +28,7 @@ export function bearerAuthorization(token: Token) {
 
 type createAccountOptions = {
   generateKeyPair?: boolean;
+  expandSpoilers?: boolean;
   username?: string;
 };
 
@@ -104,6 +105,7 @@ export async function createAccount(
         visibility: "public",
         themeColor: "amber",
         discoverable: false,
+        expandSpoilers: options.expandSpoilers ?? false,
       });
 
       return { id: accountId };
