@@ -566,6 +566,10 @@ app.get(
     }
     const query = c.req.valid("query");
     const limit = query.limit ?? 20;
+    const tagged =
+      query.tagged == null || query.tagged.trim() === ""
+        ? undefined
+        : `${query.tagged.startsWith("#") ? query.tagged : `#${query.tagged}`}`.toLowerCase();
     const following = await db
       .select({ id: follows.followingId })
       .from(follows)
@@ -666,6 +670,7 @@ app.get(
         query.only_media === "true"
           ? inArray(posts.id, db.select({ id: media.postId }).from(media))
           : undefined,
+        tagged == null ? undefined : sql`${posts.tags} ? ${tagged}`,
         query.max_id == null ? undefined : lt(posts.id, query.max_id),
         query.min_id == null ? undefined : gt(posts.id, query.min_id),
       ),

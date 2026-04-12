@@ -85,8 +85,6 @@ To be released.
     emoji reaction/unreaction, follow request lifecycle messages,
     block/unblock, and post updates triggered by replies and poll votes.
 
- -  Upgraded Fedify to 2.1.5.
-
  -  Fixed remote account force refresh and actor refresh getting stuck when a
     canonical fediverse handle had moved to a new actor IRI while a stale
     remote account row still claimed the old handle.  Hollo now verifies the
@@ -96,8 +94,17 @@ To be released.
     canonical handle conflict error instead of failing with a raw database
     unique-constraint error.  [[#424]]
 
+ -  Added profile-specific tagged post pages at `/:handle/tagged/:tag`, so
+    users can browse only posts from a given profile that use a particular
+    hashtag.  The Mastodon-compatible `GET /api/v1/accounts/:id/statuses`
+    endpoint now also applies its existing `tagged` query parameter to filter
+    account timelines by hashtag.  [[#420]]
+
+ -  Upgraded Fedify to 2.1.5.
+
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
+[#420]: https://github.com/fedify-dev/hollo/issues/420
 [#424]: https://github.com/fedify-dev/hollo/issues/424
 [Fedify debugger]: https://fedify.dev/manual/debug
 

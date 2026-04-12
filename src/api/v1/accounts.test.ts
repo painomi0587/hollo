@@ -8,7 +8,10 @@ import {
   getAccessToken,
 } from "../../../tests/helpers/oauth";
 
+import db from "../../db";
 import app from "../../index";
+import { posts } from "../../schema";
+import { uuidv7 } from "../../uuid";
 
 describe.sequential("/api/v1/accounts/verify_credentials", () => {
   let client: Awaited<ReturnType<typeof createOAuthApplication>>;
@@ -112,5 +115,78 @@ describe.sequential("/api/v1/accounts/verify_credentials", () => {
     expect(error).toMatchObject({
       error: "unauthorized",
     });
+  });
+});
+
+describe.sequential("/api/v1/accounts/:id/statuses", () => {
+  let client: Awaited<ReturnType<typeof createOAuthApplication>>;
+  let account: Awaited<ReturnType<typeof createAccount>>;
+
+  beforeEach(async () => {
+    await cleanDatabase();
+
+    account = await createAccount();
+    client = await createOAuthApplication({
+      scopes: ["read:statuses", "write"],
+    });
+  });
+
+  it("filters statuses by the tagged query parameter", async () => {
+    expect.assertions(6);
+
+    const accessToken = await getAccessToken(client, account, [
+      "read:statuses",
+    ]);
+    const matchingPostId = uuidv7();
+    const otherPostId = uuidv7();
+
+    await db.insert(posts).values([
+      {
+        id: matchingPostId,
+        iri: `https://hollo.test/@hollo/${matchingPostId}`,
+        type: "Note",
+        accountId: account.id,
+        visibility: "public",
+        content: "Tagged status",
+        contentHtml: "<p>Tagged status</p>",
+        tags: {
+          "#testtag": "https://hollo.test/tags/TestTag",
+        },
+        published: new Date(),
+      },
+      {
+        id: otherPostId,
+        iri: `https://hollo.test/@hollo/${otherPostId}`,
+        type: "Note",
+        accountId: account.id,
+        visibility: "public",
+        content: "Other status",
+        contentHtml: "<p>Other status</p>",
+        tags: {
+          "#somethingelse": "https://hollo.test/tags/SomethingElse",
+        },
+        published: new Date(),
+      },
+    ]);
+
+    const response = await app.request(
+      `/api/v1/accounts/${account.id}/statuses?tagged=TestTag`,
+      {
+        method: "GET",
+        headers: {
+          authorization: bearerAuthorization(accessToken),
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+
+    const json = await response.json();
+
+    expect(json).toHaveLength(1);
+    expect(json[0].id).toBe(matchingPostId);
+    expect(json[0].tags[0].name).toBe("testtag");
   });
 });
