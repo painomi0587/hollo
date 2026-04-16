@@ -36,6 +36,9 @@ interface Env {
 
 type MarkdownItPlugin = Parameters<MarkdownIt["use"]>[0];
 
+const FENCED_CODE_BLOCK_REGEXP = /(^|\n) {0,3}(?:`{3,}|~{3,})/;
+const INDENTED_CODE_BLOCK_REGEXP = /(^|\n)(?: {4}|\t)\S/;
+
 let shikiPluginPromise: Promise<MarkdownItPlugin> | undefined;
 
 async function getShikiPlugin(): Promise<MarkdownItPlugin> {
@@ -55,6 +58,12 @@ async function getShikiPlugin(): Promise<MarkdownItPlugin> {
   return await shikiPluginPromise;
 }
 
+function containsCodeBlock(text: string): boolean {
+  return (
+    FENCED_CODE_BLOCK_REGEXP.test(text) || INDENTED_CODE_BLOCK_REGEXP.test(text)
+  );
+}
+
 export async function formatText(
   db: PgDatabase<
     PostgresJsQueryResultHKT,
@@ -68,8 +77,6 @@ export async function formatText(
     documentLoader?: DocumentLoader;
   },
 ): Promise<FormatResult> {
-  const shiki = await getShikiPlugin();
-
   // List all mentions:
   const draft = new MarkdownIt({ linkify: true, html: ALLOW_HTML })
     .use(mention, {})
@@ -167,8 +174,10 @@ export async function formatText(
         }
         return new URL(link, new URL("/", options.url)).href;
       },
-    })
-    .use(shiki);
+    });
+  if (containsCodeBlock(text)) {
+    md.use(await getShikiPlugin());
+  }
   const env: Env = {
     hashtags: [],
     previewLink: null,
