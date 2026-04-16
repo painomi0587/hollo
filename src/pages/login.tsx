@@ -1,9 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
-import { verify } from "argon2";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getSignedCookie, setSignedCookie } from "hono/cookie";
-import { TOTP } from "otpauth";
 import { z } from "zod";
 import { Layout } from "../components/Layout.tsx";
 import { LoginForm } from "../components/LoginForm.tsx";
@@ -43,6 +41,7 @@ login.post("/", async (c) => {
   const credential = await db.query.credentials.findFirst({
     where: eq(credentials.email, email),
   });
+  const { verify } = await import("argon2");
   if (
     credential == null ||
     !(await verify(credential.passwordHash, password))
@@ -122,6 +121,7 @@ login.post(
     }
     const totp = await db.query.totps.findFirst();
     if (totp == null) return c.redirect(form.next ?? "/");
+    const { TOTP } = await import("otpauth");
     const totpInstance = new TOTP(totp);
     const valid = totpInstance.validate({
       token: form.token,

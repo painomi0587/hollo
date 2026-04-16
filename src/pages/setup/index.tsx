@@ -1,4 +1,3 @@
-import { hash } from "argon2";
 import { count } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { Layout } from "../../components/Layout.tsx";
@@ -58,6 +57,7 @@ setup.post("/", async (c) => {
       400,
     );
   }
+  const { hash } = await import("argon2");
   await db.insert(credentials).values({
     email,
     passwordHash: await hash(password),

@@ -39,9 +39,9 @@ import {
 } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
-import sharp from "sharp";
 // @ts-expect-error: No type definitions available
 import { isSSRFSafeURL } from "ssrfcheck";
+import { extractPreviewLink } from "../html";
 import { makeVideoScreenshot, type Thumbnail, uploadThumbnail } from "../media";
 import { fetchPreviewCard } from "../previewcard";
 import type * as schema from "../schema";
@@ -65,7 +65,6 @@ import {
   pollVotes,
   posts,
 } from "../schema";
-import { extractPreviewLink } from "../text";
 import { type Uuid, uuidv7 } from "../uuid";
 import {
   type PersistAccountOptions,
@@ -230,7 +229,7 @@ export async function persistPost(
   const previewLink =
     object.content == null
       ? null
-      : extractPreviewLink(object.content.toString());
+      : await extractPreviewLink(object.content.toString());
   const previewCard =
     previewLink == null ? null : await fetchPreviewCard(previewLink);
   const published = toDate(object.published);
@@ -418,6 +417,7 @@ export async function persistPost(
       if (mediaType.startsWith("video/")) {
         imageBytes = await makeVideoScreenshot(imageData);
       }
+      const { default: sharp } = await import("sharp");
       const image = sharp(imageBytes);
       metadata = await image.metadata();
       thumbnail = await uploadThumbnail(id, image);

@@ -75,7 +75,6 @@ import {
   posts,
   reactions,
 } from "../../schema";
-import { formatPostContent } from "../../text";
 import { isUuid, type Uuid, uuid, uuidv7 } from "../../uuid";
 
 const app = new Hono<{ Variables: Variables }>();
@@ -272,6 +271,7 @@ app.post("/", tokenRequired, scopeRequired(["write:statuses"]), async (c) => {
   const handle = owner.handle;
   const id = uuidv7();
   const url = fedCtx.getObjectUri(Note, { username: handle, id });
+  const { formatPostContent } = await import("../../text");
   const content =
     data.status == null
       ? null
@@ -467,6 +467,7 @@ app.put("/:id", tokenRequired, scopeRequired(["write:statuses"]), async (c) => {
       username: owner.handle,
     }),
   };
+  const { formatPostContent } = await import("../../text");
   const content =
     data.status == null
       ? null

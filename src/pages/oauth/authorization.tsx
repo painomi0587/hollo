@@ -1,7 +1,7 @@
 import { escape } from "es-toolkit";
 import { Layout } from "../../components/Layout";
+import { renderCustomEmojis } from "../../custom-emoji";
 import type { Account, AccountOwner, Application, Scope } from "../../schema";
-import { renderCustomEmojis } from "../../text";
 
 interface AuthorizationPageProps {
   accountOwners: (AccountOwner & { account: Account })[];

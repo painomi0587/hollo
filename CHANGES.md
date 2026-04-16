@@ -23,6 +23,21 @@ To be released.
         manual deployment setups with worker separation.
      -  Added `pnpm worker` script for running worker-only nodes.
 
+ -  Reduced idle memory usage by lazy-loading several heavy dependencies and
+    startup-only code paths based on actual memory measurements.  This lowers
+    the baseline footprint of `NODE_TYPE=all`, `web`, and `worker`
+    deployments, especially on single-user instances with filesystem storage.
+    [[#435]]
+
+     -  Markdown formatting now loads Shiki only when rich text formatting is
+        actually needed, instead of at server startup.
+     -  Filesystem deployments no longer pull S3-specific storage code into the
+        initial web server startup path.
+     -  The web server and worker process now import each other's code paths
+        only when the selected `NODE_TYPE` needs them.
+     -  Preview card scraping, media processing, and authentication helpers now
+        load on demand instead of eagerly during route registration.
+
  -  Added automatic refresh of stale remote actor profiles.  When receiving
     activities like `Announce` or `Create(Note)`, Hollo now checks if the
     actor's cached data is stale and asynchronously refreshes their profile
@@ -112,6 +127,7 @@ To be released.
 [#420]: https://github.com/fedify-dev/hollo/issues/420
 [#424]: https://github.com/fedify-dev/hollo/issues/424
 [#425]: https://github.com/fedify-dev/hollo/issues/425
+[#435]: https://github.com/fedify-dev/hollo/issues/435
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 

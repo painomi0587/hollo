@@ -1,3 +1,4 @@
+import { renderCustomEmojis } from "../custom-emoji";
 import type {
   Account,
   Medium as DbMedium,
@@ -6,7 +7,6 @@ import type {
   PollOption,
   Reaction,
 } from "../schema";
-import { renderCustomEmojis } from "../text";
 
 export interface PostProps {
   readonly post: DbPost & {

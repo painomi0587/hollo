@@ -12,7 +12,7 @@ import image from "./image";
 import oauth from "./oauth";
 import oauthMetadataEndpoint from "./oauth/endpoints/metadata";
 import pages from "./pages";
-import { DRIVE_DISK, FS_STORAGE_PATH } from "./storage";
+import { DRIVE_DISK, FS_STORAGE_PATH } from "./storage-config";
 
 const app = new Hono();
 

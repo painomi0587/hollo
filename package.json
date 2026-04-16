@@ -9,6 +9,7 @@
     "dev": "pnpm run migrate && tsx watch --env-file-if-exists=.env --dns-result-order=ipv6first bin/server.ts",
     "worker": "NODE_TYPE=worker tsx --env-file-if-exists=.env --dns-result-order=ipv6first bin/server.ts",
     "list:routes": "tsx --env-file-if-exists=.env bin/routes.ts",
+    "measure:memory": "node --expose-gc --import tsx --env-file-if-exists=.env scripts/measure-memory.ts",
     "test": "pnpm run migrate:test && vitest",
     "test:ci": "vitest",
     "check": "tsc && biome check .",

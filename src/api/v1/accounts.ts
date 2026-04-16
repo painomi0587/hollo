@@ -59,8 +59,6 @@ import {
   pinnedPosts,
   posts,
 } from "../../schema";
-import { drive } from "../../storage";
-import { extractCustomEmojis, formatText } from "../../text";
 import { isUuid, type Uuid } from "../../uuid";
 import { timelineQuerySchema } from "./timelines";
 
@@ -113,6 +111,10 @@ app.patch(
     }),
   ),
   async (c) => {
+    const [{ drive }, { extractCustomEmojis, formatText }] = await Promise.all([
+      import("../../storage"),
+      import("../../text"),
+    ]);
     const disk = drive.use();
     const owner = c.get("token").accountOwner;
     if (owner == null) {

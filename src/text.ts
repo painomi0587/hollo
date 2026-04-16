@@ -2,14 +2,13 @@ import { hashtag } from "@fedify/markdown-it-hashtag";
 import { mention } from "@fedify/markdown-it-mention";
 import { type DocumentLoader, isActor, lookupObject } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
-import Shiki from "@shikijs/markdown-it";
-import * as cheerio from "cheerio";
 import { type ExtractTablesWithRelations, inArray } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 import { escape } from "es-toolkit";
 import MarkdownIt from "markdown-it";
 import replaceLink from "markdown-it-replace-link";
+import { CUSTOM_EMOJI_REGEXP } from "./custom-emoji";
 import { persistAccount } from "./federation/account";
 import { type ASPost, isPost } from "./federation/post";
 import * as schema from "./schema";
@@ -35,15 +34,26 @@ interface Env {
   links: string[];
 }
 
-const CUSTOM_EMOJI_REGEXP = /:([a-z0-9_-]+):/gi;
+type MarkdownItPlugin = Parameters<MarkdownIt["use"]>[0];
 
-const shiki = await Shiki({
-  themes: {
-    light: "one-light",
-    dark: "one-dark-pro",
-  },
-  defaultColor: "light-dark()",
-});
+let shikiPluginPromise: Promise<MarkdownItPlugin> | undefined;
+
+async function getShikiPlugin(): Promise<MarkdownItPlugin> {
+  if (shikiPluginPromise == null) {
+    shikiPluginPromise = (async () => {
+      const { default: Shiki } = await import("@shikijs/markdown-it");
+      return await Shiki({
+        themes: {
+          light: "one-light",
+          dark: "one-dark-pro",
+        },
+        defaultColor: "light-dark()",
+      });
+    })();
+  }
+
+  return await shikiPluginPromise;
+}
 
 export async function formatText(
   db: PgDatabase<
@@ -58,6 +68,8 @@ export async function formatText(
     documentLoader?: DocumentLoader;
   },
 ): Promise<FormatResult> {
+  const shiki = await getShikiPlugin();
+
   // List all mentions:
   const draft = new MarkdownIt({ linkify: true, html: ALLOW_HTML })
     .use(mention, {})
@@ -191,45 +203,6 @@ export function cleanupRedundantWhitespacesInHtml(html: string): string {
   );
 }
 
-const HTML_ELEMENT_REGEXP = /<\/?[^>]+>/g;
-
-export function renderCustomEmojis(
-  html: string,
-  emojis: Record<string, string>,
-): string;
-export function renderCustomEmojis(
-  html: null,
-  emojis: Record<string, string>,
-): null;
-export function renderCustomEmojis(
-  html: string | null,
-  emojis: Record<string, string>,
-): string | null;
-
-export function renderCustomEmojis(
-  html: string | null,
-  emojis: Record<string, string>,
-): string | null {
-  if (html == null) return null;
-  let result = "";
-  let index = 0;
-  for (const match of html.matchAll(HTML_ELEMENT_REGEXP)) {
-    result += replaceEmojis(html.substring(index, match.index));
-    result += match[0];
-    index = match.index + match[0].length;
-  }
-  result += replaceEmojis(html.substring(index));
-  return result;
-
-  function replaceEmojis(html: string): string {
-    return html.replaceAll(CUSTOM_EMOJI_REGEXP, (match) => {
-      const emoji = emojis[match] ?? emojis[match.replace(/^:|:$/g, "")];
-      if (emoji == null) return match;
-      return `<img src="${emoji}" alt="${match}" style="height: 1em">`;
-    });
-  }
-}
-
 export async function extractCustomEmojis(
   db: PgDatabase<
     PostgresJsQueryResultHKT,
@@ -249,17 +222,6 @@ export async function extractCustomEmojis(
   return Object.fromEntries(
     customEmojis.map((emoji) => [`:${emoji.shortcode}:`, emoji.url]),
   );
-}
-
-export function extractPreviewLink(html: string): string | null {
-  const $ = cheerio.load(html);
-  return $("a[href]:not([rel=tag]):not(.mention):last").attr("href") ?? null;
-}
-
-export function extractText(html: string | null): string | null {
-  if (html == null) return null;
-  const $ = cheerio.load(html);
-  return $(":root").text();
 }
 
 // biome-ignore lint/complexity/useLiteralKeys: tsc claims about this

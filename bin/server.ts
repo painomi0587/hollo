@@ -1,9 +1,6 @@
 import { isIP } from "node:net";
 import { serve } from "@hono/node-server";
 import { behindProxy } from "x-forwarded-fetch";
-import { federation } from "../src/federation";
-import { startImportWorker, stopImportWorker } from "../src/import/worker";
-import app from "../src/index";
 import { configureSentry } from "../src/sentry";
 
 // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
@@ -42,6 +39,7 @@ if (!["all", "web", "worker"].includes(NODE_TYPE)) {
 
 // Start web server if running as web or all node
 if (NODE_TYPE === "web" || NODE_TYPE === "all") {
+  const { default: app } = await import("../src/index");
   serve(
     {
       fetch: BEHIND_PROXY
@@ -65,7 +63,15 @@ if (NODE_TYPE === "web" || NODE_TYPE === "all") {
 }
 
 // Start workers if running as worker or all node
+let stopWorker: (() => void) | undefined;
 if (NODE_TYPE === "worker" || NODE_TYPE === "all") {
+  const [{ federation }, { startImportWorker, stopImportWorker }] =
+    await Promise.all([
+      import("../src/federation"),
+      import("../src/import/worker"),
+    ]);
+  stopWorker = stopImportWorker;
+
   // Start the Fedify message queue
   const controller = new AbortController();
   federation
@@ -85,7 +91,7 @@ if (NODE_TYPE === "worker" || NODE_TYPE === "all") {
 const shutdown = () => {
   if (NODE_TYPE === "worker" || NODE_TYPE === "all") {
     console.log("Stopping workers...");
-    stopImportWorker();
+    stopWorker?.();
   }
   process.exit(0);
 };

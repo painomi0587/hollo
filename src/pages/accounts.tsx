@@ -51,7 +51,6 @@ import {
   type PostVisibility,
   type ThemeColor,
 } from "../schema.ts";
-import { extractCustomEmojis, formatText } from "../text.ts";
 import { isUuid, uuidv7 } from "../uuid.ts";
 
 const HOLLO_OFFICIAL_ACCOUNT = "@hollo@hollo.social";
@@ -114,6 +113,7 @@ accounts.post("/", async (c) => {
       400,
     );
   }
+  const { extractCustomEmojis, formatText } = await import("../text.ts");
   const fedCtx = federation.createContext(c.req.raw, undefined);
   const bioResult = await formatText(db, bio ?? "", fedCtx);
   const nameEmojis = await extractCustomEmojis(db, name);
@@ -356,6 +356,7 @@ accounts.post("/:id", async (c) => {
       username: accountOwner.handle,
     }),
   };
+  const { extractCustomEmojis, formatText } = await import("../text.ts");
   const bioResult = await formatText(db, bio ?? "", fmtOpts);
   const nameEmojis = await extractCustomEmojis(db, name);
   const emojis = { ...nameEmojis, ...bioResult.emojis };

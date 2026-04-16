@@ -1,8 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { getLogger } from "@logtape/logtape";
 import { Hono } from "hono";
-import { HOTP, Secret, TOTP, URI } from "otpauth";
-import { toDataURL } from "qrcode";
+import type { HOTP, TOTP } from "otpauth";
 import { z } from "zod";
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
@@ -21,6 +20,7 @@ auth.get("/", async (c) => {
   if (totp == null && open === "2fa") {
     const credential = await db.query.credentials.findFirst();
     if (credential == null) return c.redirect("/setup");
+    const { Secret, TOTP } = await import("otpauth");
     const totp = new TOTP({
       issuer: "Hollo",
       label: credential.email,
@@ -43,6 +43,7 @@ auth.post(
   ),
   async (c) => {
     const form = c.req.valid("form");
+    const { HOTP, URI } = await import("otpauth");
     const totp = URI.parse(form.totp);
     if (totp instanceof HOTP) {
       return c.html(
@@ -163,10 +164,15 @@ async function AuthPage({ totp, tfa }: AuthPageProps) {
 
 function qrCode(data: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    toDataURL(data, (err, url) => {
-      if (err != null) return reject(err);
-      resolve(url);
-    });
+    const run = async () => {
+      const { toDataURL } = await import("qrcode");
+      toDataURL(data, (err, url) => {
+        if (err != null) return reject(err);
+        resolve(url);
+      });
+    };
+
+    run().catch(reject);
   });
 }
 

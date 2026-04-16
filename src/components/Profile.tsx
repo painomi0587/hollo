@@ -1,6 +1,6 @@
 import { escape } from "es-toolkit";
+import { renderCustomEmojis } from "../custom-emoji";
 import type { Account, AccountOwner } from "../schema";
-import { renderCustomEmojis } from "../text";
 
 export interface ProfileProps {
   accountOwner: AccountOwner & { account: Account };

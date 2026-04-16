@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import mime from "mime";
-import sharp from "sharp";
 import { db } from "../../db";
 import { serializeMedium } from "../../entities/medium";
 import { makeVideoScreenshot, uploadThumbnail } from "../../media";
@@ -11,12 +10,15 @@ import {
   type Variables,
 } from "../../oauth/middleware";
 import { media } from "../../schema";
-import { drive } from "../../storage";
 import { isUuid, uuidv7 } from "../../uuid";
 
 const app = new Hono<{ Variables: Variables }>();
 
 export async function postMedia(c: Context<{ Variables: Variables }>) {
+  const [{ drive }, { default: sharp }] = await Promise.all([
+    import("../../storage"),
+    import("sharp"),
+  ]);
   const disk = drive.use();
   const owner = c.get("token").accountOwner;
   if (owner == null) {

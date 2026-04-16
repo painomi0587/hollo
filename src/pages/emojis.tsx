@@ -6,7 +6,6 @@ import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import { loginRequired } from "../login";
 import { accounts, customEmojis, posts, reactions } from "../schema";
-import { drive } from "../storage";
 
 const logger = getLogger(["hollo", "pages", "emojis"]);
 
@@ -153,6 +152,7 @@ emojis.get("/new", async (c) => {
 });
 
 emojis.post("/", async (c) => {
+  const { drive } = await import("../storage");
   const disk = drive.use();
   const form = await c.req.formData();
   const categoryValue = form.get("category")?.toString();
