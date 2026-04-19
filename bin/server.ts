@@ -65,14 +65,21 @@ if (NODE_TYPE === "web" || NODE_TYPE === "all") {
 }
 
 // Start workers if running as worker or all node
-let stopWorker: (() => void) | undefined;
+let stopWorkers: (() => void) | undefined;
 if (NODE_TYPE === "worker" || NODE_TYPE === "all") {
-  const [{ federation }, { startImportWorker, stopImportWorker }] =
-    await Promise.all([
-      import("../src/federation"),
-      import("../src/import/worker"),
-    ]);
-  stopWorker = stopImportWorker;
+  const [
+    { federation },
+    { startImportWorker, stopImportWorker },
+    { startCleanupWorker, stopCleanupWorker },
+  ] = await Promise.all([
+    import("../src/federation"),
+    import("../src/import/worker"),
+    import("../src/cleanup/worker"),
+  ]);
+  stopWorkers = () => {
+    stopImportWorker();
+    stopCleanupWorker();
+  };
 
   // Start the Fedify message queue
   const controller = new AbortController();
@@ -83,17 +90,18 @@ if (NODE_TYPE === "worker" || NODE_TYPE === "all") {
       process.exit(1);
     });
 
-  // Start the import worker for background job processing
+  // Start the workers for background job processing
   startImportWorker();
+  startCleanupWorker();
 
-  console.log("Worker started (Fedify queue + Import worker)");
+  console.log("Worker started (Fedify queue + Import worker + Cleanup worker)");
 }
 
 // Graceful shutdown handling
 const shutdown = () => {
   if (NODE_TYPE === "worker" || NODE_TYPE === "all") {
     console.log("Stopping workers...");
-    stopWorker?.();
+    stopWorkers?.();
   }
   process.exit(0);
 };
