@@ -1,24 +1,21 @@
-import { Temporal } from "@js-temporal/polyfill";
 import { getLogger } from "@logtape/logtape";
-import { and, count, eq, exists, ilike, lt, not, notExists } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, count, eq, ilike, inArray, not, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
+import { getMediaWithDeletableThumbnails } from "../entities/medium";
 import { loginRequired } from "../login";
 import {
   accountOwners,
   accounts,
-  bookmarks,
-  likes,
+  cleanupJobItems,
+  cleanupJobs,
   media,
   posts,
-  reactions,
 } from "../schema";
-import { drive } from "../storage";
 import { STORAGE_URL_BASE } from "../storage-config";
-import type { Uuid } from "../uuid";
+import { isUuid, uuidv7 } from "../uuid";
 
 const logger = getLogger(["hollo", "pages", "thumbnail_cleanup"]);
 
@@ -33,9 +30,7 @@ data.get("/", async (c) => {
   const fileCount = c.req.query("fileCount");
   const firstFile = c.req.query("firstFile");
   const lastFile = c.req.query("lastFile");
-  const todo = c.req.query("todo");
-  const processed = c.req.query("processed");
-  const deleted = c.req.query("deleted");
+  const cleanupDataResult = c.req.query("cleanup-data-result");
 
   const suggestedCleanupCutoff =
     typeof before === "string"
@@ -44,261 +39,29 @@ data.get("/", async (c) => {
           .toISOString()
           .split("T")[0];
 
-  const sharingPosts = alias(posts, "sharingPosts");
-  const quotingPosts = alias(posts, "quotingPosts");
+  // Check for active cleanup job (from query param or database)
+  const cleanupJobId = c.req.query("cleanup-job");
+  const activeJob =
+    cleanupJobId && isUuid(cleanupJobId)
+      ? await db.query.cleanupJobs.findFirst({
+          where: and(eq(cleanupJobs.id, cleanupJobId)),
+        })
+      : await db.query.cleanupJobs.findFirst({
+          where: and(
+            inArray(cleanupJobs.status, ["pending", "processing"]),
+            inArray(cleanupJobs.category, ["cleanup_thumbnails"]),
+          ),
+          orderBy: (cleanupJobs, { desc }) => [desc(cleanupJobs.created)],
+        });
 
-  let thumbnailsBeforeLastYearAndOnlyMaybeRepliedResult: { count: number }[];
+  // Check if we need to auto-refresh (job in progress)
+  const shouldAutoRefresh =
+    activeJob?.status === "pending" || activeJob?.status === "processing";
+
+  // compute statistics table
+  let remoteThumbnailsCountResult: { count: number }[];
   try {
-    thumbnailsBeforeLastYearAndOnlyMaybeRepliedResult = await db
-      .select({
-        count: count(),
-      })
-      .from(media)
-      .innerJoin(posts, eq(media.postId, posts.id))
-      .innerJoin(accounts, eq(posts.accountId, accounts.id))
-      .where(
-        and(
-          not(media.thumbnailCleaned),
-          ilike(media.thumbnailUrl, `${STORAGE_URL_BASE}%`),
-          lt(media.created, new Date(new Date().getFullYear() - 1, 0, 1)),
-          notExists(
-            db
-              .select()
-              .from(accountOwners)
-              .where(eq(accounts.id, accountOwners.id)),
-          ),
-          notExists(
-            db.select().from(bookmarks).where(eq(posts.id, bookmarks.postId)),
-          ),
-          notExists(
-            db
-              .select()
-              .from(likes)
-              .where(
-                and(
-                  eq(posts.id, likes.postId),
-                  exists(
-                    db
-                      .select()
-                      .from(accountOwners)
-                      .where(eq(likes.accountId, accountOwners.id)),
-                  ),
-                ),
-              ),
-          ),
-          notExists(
-            db
-              .select()
-              .from(reactions)
-              .where(
-                and(
-                  eq(posts.id, reactions.postId),
-                  exists(
-                    db
-                      .select()
-                      .from(accountOwners)
-                      .where(eq(reactions.accountId, accountOwners.id)),
-                  ),
-                ),
-              ),
-          ),
-          notExists(
-            db
-              .select()
-              .from(sharingPosts)
-              .where(
-                and(
-                  eq(posts.id, sharingPosts.sharingId),
-                  exists(
-                    db
-                      .select()
-                      .from(accountOwners)
-                      .where(eq(sharingPosts.accountId, accountOwners.id)),
-                  ),
-                ),
-              ),
-          ),
-          notExists(
-            db
-              .select()
-              .from(quotingPosts)
-              .where(
-                and(
-                  eq(posts.id, quotingPosts.quoteTargetId),
-                  exists(
-                    db
-                      .select()
-                      .from(accountOwners)
-                      .where(eq(quotingPosts.accountId, accountOwners.id)),
-                  ),
-                ),
-              ),
-          ),
-        ),
-      );
-  } catch {
-    thumbnailsBeforeLastYearAndOnlyMaybeRepliedResult = [{ count: 0 }];
-  }
-  const thumbnailsBeforeLastYearAndOnlyMaybeRepliedCount =
-    thumbnailsBeforeLastYearAndOnlyMaybeRepliedResult[0].count;
-
-  let thumbnailsBeforeLastYearResult: { count: number }[];
-  try {
-    thumbnailsBeforeLastYearResult = await db
-      .select({
-        count: count(),
-      })
-      .from(media)
-      .innerJoin(posts, eq(media.postId, posts.id))
-      .innerJoin(accounts, eq(posts.accountId, accounts.id))
-      .where(
-        and(
-          not(media.thumbnailCleaned),
-          ilike(media.thumbnailUrl, `${STORAGE_URL_BASE}%`),
-          lt(media.created, new Date(new Date().getFullYear() - 1, 0, 1)),
-          notExists(
-            db
-              .select()
-              .from(accountOwners)
-              .where(eq(accounts.id, accountOwners.id)),
-          ),
-        ),
-      );
-  } catch {
-    thumbnailsBeforeLastYearResult = [{ count: 0 }];
-  }
-  const thumbnailsBeforeLastYearCount = thumbnailsBeforeLastYearResult[0].count;
-
-  const oneYearAgo = new Date(
-    Temporal.Now.zonedDateTimeISO().subtract(new Temporal.Duration(1))
-      .epochMilliseconds,
-  );
-
-  let thumbnailsYearOldAndOnlyMaybeRepliedResult: { count: number }[];
-  try {
-    thumbnailsYearOldAndOnlyMaybeRepliedResult = await db
-      .select({
-        count: count(),
-      })
-      .from(media)
-      .innerJoin(posts, eq(media.postId, posts.id))
-      .innerJoin(accounts, eq(posts.accountId, accounts.id))
-      .where(
-        and(
-          not(media.thumbnailCleaned),
-          ilike(media.thumbnailUrl, `${STORAGE_URL_BASE}%`),
-          lt(media.created, oneYearAgo),
-          notExists(
-            db
-              .select()
-              .from(accountOwners)
-              .where(eq(accounts.id, accountOwners.id)),
-          ),
-          notExists(
-            db.select().from(bookmarks).where(eq(posts.id, bookmarks.postId)),
-          ),
-          notExists(
-            db
-              .select()
-              .from(likes)
-              .where(
-                and(
-                  eq(posts.id, likes.postId),
-                  exists(
-                    db
-                      .select()
-                      .from(accountOwners)
-                      .where(eq(likes.accountId, accountOwners.id)),
-                  ),
-                ),
-              ),
-          ),
-          notExists(
-            db
-              .select()
-              .from(reactions)
-              .where(
-                and(
-                  eq(posts.id, reactions.postId),
-                  exists(
-                    db
-                      .select()
-                      .from(accountOwners)
-                      .where(eq(reactions.accountId, accountOwners.id)),
-                  ),
-                ),
-              ),
-          ),
-          notExists(
-            db
-              .select()
-              .from(sharingPosts)
-              .where(
-                and(
-                  eq(posts.id, sharingPosts.sharingId),
-                  exists(
-                    db
-                      .select()
-                      .from(accountOwners)
-                      .where(eq(sharingPosts.accountId, accountOwners.id)),
-                  ),
-                ),
-              ),
-          ),
-          notExists(
-            db
-              .select()
-              .from(quotingPosts)
-              .where(
-                and(
-                  eq(posts.id, quotingPosts.quoteTargetId),
-                  exists(
-                    db
-                      .select()
-                      .from(accountOwners)
-                      .where(eq(quotingPosts.accountId, accountOwners.id)),
-                  ),
-                ),
-              ),
-          ),
-        ),
-      );
-  } catch {
-    thumbnailsYearOldAndOnlyMaybeRepliedResult = [{ count: 0 }];
-  }
-  const thumbnailsYearOldAndOnlyMaybeRepliedCount =
-    thumbnailsYearOldAndOnlyMaybeRepliedResult[0].count;
-
-  let thumbnailsYearOldResult: { count: number }[];
-  try {
-    thumbnailsYearOldResult = await db
-      .select({
-        count: count(),
-      })
-      .from(media)
-      .innerJoin(posts, eq(media.postId, posts.id))
-      .innerJoin(accounts, eq(posts.accountId, accounts.id))
-      .where(
-        and(
-          not(media.thumbnailCleaned),
-          ilike(media.thumbnailUrl, `${STORAGE_URL_BASE}%`),
-          lt(media.created, oneYearAgo),
-          notExists(
-            db
-              .select()
-              .from(accountOwners)
-              .where(eq(accounts.id, accountOwners.id)),
-          ),
-        ),
-      );
-  } catch {
-    thumbnailsYearOldResult = [{ count: 0 }];
-  }
-  const thumbnailsYearOldCount = thumbnailsYearOldResult[0].count;
-
-  let remoteThumbnailsResult: { count: number }[];
-  try {
-    remoteThumbnailsResult = await db
+    remoteThumbnailsCountResult = await db
       .select({
         count: count(),
       })
@@ -318,9 +81,9 @@ data.get("/", async (c) => {
         ),
       );
   } catch {
-    remoteThumbnailsResult = [{ count: 0 }];
+    remoteThumbnailsCountResult = [{ count: 0 }];
   }
-  const thumbnailsRemoteCount = remoteThumbnailsResult[0].count;
+  const thumbnailsRemoteCount = remoteThumbnailsCountResult[0].count;
 
   let thumbnailsCountResult: { count: number }[];
   try {
@@ -341,28 +104,13 @@ data.get("/", async (c) => {
   const thumbnailsCount = thumbnailsCountResult[0].count;
 
   const thumbnailsTable: { caption: string; count: number }[] = [
-    { caption: "Total, thumbnail hosted locally", count: thumbnailsCount },
+    {
+      caption: "Total, thumbnail hosted locally",
+      count: thumbnailsCount,
+    },
     {
       caption: "Remote, thumbnail hosted locally",
       count: thumbnailsRemoteCount,
-    },
-    {
-      caption: "From before 1 year ago, remote, thumbnail hosted locally",
-      count: thumbnailsYearOldCount,
-    },
-    {
-      caption:
-        "From before 1 year ago, remote, thumbnail hosted locally, not interacted with outside of maybe replying",
-      count: thumbnailsYearOldAndOnlyMaybeRepliedCount,
-    },
-    {
-      caption: "From before last year, remote, thumbnail hosted locally",
-      count: thumbnailsBeforeLastYearCount,
-    },
-    {
-      caption:
-        "From before last year, remote, thumbnail hosted locally, not interacted with outside of maybe replying",
-      count: thumbnailsBeforeLastYearAndOnlyMaybeRepliedCount,
     },
   ];
 
@@ -402,7 +150,7 @@ data.get("/", async (c) => {
           </tbody>
         </table>
       </article>
-      <article>
+      <article id="cleanup-preview">
         <header>
           <hgroup>
             <h2>Preview cleanup</h2>
@@ -427,11 +175,11 @@ data.get("/", async (c) => {
               aria-invalid={error === "clean" ? "true" : undefined}
             />
             <button name="submit" type="submit">
-              clean
+              preview
             </button>
           </fieldset>
           {error === "clean_preview" ? (
-            <small>Something went wrong while cleaning up.</small>
+            <small>Something went wrong while previewing the cleanup.</small>
           ) : (
             <small>The date before which remote thumbnails get deleted.</small>
           )}
@@ -447,25 +195,120 @@ data.get("/", async (c) => {
           </p>
         )}
       </article>
-      <article>
+
+      {/* Cleanup Progress Section */}
+      {activeJob && (
+        <article id="cleanup-progress">
+          <header>
+            <hgroup>
+              <h2>
+                {activeJob.status === "pending"
+                  ? "Cleanup Queued"
+                  : activeJob.status === "processing"
+                    ? "Cleanup in Progress"
+                    : activeJob.status === "completed"
+                      ? "Cleanup Completed"
+                      : activeJob.status === "cancelled"
+                        ? "Cleanup Cancelled"
+                        : "Cleanup Failed"}
+              </h2>
+              <p>
+                Cleanup
+                {activeJob.status === "pending" && " waiting to start"}
+                {activeJob.status === "processing" && " processing..."}
+              </p>
+            </hgroup>
+          </header>
+
+          <progress
+            value={activeJob.processedItems}
+            max={activeJob.totalItems}
+          />
+
+          <p>
+            <strong>{activeJob.processedItems.toLocaleString("en-US")}</strong>{" "}
+            / {activeJob.totalItems.toLocaleString("en-US")} items processed
+            {activeJob.processedItems > 0 && (
+              <>
+                {" "}
+                (
+                <strong style={{ color: "var(--pico-ins-color)" }}>
+                  {activeJob.successfulItems.toLocaleString("en-US")}
+                </strong>{" "}
+                successful
+                {activeJob.failedItems > 0 && (
+                  <>
+                    ,{" "}
+                    <strong style={{ color: "var(--pico-del-color)" }}>
+                      {activeJob.failedItems.toLocaleString("en-US")}
+                    </strong>{" "}
+                    failed
+                  </>
+                )}
+                )
+              </>
+            )}
+          </p>
+
+          {shouldAutoRefresh && (
+            <>
+              <form
+                method="post"
+                action={`/thumbnail_cleanup/${activeJob.id}/cancel`}
+              >
+                <button type="submit" class="secondary">
+                  Cancel Cleanup
+                </button>
+              </form>
+              <small>
+                This page refreshes automatically every 5 seconds. You can
+                navigate away safely &mdash; the cleanup will continue in the
+                background.
+              </small>
+              <script
+                dangerouslySetInnerHTML={{
+                  __html: "setTimeout(() => location.reload(), 5000);",
+                }}
+              />
+            </>
+          )}
+
+          {activeJob.status === "completed" && (
+            <p style={{ color: "var(--pico-ins-color)" }}>
+              Cleanup completed successfully!
+            </p>
+          )}
+
+          {activeJob.status === "cancelled" && (
+            <p style={{ color: "var(--pico-del-color)" }}>
+              Cleanup was cancelled.
+            </p>
+          )}
+
+          {activeJob.status === "failed" && activeJob.errorMessage && (
+            <p style={{ color: "var(--pico-del-color)" }}>
+              Error: {activeJob.errorMessage}
+            </p>
+          )}
+        </article>
+      )}
+
+      <article id="cleanup-thumbnails">
         <header>
           <hgroup>
             <h2>Clean up thumbnails</h2>
-            {done === "clean" ? (
-              <p>Thumbnails have been cleaned up.</p>
-            ) : (
+            {cleanupDataResult == null ? (
               <p>
-                Use this when you want to free up storage by deleting old
-                thumbnails.
+                Use this if you want to free up storage by deleting old
+                thumbnails from remote posts. Bookmarked, shared and favorited
+                posts are exempt.
               </p>
+            ) : (
+              <p>{cleanupDataResult}</p>
             )}
           </hgroup>
         </header>
-        <form
-          method="post"
-          action="/thumbnail_cleanup/clean"
-          onsubmit="this.submit.ariaBusy = 'true'"
-        >
+        <form method="post" action="/thumbnail_cleanup/clean">
           <fieldset role="group">
             <input
               type="date"
@@ -474,157 +317,35 @@ data.get("/", async (c) => {
               required
               aria-invalid={error === "clean" ? "true" : undefined}
             />
-            <button name="submit" type="submit">
+            <button
+              name="submit"
+              type="submit"
+              {...(shouldAutoRefresh ? { disabled: true } : {})}
+            >
               clean
             </button>
           </fieldset>
-          {error === "clean" ? (
-            <small>Something went wrong while cleaning up.</small>
-          ) : (
-            <small>The date before which remote thumbnails get deleted.</small>
-          )}
+          <small>The date before which remote thumbnails get deleted.</small>
         </form>
-        {(done === "clean" || error === "clean") && (
-          <p>
-            Number of Items in Range: {todo}
-            <br />
-            Processed: {processed}
-            <br />
-            Actually deleted: {deleted}
-            <br />
-          </p>
-        )}
       </article>
     </DashboardLayout>,
   );
 });
-
-function readFilesToDelete(
-  before: Date,
-  keyPrefix: string,
-): Promise<{ id: Uuid; thumbnailUrl: string; created: Date }[]> {
-  const sharingPosts = alias(posts, "sharingPosts");
-  const quotingPosts = alias(posts, "quotingPosts");
-
-  return db
-    .select({
-      id: media.id,
-      thumbnailUrl: media.thumbnailUrl,
-      created: media.created,
-    })
-    .from(media)
-    .innerJoin(posts, eq(media.postId, posts.id))
-    .innerJoin(accounts, eq(posts.accountId, accounts.id))
-    .where(
-      and(
-        not(media.thumbnailCleaned),
-        ilike(media.thumbnailUrl, `${keyPrefix}%`),
-        lt(media.created, before),
-        notExists(
-          db
-            .select()
-            .from(accountOwners)
-            .where(eq(accounts.id, accountOwners.id)),
-        ),
-        notExists(
-          db.select().from(bookmarks).where(eq(posts.id, bookmarks.postId)),
-        ),
-        notExists(
-          db
-            .select()
-            .from(likes)
-            .where(
-              and(
-                eq(posts.id, likes.postId),
-                exists(
-                  db
-                    .select()
-                    .from(accountOwners)
-                    .where(eq(likes.accountId, accountOwners.id)),
-                ),
-              ),
-            ),
-        ),
-        notExists(
-          db
-            .select()
-            .from(reactions)
-            .where(
-              and(
-                eq(posts.id, reactions.postId),
-                exists(
-                  db
-                    .select()
-                    .from(accountOwners)
-                    .where(eq(reactions.accountId, accountOwners.id)),
-                ),
-              ),
-            ),
-        ),
-        notExists(
-          db
-            .select()
-            .from(sharingPosts)
-            .where(
-              and(
-                eq(posts.id, sharingPosts.sharingId),
-                exists(
-                  db
-                    .select()
-                    .from(accountOwners)
-                    .where(eq(sharingPosts.accountId, accountOwners.id)),
-                ),
-              ),
-            ),
-        ),
-        notExists(
-          db
-            .select()
-            .from(quotingPosts)
-            .where(
-              and(
-                eq(posts.id, quotingPosts.quoteTargetId),
-                exists(
-                  db
-                    .select()
-                    .from(accountOwners)
-                    .where(eq(quotingPosts.accountId, accountOwners.id)),
-                ),
-              ),
-            ),
-        ),
-      ),
-    )
-    .orderBy(media.created);
-}
 
 data.post("/clean_preview", async (c) => {
   const form = await c.req.formData();
   var beforeParameter = form.get("before");
   if (typeof beforeParameter === "string") {
     const before = new Date(Date.parse(beforeParameter));
-    const owner = await db.query.accountOwners.findFirst({});
-    if (owner != null && STORAGE_URL_BASE !== undefined) {
+    if (STORAGE_URL_BASE !== undefined) {
       logger.info(`Starting cleanup preview - before: ${before.toISOString()}`);
       try {
-        const mediaToDelete: { id: Uuid; key: string | null; created: Date }[] =
-          (await readFilesToDelete(before, STORAGE_URL_BASE)).map((row) => ({
-            id: row.id,
-            key: row.thumbnailUrl.startsWith(STORAGE_URL_BASE as string)
-              ? row.thumbnailUrl.replace(STORAGE_URL_BASE as string, "")
-              : null,
-            created: row.created,
-          }));
+        const mediaWithThumbnailToClean =
+          await getMediaWithDeletableThumbnails(before);
 
-        logger.info(`would be about to delete ${mediaToDelete.length} files!`);
-        const firstItem = mediaToDelete[0];
-        const lastItem = mediaToDelete[mediaToDelete.length - 1];
-        logger.info(
-          `first file would have id ${firstItem.id}, key ${firstItem.key}, created at ${firstItem.created}`,
-        );
-        logger.info(
-          `last file would have id ${lastItem.id}, key ${lastItem.key}, created at ${lastItem.created}`,
-        );
+        const firstItem = mediaWithThumbnailToClean[0];
+        const lastItem =
+          mediaWithThumbnailToClean[mediaWithThumbnailToClean.length - 1];
         const doneUrl: URL = new URL(
           "/thumbnail_cleanup",
           new URL(c.req.url).origin,
@@ -633,7 +354,7 @@ data.post("/clean_preview", async (c) => {
         doneUrl.searchParams.set("before", beforeParameter);
         doneUrl.searchParams.set(
           "fileCount",
-          mediaToDelete.length.toLocaleString("en"),
+          mediaWithThumbnailToClean.length.toLocaleString("en"),
         );
         doneUrl.searchParams.set(
           "firstFile",
@@ -659,102 +380,55 @@ data.post("/clean_preview", async (c) => {
 });
 
 data.post("/clean", async (c) => {
-  let todoCounter = 0;
-  let deletionCounter = 0;
-  let processCounter = 0;
-
   const form = await c.req.formData();
   var beforeParameter = form.get("before");
-  if (typeof beforeParameter === "string") {
-    const before = new Date(Date.parse(beforeParameter));
-    const owner = await db.query.accountOwners.findFirst({});
-    if (owner != null && STORAGE_URL_BASE !== undefined) {
-      logger.info(`Starting cleanup - before: ${before.toISOString()}`);
+  if (typeof beforeParameter !== "string") {
+    return c.redirect(
+      `/thumbnail_cleanup?cleanup-data-result=${encodeURIComponent("Invalid date")}#cleanup-thumbnails`,
+    );
+  }
+  const before = new Date(Date.parse(beforeParameter));
 
-      try {
-        const mediaToDelete: { id: Uuid; key: string | null; created: Date }[] =
-          (await readFilesToDelete(before, STORAGE_URL_BASE)).map((row) => ({
-            id: row.id,
-            key: row.thumbnailUrl.startsWith(STORAGE_URL_BASE as string)
-              ? row.thumbnailUrl.replace(STORAGE_URL_BASE as string, "")
-              : null,
-            created: row.created,
-          }));
+  const category = "cleanup_thumbnails";
 
-        todoCounter = mediaToDelete.length;
-        logger.info(`about to delete ${mediaToDelete.length} files!`);
-        const firstItem = mediaToDelete[0];
-        const lastItem = mediaToDelete[mediaToDelete.length - 1];
-        logger.info(
-          `first file has id ${firstItem.id}, key ${firstItem.key}, created at ${firstItem.created}`,
-        );
-        logger.info(
-          `last file has id ${lastItem.id}, key ${lastItem.key}, created at ${lastItem.created}`,
-        );
+  const mediaWithThumbnailToClean =
+    await getMediaWithDeletableThumbnails(before);
 
-        const disk = drive.use();
-
-        // we should report every 5 percent (or at worst every item if it's that few), sounds about good.
-        const chunksize = Math.trunc(Math.max(1, todoCounter / 20));
-
-        for (const medium of mediaToDelete) {
-          if (medium.key != null) {
-            await disk.delete(medium.key);
-            await db
-              .update(media)
-              .set({ thumbnailCleaned: true })
-              .where(eq(media.id, medium.id));
-            ++deletionCounter;
-          }
-          ++processCounter;
-          if (processCounter % chunksize === 0) {
-            logger.info(
-              `Thumbnail cleanup ${Math.trunc((processCounter / todoCounter) * 100)}% done (${processCounter}/${todoCounter}, ${deletionCounter} deletions)`,
-            );
-          }
-        }
-
-        logger.info(
-          `Cleanup done, ${todoCounter} to do, ${processCounter} processed, ${deletionCounter} deleted!`,
-        );
-
-        const doneUrl: URL = new URL(
-          "/thumbnail_cleanup",
-          new URL(c.req.url).origin,
-        );
-        doneUrl.searchParams.set("done", "clean");
-        doneUrl.searchParams.set("before", beforeParameter);
-        doneUrl.searchParams.set("todo", todoCounter.toLocaleString("en"));
-        doneUrl.searchParams.set(
-          "processed",
-          processCounter.toLocaleString("en"),
-        );
-        doneUrl.searchParams.set(
-          "deleted",
-          deletionCounter.toLocaleString("en"),
-        );
-        return c.redirect(doneUrl);
-      } catch (error) {
-        logger.error("Failed to clean up: {error}", { error });
-        logger.info(
-          `Cleanup unfinished, ${todoCounter} to do, ${processCounter} processed, ${deletionCounter} deleted!`,
-        );
-      }
-    }
+  if (mediaWithThumbnailToClean.length === 0) {
+    return c.redirect(
+      `/thumbnail_cleanup?cleanup-data-result=${encodeURIComponent("No thumbnails to delete")}#cleanup-thumbnails`,
+    );
   }
 
-  const errorUrl: URL = new URL(
-    "/thumbnail_cleanup",
-    new URL(c.req.url).origin,
+  // Create the import job
+  const jobId = uuidv7();
+  await db.insert(cleanupJobs).values({
+    id: jobId,
+    category: category,
+    totalItems: mediaWithThumbnailToClean.length,
+  });
+
+  // Create cleanup job items in batches
+  const itemValues = mediaWithThumbnailToClean.map((data) => ({
+    id: uuidv7(),
+    jobId,
+    data: { id: data.id },
+  }));
+
+  // Insert in batches of 1000 to avoid hitting query size limits
+  for (let i = 0; i < itemValues.length; i += 1000) {
+    await db.insert(cleanupJobItems).values(itemValues.slice(i, i + 1000));
+  }
+
+  logger.info(
+    "Created cleanup job {jobId} with {count} items for category {category}",
+    { jobId, count: mediaWithThumbnailToClean.length, category },
   );
-  errorUrl.searchParams.set("error", "clean");
-  errorUrl.searchParams.set("todo", todoCounter.toLocaleString("en"));
-  errorUrl.searchParams.set("processed", processCounter.toLocaleString("en"));
-  errorUrl.searchParams.set("deleted", deletionCounter.toLocaleString("en"));
-  if (typeof beforeParameter === "string") {
-    errorUrl.searchParams.set("before", beforeParameter);
-  }
-  return c.redirect(errorUrl);
+
+  // Redirect to migrate page with job ID
+  return c.redirect(
+    `/thumbnail_cleanup?import-job=${jobId}#cleanup-thumbnails`,
+  );
 });
 
 export default data;
