@@ -120,7 +120,7 @@ To be released.
     editor and is now returned from `GET /api/v1/preferences`, which helps
     clients like Phanpy honor each account's preferred CW behavior.  [[#425]]
 
- -  Upgraded Fedify to 2.1.5.
+ -  Upgraded Fedify to 2.1.7.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
