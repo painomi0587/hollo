@@ -163,7 +163,7 @@ Development guidelines
 
  -  *TypeScript*: Strict mode enabled, ESNext target
  -  *JSX*: Use Hono's JSX (`jsxImportSource: "hono/jsx"`), not React
- -  *Oxlint*: Follow Oxlint rules (configured in *.oxlintrc.json*)
+ -  *Oxlint*: Follow Oxlint rules (configured in *oxlint.config.ts*)
  -  *Oxfmt*: Follow Oxfmt formatting (configured in *.oxfmtrc.json*)
  -  *Formatting*: Spaces for indentation
  -  *Zod*: Use Zod v4 syntax (different from v3 in some APIs)
