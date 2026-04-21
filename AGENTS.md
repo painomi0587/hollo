@@ -271,6 +271,7 @@ Development commands
 | --------------------- | --------------------------------------- |
 | `pnpm dev`            | Start development server with hot reload|
 | `pnpm prod`           | Start production server                 |
+| `pnpm typecheck`      | Run type check with tsgo                |
 | `pnpm check`          | Run type check, Oxlint, and Oxfmt check |
 | `pnpm test`           | Run tests with Vitest                   |
 | `pnpm test:ci`        | Run tests without migrations (for CI)   |
