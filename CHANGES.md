@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.11
 --------------
 
-To be released.
+Released on April 21, 2026.
 
  -  Fixed a security vulnerability where a public profile's Atom feed could
     expose followers-only posts and direct messages.  The Atom feed now only
