@@ -131,6 +131,18 @@ To be released.
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 
+Version 0.7.11
+--------------
+
+Released on April 21, 2026.
+
+ -  Fixed a security vulnerability where a public profile's Atom feed could
+    expose followers-only posts and direct messages.  The Atom feed now only
+    serves public and unlisted posts.  [[#440]]
+
+[#440]: https://github.com/fedify-dev/hollo/issues/440
+
+
 Version 0.7.10
 --------------
 
