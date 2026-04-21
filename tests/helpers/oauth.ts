@@ -1,6 +1,7 @@
 import { exportJwk, generateCryptoKeyPair } from "@fedify/fedify";
 import { base64 } from "@hexagon/base64";
 import { count, desc, eq } from "drizzle-orm";
+
 import db from "../../src/db";
 import { randomBytes } from "../../src/helpers";
 import { OOB_REDIRECT_URI } from "../../src/oauth/constants";

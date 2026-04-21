@@ -1,5 +1,6 @@
 import * as timekeeper from "timekeeper";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import type { Account } from "../schema";
 import {
   isActorStale,

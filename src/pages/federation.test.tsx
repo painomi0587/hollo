@@ -1,5 +1,6 @@
 import { Person } from "@fedify/vocab";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
 import { cleanDatabase } from "../../tests/helpers";
 import { createAccount } from "../../tests/helpers/oauth";
 import { getLoginCookie } from "../../tests/helpers/web";

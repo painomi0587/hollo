@@ -7,6 +7,7 @@ import {
   isNull,
   sql,
 } from "drizzle-orm";
+
 import metadata from "../../package.json" with { type: "json" };
 import { db } from "../db";
 import { accountOwners, posts } from "../schema";

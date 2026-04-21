@@ -1,5 +1,6 @@
 import { count } from "drizzle-orm";
 import { type Context, Hono } from "hono";
+
 import { Layout } from "../../components/Layout.tsx";
 import { SetupForm } from "../../components/SetupForm.tsx";
 import db from "../../db.ts";
@@ -13,7 +14,7 @@ function showsProxyWarning(c: Context): boolean {
     url.protocol === "http:" &&
     url.hostname !== "localhost" &&
     !url.hostname.startsWith("127.") &&
-    // biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+    // oxlint-disable-next-line typescript/dot-notation
     process.env["BEHIND_PROXY"] !== "true"
   );
 }

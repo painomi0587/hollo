@@ -2,6 +2,7 @@ import type { UnverifiedActivityReason } from "@fedify/fedify";
 import { Delete, Follow } from "@fedify/vocab";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import { cleanDatabase } from "../../tests/helpers";
 import { createAccount } from "../../tests/helpers/oauth";
 import db from "../db";

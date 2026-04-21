@@ -8,6 +8,7 @@ import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 import { escape } from "es-toolkit";
 import MarkdownIt from "markdown-it";
 import replaceLink from "markdown-it-replace-link";
+
 import { CUSTOM_EMOJI_REGEXP } from "./custom-emoji";
 import { persistAccount } from "./federation/account";
 import { type ASPost, isPost } from "./federation/post";
@@ -16,7 +17,7 @@ import type { Uuid } from "./uuid";
 
 const logger = getLogger(["hollo", "text"]);
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc claims about this
+// oxlint-disable-next-line typescript/dot-notation
 const ALLOW_HTML = process.env["ALLOW_HTML"]?.trim()?.toLowerCase() === "true";
 
 export interface FormatResult {
@@ -163,7 +164,7 @@ export async function formatText(
         return `#<span>${escape(tag.substring(1))}</span>`;
       },
     })
-    // biome-ignore lint/suspicious/noExplicitAny: untyped
+    // oxlint-disable-next-line typescript/no-explicit-any
     .use(replaceLink as any, {
       processHTML: false,
       replaceLink(link: string, env: Env) {
@@ -233,7 +234,7 @@ export async function extractCustomEmojis(
   );
 }
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc claims about this
+// oxlint-disable-next-line typescript/dot-notation
 const SEONBI_URL = process.env["SEONBI_URL"];
 
 export async function formatPostContent(

@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+
 import type {
   Account,
   AccountOwner,
@@ -25,7 +26,7 @@ import * as schema from "../schema";
 import type { Uuid } from "../uuid";
 
 export const TIMELINE_INBOXES =
-  // biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+  // oxlint-disable-next-line typescript/dot-notation
   process.env["TIMELINE_INBOXES"]?.trim()?.toLowerCase() === "true";
 
 export const TIMELINE_INBOX_LIMIT = 1000;

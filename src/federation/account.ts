@@ -30,6 +30,7 @@ import {
 } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+
 import type { NewPinnedPost, Post } from "../schema";
 import * as schema from "../schema";
 import { type Uuid, uuidv7 } from "../uuid";
@@ -45,18 +46,18 @@ import {
 const logger = getLogger(["hollo", "federation", "account"]);
 
 export const REMOTE_ACTOR_FETCH_POSTS = Number.parseInt(
-  // biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+  // oxlint-disable-next-line typescript/dot-notation
   process.env["REMOTE_ACTOR_FETCH_POSTS"] ?? "10",
   10,
 );
 
 export const REMOTE_ACTOR_STALENESS_DAYS = Number.parseInt(
-  // biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+  // oxlint-disable-next-line typescript/dot-notation
   process.env["REMOTE_ACTOR_STALENESS_DAYS"] ?? "7",
   10,
 );
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const refreshOnInteractionEnv = process.env["REFRESH_ACTORS_ON_INTERACTION"];
 export const REFRESH_ACTORS_ON_INTERACTION =
   refreshOnInteractionEnv === "true" ||

@@ -6,9 +6,10 @@ import {
   type PostgresJsQueryResultHKT,
 } from "drizzle-orm/postgres-js";
 import createPostgres from "postgres";
+
 import * as schema from "./schema";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const databaseUrl = process.env["DATABASE_URL"];
 if (databaseUrl == null) throw new Error("DATABASE_URL must be defined");
 

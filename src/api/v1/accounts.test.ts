@@ -7,7 +7,6 @@ import {
   createOAuthApplication,
   getAccessToken,
 } from "../../../tests/helpers/oauth";
-
 import db from "../../db";
 import app from "../../index";
 import { posts } from "../../schema";

@@ -1,5 +1,6 @@
 import { and, inArray, isNotNull } from "drizzle-orm";
 import { Hono } from "hono";
+
 import metadata from "../../../package.json" with { type: "json" };
 import { db } from "../../db";
 import { serializeAccountOwner } from "../../entities/account";

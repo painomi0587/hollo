@@ -10,7 +10,7 @@ function normalizeAttachmentType(type: string): string {
   return "unknown";
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: JSON
+// oxlint-disable-next-line typescript/no-explicit-any
 export function serializeMedium(medium: Medium): Record<string, any> {
   return {
     id: medium.id,

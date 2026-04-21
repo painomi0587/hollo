@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "jsx-a11y", "vitest"],
+  "ignorePatterns": [
+    ".github/**/*",
+    "docs/**/*",
+    "docs/.astro/**/*",
+    "docs/dist/**/*",
+    "docs/node_modules/**/*",
+    "drizzle/**/*",
+    "node_modules/**/*",
+    "src/public/**/*"
+  ],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "rules": {
+    "no-unused-vars": [
+      "warn",
+      {
+        "caughtErrors": "all",
+        "caughtErrorsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "argsIgnorePattern": "^_"
+      }
+    ],
+    "jest/no-conditional-expect": "off",
+    "jest/no-disabled-tests": "off",
+    "jest/valid-describe-callback": "off",
+    "jest/valid-expect": "off",
+    "jsx-a11y/no-redundant-roles": "off",
+    "jsx-a11y/label-has-associated-control": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "vitest/require-mock-type-parameters": "off",
+    "typescript/no-non-null-assertion": "off",
+    "no-shadow-restricted-names": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.test.{ts,tsx}", "tests/**/*.{ts,tsx}"],
+      "env": {
+        "vitest": true
+      }
+    }
+  ]
+}

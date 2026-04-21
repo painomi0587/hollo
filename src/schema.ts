@@ -21,6 +21,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+
 import type { PreviewCard } from "./previewcard";
 import type { Uuid } from "./uuid";
 
@@ -89,7 +90,10 @@ export const accounts = pgTable("accounts", {
   successorId: uuid("successor_id")
     .$type<Uuid>()
     .references((): AnyPgColumn => accounts.id, { onDelete: "cascade" }),
-  aliases: text("aliases").array().notNull().default(sql`(ARRAY[]::text[])`),
+  aliases: text("aliases")
+    .array()
+    .notNull()
+    .default(sql`(ARRAY[]::text[])`),
   instanceHost: text("instance_host")
     .notNull()
     .references(() => instances.host),

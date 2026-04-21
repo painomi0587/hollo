@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
+
 import metadata from "../package.json" with { type: "json" };
 
 interface MemorySample {

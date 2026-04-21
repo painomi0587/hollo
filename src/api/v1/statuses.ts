@@ -27,6 +27,7 @@ import {
 import { type Context, Hono } from "hono";
 import type { TypedResponse } from "hono/types";
 import { z } from "zod";
+
 import { db } from "../../db";
 import {
   serializeAccount,

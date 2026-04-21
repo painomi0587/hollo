@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { trimTrailingSlash } from "hono/trailing-slash";
+
 import accounts from "./accounts";
 import auth from "./auth";
 import emojis from "./emojis";

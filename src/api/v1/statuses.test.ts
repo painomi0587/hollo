@@ -8,7 +8,6 @@ import {
   getAccessToken,
   getApplication,
 } from "../../../tests/helpers/oauth";
-
 import app from "../../index";
 
 describe.sequential("/api/v1/accounts/verify_credentials", () => {

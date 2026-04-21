@@ -1,4 +1,5 @@
 import { escape } from "es-toolkit";
+
 import { renderCustomEmojis } from "../custom-emoji";
 import type { Account, AccountOwner } from "../schema";
 

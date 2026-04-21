@@ -1,21 +1,23 @@
 import { isIP } from "node:net";
+
 import { serve } from "@hono/node-server";
 import { behindProxy } from "x-forwarded-fetch";
+
 import { configureSentry } from "../src/sentry";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 configureSentry(process.env["SENTRY_DSN"]);
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const NODE_TYPE = process.env["NODE_TYPE"] ?? "all";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const BEHIND_PROXY = process.env["BEHIND_PROXY"] === "true";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const BIND = process.env["BIND"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const PORT = Number.parseInt(process.env["PORT"] ?? "3000", 10);
 
 if (!Number.isInteger(PORT)) {

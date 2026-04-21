@@ -1,4 +1,5 @@
 import { eq, sql } from "drizzle-orm";
+
 import type { PreviewCard } from "../previewcard";
 import {
   type Account,
@@ -256,7 +257,7 @@ export function serializePost(
   },
   currentAccountOwner: { id: string } | undefined | null,
   baseUrl: URL | string,
-  // biome-ignore lint/suspicious/noExplicitAny: JSON
+  // oxlint-disable-next-line typescript/no-explicit-any
 ): Record<string, any> {
   return {
     id: post.id,

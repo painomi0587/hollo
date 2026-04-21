@@ -7,6 +7,7 @@ import {
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { and, eq } from "drizzle-orm";
+
 import db from "../db";
 import {
   blockAccount,

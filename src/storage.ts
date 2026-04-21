@@ -1,8 +1,10 @@
 import { access, constants, lstatSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join } from "node:path";
+
 import { DriveManager } from "flydrive";
 import { FSDriver } from "flydrive/drivers/fs";
+
 import {
   DRIVE_DISK,
   FS_STORAGE_PATH,
@@ -11,19 +13,19 @@ import {
 
 const require = createRequire(import.meta.url);
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const region = process.env["S3_REGION"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const bucket = process.env["S3_BUCKET"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const endpointUrl = process.env["S3_ENDPOINT_URL"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const accessKeyId = process.env["AWS_ACCESS_KEY_ID"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const secretAccessKey = process.env["AWS_SECRET_ACCESS_KEY"];
 
 export const drive = new DriveManager({
@@ -106,7 +108,7 @@ export const drive = new DriveManager({
         region,
         endpoint: endpointUrl,
         bucket,
-        // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+        // oxlint-disable-next-line typescript/dot-notation
         forcePathStyle: process.env["S3_FORCE_PATH_STYLE"] === "true",
         visibility: "public",
         cdnUrl: STORAGE_URL_BASE,

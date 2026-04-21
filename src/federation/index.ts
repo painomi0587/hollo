@@ -20,6 +20,7 @@ import {
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { eq } from "drizzle-orm";
+
 import { db } from "../db";
 import { accounts, follows } from "../schema";
 import { updateAccountStats } from "./account";

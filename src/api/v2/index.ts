@@ -20,6 +20,7 @@ import {
 } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { db } from "../../db";
 import { serializeAccount } from "../../entities/account";
 import { getPostRelations, serializePost } from "../../entities/status";
@@ -181,7 +182,7 @@ app.get(
             : await db.query.posts.findMany({
                 where: inArray(
                   posts.id,
-                  // biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+                  // oxlint-disable-next-line typescript/dot-notation
                   hits.map((hit) => hit["id"]),
                 ),
                 with: getPostRelations(owner.id),

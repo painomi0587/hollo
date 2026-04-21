@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Writable } from "node:stream";
+
 import { getFileSink } from "@logtape/file";
 import {
   configure,
@@ -10,13 +11,14 @@ import {
   type LogRecord,
   parseLogLevel,
 } from "@logtape/logtape";
+
 import { federation } from "./federation/federation";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const LOG_LEVEL: LogLevel = parseLogLevel(process.env["LOG_LEVEL"] ?? "info");
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const LOG_QUERY: boolean = process.env["LOG_QUERY"] === "true";
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const LOG_FILE: string | undefined = process.env["LOG_FILE"];
 
 await configure({

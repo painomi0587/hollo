@@ -148,7 +148,8 @@ Technology stack
 
 | Package            | Purpose               |
 | ------------------ | --------------------- |
-| @biomejs/biome     | Linting and formatting|
+| oxlint             | Linting               |
+| oxfmt              | Formatting            |
 | vitest             | Test runner           |
 | @vitest/coverage-v8| Code coverage         |
 | linkedom           | DOM testing           |
@@ -162,8 +163,9 @@ Development guidelines
 
  -  *TypeScript*: Strict mode enabled, ESNext target
  -  *JSX*: Use Hono's JSX (`jsxImportSource: "hono/jsx"`), not React
- -  *Biome*: Follow Biome linting rules (configured in *biome.json*)
- -  *Formatting*: Spaces for indentation (Biome default)
+ -  *Oxlint*: Follow Oxlint rules (configured in *.oxlintrc.json*)
+ -  *Oxfmt*: Follow Oxfmt formatting (configured in *.oxfmtrc.json*)
+ -  *Formatting*: Spaces for indentation
  -  *Zod*: Use Zod v4 syntax (different from v3 in some APIs)
 
 ### JSX components
@@ -269,7 +271,7 @@ Development commands
 | --------------------- | --------------------------------------- |
 | `pnpm dev`            | Start development server with hot reload|
 | `pnpm prod`           | Start production server                 |
-| `pnpm check`          | Run TypeScript type check and Biome lint|
+| `pnpm check`          | Run type check, Oxlint, and Oxfmt check |
 | `pnpm test`           | Run tests with Vitest                   |
 | `pnpm test:ci`        | Run tests without migrations (for CI)   |
 | `pnpm check:coverage` | Run tests with coverage report          |
@@ -287,14 +289,14 @@ Development commands
 ### Formatting
 
 ~~~~ bash
-# Format code with Biome
-pnpm biome format --write .
+# Format code with Oxfmt
+pnpm run fmt
 
 # Check formatting without writing
-pnpm biome format .
+pnpm run fmt:check
 
 # Lint and auto-fix
-pnpm biome check --write .
+pnpm run lint:fix
 ~~~~
 
 

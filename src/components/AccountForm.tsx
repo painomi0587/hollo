@@ -1,5 +1,6 @@
 import { capitalize } from "es-toolkit";
 import iso6391 from "iso-639-1";
+
 import { type PostVisibility, THEME_COLORS, type ThemeColor } from "../schema";
 
 export interface AccountFormProps {

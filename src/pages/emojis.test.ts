@@ -2,10 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { getFixtureFile } from "../../tests/helpers";
 import { getLoginCookie } from "../../tests/helpers/web";
-
 import db from "../db";
 import { customEmojis } from "../schema";
-
 import { drive } from "../storage";
 import app from "./index";
 

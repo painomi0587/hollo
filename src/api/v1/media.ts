@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import mime from "mime";
+
 import { db } from "../../db";
 import { serializeMedium } from "../../entities/medium";
 import { makeVideoScreenshot, uploadThumbnail } from "../../media";

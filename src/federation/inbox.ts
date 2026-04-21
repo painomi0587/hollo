@@ -25,6 +25,7 @@ import {
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { and, eq, inArray } from "drizzle-orm";
+
 import { db } from "../db";
 import {
   createEmojiReactionNotification,
@@ -94,7 +95,7 @@ async function resolveReactionTarget(
       parsed.class === Question ||
       parsed.class === ChatMessage)
   ) {
-    // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+    // oxlint-disable-next-line typescript/dot-notation
     const postId = parsed.values["id"];
     if (isUuid(postId)) {
       const post = await db.query.posts.findFirst({
@@ -102,7 +103,7 @@ async function resolveReactionTarget(
         with: { account: { with: { owner: true } } },
       });
       if (post != null) {
-        // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+        // oxlint-disable-next-line typescript/dot-notation
         const handle = parsed.values["username"];
         return {
           post,

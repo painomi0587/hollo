@@ -25,7 +25,6 @@ import {
   Update,
   Video,
 } from "@fedify/vocab";
-
 import { getLogger } from "@logtape/logtape";
 import {
   and,
@@ -41,6 +40,7 @@ import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 // @ts-expect-error: No type definitions available
 import { isSSRFSafeURL } from "ssrfcheck";
+
 import { extractPreviewLink } from "../html";
 import { makeVideoScreenshot, type Thumbnail, uploadThumbnail } from "../media";
 import { fetchPreviewCard } from "../previewcard";

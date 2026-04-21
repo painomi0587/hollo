@@ -14,13 +14,14 @@ import {
   BasicTracerProvider,
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+
 import metadata from "../../package.json" with { type: "json" };
 import { postgres } from "../db";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const nodeType = process.env["NODE_TYPE"] ?? "all";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const fedifyDebug = process.env["FEDIFY_DEBUG"] === "true";
 
 const kv = new PostgresKvStore(postgres);
@@ -50,7 +51,7 @@ let federation: Federation<void> & { sink?: Sink } = createFederation<void>({
   userAgent: {
     software: `Hollo/${metadata.version}`,
   },
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+  // oxlint-disable-next-line typescript/dot-notation
   allowPrivateAddress: process.env["ALLOW_PRIVATE_ADDRESS"] === "true",
   tracerProvider,
 });

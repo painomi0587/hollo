@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { db } from "../../db";
 import { getPostRelations, serializePost } from "../../entities/status";
 import {
@@ -323,7 +324,7 @@ app.get(
       });
     } else {
       const followedTags: SQL[] = owner.followedTags.map(
-        // biome-ignore lint/style/useTemplate: nested template strings are rather ugly
+        // oxlint-disable-next-line prefer-template
         (t) => sql`${"#" + t}`,
       );
       timeline = await db.query.posts.findMany({
