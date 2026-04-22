@@ -30,7 +30,7 @@ export function serializeMedium(medium: Medium): Record<string, any> {
     id: medium.id,
     type: normalizeAttachmentType(medium.type),
     url: medium.url,
-    preview_url: medium.thumbnailUrl,
+    preview_url: medium.thumbnailCleaned ? null : medium.thumbnailUrl,
     remote_url: null,
     text_url: null,
     meta: {
@@ -40,12 +40,14 @@ export function serializeMedium(medium: Medium): Record<string, any> {
         size: `${medium.width}x${medium.height}`,
         aspect: medium.width / medium.height,
       },
-      small: {
-        width: medium.thumbnailWidth,
-        height: medium.thumbnailHeight,
-        size: `${medium.thumbnailWidth}x${medium.thumbnailHeight}`,
-        aspect: medium.thumbnailWidth / medium.thumbnailHeight,
-      },
+      small: medium.thumbnailCleaned
+        ? undefined
+        : {
+            width: medium.thumbnailWidth,
+            height: medium.thumbnailHeight,
+            size: `${medium.thumbnailWidth}x${medium.thumbnailHeight}`,
+            aspect: medium.thumbnailWidth / medium.thumbnailHeight,
+          },
       focus: { x: 0, y: 0 },
     },
     description: medium.description,
