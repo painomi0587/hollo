@@ -1,5 +1,5 @@
 import { getLogger } from "@logtape/logtape";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 
 import db, { type Transaction } from "../db";
 import * as schema from "../schema";
@@ -122,24 +122,29 @@ async function processJobItems(
     return;
   }
 
-  // Get pending items for this job with lock
-  const pendingItems = await tx
+  // Get unfinished items for this job with lock
+  const unfinishedItems = await tx
     .select()
     .from(schema.cleanupJobItems)
     .where(
       and(
         eq(schema.cleanupJobItems.jobId, job.id),
-        eq(schema.cleanupJobItems.status, "pending"),
+        or(
+          eq(schema.cleanupJobItems.status, "pending"),
+          eq(schema.cleanupJobItems.status, "processing"),
+        ),
       ),
     )
     .limit(BATCH_SIZE)
     .for("update", { skipLocked: true });
 
-  if (pendingItems.length === 0) {
+  if (unfinishedItems.length === 0) {
     // No more items - mark job as completed
     await finalizeJob(tx, job, "completed");
     return;
   }
+
+  const pendingItems = unfinishedItems.filter((i) => i.status == "pending");
 
   // Mark items as processing within the transaction
   const itemsToProcess = pendingItems.slice(0, CONCURRENT_ITEMS);
