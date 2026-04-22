@@ -120,7 +120,7 @@ data.get("/", async (c) => {
       selectedMenu="thumbnail_cleanup"
     >
       <hgroup>
-        <h1>Thumbnail Cleanup</h1>
+        <h1>Thumbnail cleanup</h1>
         <p>This control panel allows you to clean up thumbnails.</p>
       </hgroup>
 

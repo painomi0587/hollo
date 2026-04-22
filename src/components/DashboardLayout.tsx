@@ -69,10 +69,10 @@ export function DashboardLayout(
             <li>
               {props.selectedMenu === "thumbnail_cleanup" ? (
                 <a href="/thumbnail_cleanup" class="contrast">
-                  <strong>Thumbnail Cleanup</strong>
+                  <strong>Thumbnail cleanup</strong>
                 </a>
               ) : (
-                <a href="/thumbnail_cleanup">Thumbnail Cleanup</a>
+                <a href="/thumbnail_cleanup">Thumbnail cleanup</a>
               )}
             </li>
             <li>
