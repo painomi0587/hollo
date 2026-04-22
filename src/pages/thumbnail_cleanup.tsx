@@ -440,4 +440,37 @@ data.post("/clean", async (c) => {
   );
 });
 
+// Cancel cleanup job endpoint
+data.post("/clean/:jobId/cancel", async (c) => {
+  const jobId = c.req.param("jobId");
+
+  if (!isUuid(jobId)) return c.notFound();
+
+  // Verify job exists
+  const job = await db.query.cleanupJobs.findFirst({
+    where: eq(cleanupJobs.id, jobId),
+  });
+
+  if (!job) return c.notFound();
+
+  // Only allow cancellation of pending or processing jobs
+  if (job.status !== "pending" && job.status !== "processing") {
+    return c.redirect(
+      `/thumbnail_cleanup?cleanup-data-result=${encodeURIComponent("Job cannot be cancelled")}#cleanup-thumbnails`,
+    );
+  }
+
+  // Mark job as cancelled
+  await db
+    .update(cleanupJobs)
+    .set({ status: "cancelled", completedAt: new Date() })
+    .where(eq(cleanupJobs.id, jobId));
+
+  logger.info("Import job {jobId} cancelled by user", { jobId });
+
+  return c.redirect(
+    `/thumbnail_cleanup/migrate?cleanup-data-result=${encodeURIComponent("Cleanup cancelled")}#cleanup-thumbnails`,
+  );
+});
+
 export default data;
