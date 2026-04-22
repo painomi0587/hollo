@@ -27,7 +27,7 @@ data.get("/", async (c) => {
   const done = c.req.query("done");
   const error = c.req.query("error");
   const before = c.req.query("before");
-  const fileCount = c.req.query("fileCount");
+  const fileCount = Number.parseInt(c.req.query("fileCount") ?? "0");
   const firstFile = c.req.query("firstFile");
   const lastFile = c.req.query("lastFile");
   const cleanupDataResult = c.req.query("cleanup-data-result");
@@ -184,16 +184,19 @@ data.get("/", async (c) => {
             <small>The date before which remote thumbnails get deleted.</small>
           )}
         </form>
-        {done === "clean_preview" && (
-          <p>
-            Number of Items: {fileCount}
-            <br />
-            First: {firstFile}
-            <br />
-            Last: {lastFile}
-            <br />
-          </p>
-        )}
+        {done === "clean_preview" &&
+          (fileCount > 0 ? (
+            <p>
+              Number of Items: {fileCount}
+              <br />
+              First: {firstFile}
+              <br />
+              Last: {lastFile}
+              <br />
+            </p>
+          ) : (
+            <p>No thumbnails to clean.</p>
+          ))}
       </article>
 
       {/* Cleanup Progress Section */}
@@ -343,9 +346,8 @@ data.post("/clean_preview", async (c) => {
         const mediaWithThumbnailToClean =
           await getMediaWithDeletableThumbnails(before);
 
-        const firstItem = mediaWithThumbnailToClean[0];
-        const lastItem =
-          mediaWithThumbnailToClean[mediaWithThumbnailToClean.length - 1];
+        const firstItem = mediaWithThumbnailToClean.at(0);
+        const lastItem = mediaWithThumbnailToClean.at(-1);
         const doneUrl: URL = new URL(
           "/thumbnail_cleanup",
           new URL(c.req.url).origin,
@@ -356,11 +358,18 @@ data.post("/clean_preview", async (c) => {
           "fileCount",
           mediaWithThumbnailToClean.length.toLocaleString("en"),
         );
-        doneUrl.searchParams.set(
-          "firstFile",
-          firstItem.created.toLocaleString(),
-        );
-        doneUrl.searchParams.set("lastFile", lastItem.created.toLocaleString());
+        if (firstItem) {
+          doneUrl.searchParams.set(
+            "firstFile",
+            firstItem.created.toLocaleString(),
+          );
+        }
+        if (lastItem) {
+          doneUrl.searchParams.set(
+            "lastFile",
+            lastItem.created.toLocaleString(),
+          );
+        }
         return c.redirect(doneUrl);
       } catch (error) {
         logger.error("Failed to clean up: {error}", { error });
