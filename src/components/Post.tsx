@@ -307,13 +307,17 @@ interface MediumProps {
 function Medium({ medium }: MediumProps) {
   return (
     <a href={medium.url}>
-      <img
-        key={medium.id}
-        src={medium.thumbnailUrl}
-        alt={medium.description ?? ""}
-        width={medium.thumbnailWidth}
-        height={medium.thumbnailHeight}
-      />
+      {medium.thumbnailCleaned ? (
+        "Thumbnail not available"
+      ) : (
+        <img
+          key={medium.id}
+          src={medium.thumbnailUrl}
+          alt={medium.description ?? ""}
+          width={medium.thumbnailWidth}
+          height={medium.thumbnailHeight}
+        />
+      )}
     </a>
   );
 }
