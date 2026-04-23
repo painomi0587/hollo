@@ -11,6 +11,7 @@ import logout from "./logout";
 import profile from "./profile";
 import setup from "./setup";
 import tags from "./tags";
+import thumbnail_cleanup from "./thumbnail_cleanup";
 
 const page = new Hono();
 
@@ -24,6 +25,7 @@ page.route("/auth", auth);
 page.route("/accounts", accounts);
 page.route("/emojis", emojis);
 page.route("/federation", federation);
+page.route("/thumbnail_cleanup", thumbnail_cleanup);
 page.route("/tags", tags);
 
 export default page;

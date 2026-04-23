@@ -35,15 +35,16 @@ Hollo has three main components:
  1. *Web server*: Handles HTTP requests (API, web UI)
  2. *Fedify message queue*: Processes ActivityPub inbox/outbox messages
  3. *Import worker*: Handles background data import jobs
+ 4. *Cleanup worker*: Handles background cleanup jobs
 
 By default (`NODE_TYPE=all`), all three run in a single process. You can
 separate them using the `NODE_TYPE` environment variable:
 
-| `NODE_TYPE` | Web server | Fedify queue | Import worker |
-| ----------- | ---------- | ------------ | ------------- |
-| `all` (default) | ✓ | ✓ | ✓ |
-| `web` | ✓ | ✗ | ✗ |
-| `worker` | ✗ | ✓ | ✓ |
+| `NODE_TYPE` | Web server | Fedify queue | Import worker | Cleanup worker |
+| ----------- | ---------- | ------------ | ------------- | -------------- |
+| `all` (default) | ✓ | ✓ | ✓ | ✓ |
+| `web` | ✓ | ✗ | ✗ | ✗ |
+| `worker` | ✗ | ✓ | ✓ | ✓ |
 
 All nodes share the same PostgreSQL database, which acts as the message queue
 backend using `LISTEN`/`NOTIFY` for real-time message delivery.
@@ -159,7 +160,8 @@ NODE_TYPE=worker pnpm prod
 pnpm worker
 ```
 
-This starts the Fedify message queue and import worker without the web server.
+This starts the Fedify message queue, import worker and cleanup worker without
+the web server.
 
 <Aside type="caution">
   When running `NODE_TYPE=web`, ensure at least one `NODE_TYPE=worker` node
@@ -251,11 +253,11 @@ sudo journalctl -u hollo-worker -f
 When a worker node starts, you should see:
 
 ```
-Worker started (Fedify queue + Import worker)
+Worker started (Fedify queue + Import worker + Cleanup worker)
 ```
 
-Watch for messages about processing activities and import jobs to confirm
-the worker is functioning correctly.
+Watch for messages about processing activities and import and cleanup jobs to 
+confirm the worker is functioning correctly.
 
 
 Troubleshooting

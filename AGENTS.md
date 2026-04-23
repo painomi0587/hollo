@@ -54,6 +54,10 @@ hollo/
 │   │   ├── v1/                   # API v1 endpoints
 │   │   └── v2/                   # API v2 endpoints (search, notifications)
 │   │
+│   ├── cleanup/                  # Cleanup (of old data)
+│   │   ├── processors.ts         # Cleanup item processors
+│   │   └── worker.ts             # Background job worker
+│   │
 │   ├── components/               # Hono JSX components (server-rendered)
 │   │
 │   ├── entities/                 # Entity serialization (DB → API response)
@@ -111,6 +115,7 @@ Key architectural components
     responses
  -  *Pages* (*src/pages/*): Web UI pages (profile, setup, dashboard, etc.)
  -  *Import system* (*src/import/*): Background job processing for data imports
+ -  *Cleanup system* (*src/cleanup/*): Background job processing for cleanup actions
 
 ### Key files
 

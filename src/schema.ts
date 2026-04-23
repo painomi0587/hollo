@@ -546,6 +546,7 @@ export const media = pgTable(
     created: timestamp("created", { withTimezone: true })
       .notNull()
       .default(currentTimestamp),
+    thumbnailCleaned: boolean("thumbnail_cleaned").notNull().default(false),
   },
   (table) => [index().on(table.postId)],
 );
@@ -1381,3 +1382,84 @@ export const importJobItemRelations = relations(importJobItems, ({ one }) => ({
     references: [importJobs.id],
   }),
 }));
+
+// Cleanup Job Status Enum
+export const cleanupJobStatusEnum = pgEnum("cleanup_job_status", [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export type CleanupJobStatus = (typeof cleanupJobStatusEnum.enumValues)[number];
+
+// Cleanup Job Category Enum
+export const cleanupJobCategoryEnum = pgEnum("cleanup_job_category", [
+  "cleanup_thumbnails",
+]);
+
+export type CleanupJobCategory =
+  (typeof cleanupJobCategoryEnum.enumValues)[number];
+
+// Cleanup Jobs Table
+export const cleanupJobs = pgTable(
+  "cleanup_jobs",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    category: cleanupJobCategoryEnum("category").notNull(),
+    status: cleanupJobStatusEnum("status").notNull().default("pending"),
+    totalItems: integer("total_items").notNull().default(0),
+    processedItems: integer("processed_items").notNull().default(0),
+    successfulItems: integer("successful_items").notNull().default(0),
+    failedItems: integer("failed_items").notNull().default(0),
+    errorMessage: text("error_message"),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [index().on(table.status, table.created)],
+);
+
+export type CleanupJob = typeof cleanupJobs.$inferSelect;
+export type NewCleanupJob = typeof cleanupJobs.$inferInsert;
+
+// Cleanup Job Items Table
+export const cleanupJobItems = pgTable(
+  "cleanup_job_items",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    jobId: uuid("job_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => cleanupJobs.id, { onDelete: "cascade" }),
+    status: cleanupJobStatusEnum("status").notNull().default("pending"),
+    data: jsonb("data").notNull().$type<Record<string, unknown>>(),
+    errorMessage: text("error_message"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [index().on(table.jobId, table.status)],
+);
+
+export type CleanupJobItem = typeof cleanupJobItems.$inferSelect;
+export type NewCleanupJobItem = typeof cleanupJobItems.$inferInsert;
+
+// Cleanup Job Relations
+export const cleanupJobRelations = relations(cleanupJobs, ({ many }) => ({
+  items: many(cleanupJobItems),
+}));
+
+export const cleanupJobItemRelations = relations(
+  cleanupJobItems,
+  ({ one }) => ({
+    job: one(cleanupJobs, {
+      fields: [cleanupJobItems.jobId],
+      references: [cleanupJobs.id],
+    }),
+  }),
+);

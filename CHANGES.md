@@ -120,14 +120,23 @@ To be released.
     editor and is now returned from `GET /api/v1/preferences`, which helps
     clients like Phanpy honor each account's preferred CW behavior.  [[#425]]
 
+ -  Added a new dashboard page for thumbnail cleanup at `/thumbnail_cleanup`.
+    Thumbnails from remote posts that have not been bookmarked, liked, reacted
+    to, shared nor quoted by a local account before a given cut-off data can
+    be mass-deleted in order to lower storage demand. The original posts are
+    not deleted, neither is the relationship to the original media nor the `alt`
+    text.  [[#409], [#436] by aliceif]
+
  -  Upgraded Fedify to 2.1.7.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
+[#409]: https://github.com/fedify-dev/hollo/issues/409
 [#420]: https://github.com/fedify-dev/hollo/issues/420
 [#424]: https://github.com/fedify-dev/hollo/issues/424
 [#425]: https://github.com/fedify-dev/hollo/issues/425
 [#435]: https://github.com/fedify-dev/hollo/issues/435
+[#436]: https://github.com/fedify-dev/hollo/pull/436
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 

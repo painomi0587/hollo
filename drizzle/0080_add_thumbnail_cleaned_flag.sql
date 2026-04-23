@@ -1,0 +1,1 @@
+ALTER TABLE "media" ADD COLUMN "thumbnail_cleaned" boolean DEFAULT false NOT NULL;
