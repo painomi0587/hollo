@@ -654,6 +654,7 @@ export async function onPostShared(
     ctx.origin,
     getPersistOptions(ctx),
   );
+  if (post == null || !post.isNew) return;
   if (post?.sharingId != null) {
     await updatePostStats(db, { id: post.sharingId });
   }
