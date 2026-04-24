@@ -38,10 +38,10 @@ export async function processThumbnailDeletion(
   if (reconstructedUrl !== medium.thumbnailUrl) {
     if (!medium.thumbnailUrl.startsWith(STORAGE_URL_BASE)) {
       throw new Error(
-        "The thumbnail URL ${thumbnailUrl} does not match the storage URL pattern ${storageUrlBase}!",
+        `The thumbnail URL ${medium.thumbnailUrl} does not match the storage URL pattern ${STORAGE_URL_BASE}!`,
       );
     } else {
-      throw new Error("The thumbnail URL ${medium.thumbnailUrl} is malformed.");
+      throw new Error(`The thumbnail URL ${medium.thumbnailUrl} is malformed.`);
     }
   }
 
