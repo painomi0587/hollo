@@ -586,6 +586,7 @@ export async function onPostShared(
   const object = await announce.getObject();
   if (!isPost(object)) return;
   const post = await persistSharingPost(db, announce, object, ctx.origin, ctx);
+  if (post == null || !post.isNew) return;
   if (post?.sharingId != null) {
     await updatePostStats(db, { id: post.sharingId });
   }

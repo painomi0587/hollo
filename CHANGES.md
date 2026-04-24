@@ -1,6 +1,40 @@
 Hollo changelog
 ===============
 
+Version 0.7.12
+--------------
+
+Released on April 25, 2026.
+
+ -  Fixed a federation bug where duplicate Announce activities from the same
+    actor for the same post could fail with a database uniqueness error instead
+    of being treated idempotently.  [[#443], [#444]]
+
+[#443]: https://github.com/fedify-dev/hollo/issues/443
+[#444]: https://github.com/fedify-dev/hollo/issues/444
+
+
+Version 0.7.11
+--------------
+
+Released on April 21, 2026.
+
+ -  Fixed a security vulnerability where a public profile's Atom feed could
+    expose followers-only posts and direct messages.  The Atom feed now only
+    serves public and unlisted posts.  [[#440]]
+
+[#440]: https://github.com/fedify-dev/hollo/issues/440
+
+
+Version 0.7.10
+--------------
+
+Released on April 8, 2026.
+
+ -  Upgraded Fedify to 1.10.8 for performance improvements and interoperability
+    fixes.
+
+
 Version 0.7.9
 -------------
 
