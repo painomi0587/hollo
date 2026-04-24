@@ -6,6 +6,13 @@ Version 0.7.12
 
 To be released.
 
+ -  Fixed a federation bug where duplicate Announce activities from the same
+    actor for the same post could fail with a database uniqueness error instead
+    of being treated idempotently.  [[#443], [#444]]
+
+[#443]: https://github.com/fedify-dev/hollo/issues/443
+[#444]: https://github.com/fedify-dev/hollo/issues/444
+
 
 Version 0.7.11
 --------------
