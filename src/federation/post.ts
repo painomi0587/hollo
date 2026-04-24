@@ -17,7 +17,6 @@ import {
   lookupObject,
   Note,
   OrderedCollection,
-  PUBLIC_COLLECTION,
   Question,
   type Recipient,
   Source,
@@ -76,6 +75,14 @@ import { appendPostToTimelines } from "./timeline";
 const logger = getLogger(["hollo", "federation", "post"]);
 
 export type ASPost = Article | Note | Question | ChatMessage;
+
+export type PersistedSharingPost = Post & {
+  account: Account & { owner: AccountOwner | null };
+  sharing:
+    | (Post & { account: Account & { owner: AccountOwner | null } })
+    | null;
+  isNew: boolean;
+};
 
 export function isPost(object?: vocab.Object | Link | null): object is ASPost {
   return (
@@ -246,9 +253,9 @@ export async function persistPost(
     replyTargetId,
     sharingId: null,
     quoteTargetId,
-    visibility: to.has(PUBLIC_COLLECTION.href)
+    visibility: to.has(vocab.PUBLIC_COLLECTION.href)
       ? "public"
-      : cc.has(PUBLIC_COLLECTION.href)
+      : cc.has(vocab.PUBLIC_COLLECTION.href)
         ? "unlisted"
         : account.followersUrl != null && to.has(account.followersUrl)
           ? "private"
@@ -485,15 +492,7 @@ export async function persistSharingPost(
     contextLoader?: DocumentLoader;
     documentLoader?: DocumentLoader;
   } = {},
-): Promise<
-  | (Post & {
-      account: Account & { owner: AccountOwner | null };
-      sharing:
-        | (Post & { account: Account & { owner: AccountOwner | null } })
-        | null;
-    })
-  | null
-> {
+): Promise<PersistedSharingPost | null> {
   if (announce.id == null) return null;
   const existingPost = await db.query.posts.findFirst({
     with: {
@@ -502,7 +501,7 @@ export async function persistSharingPost(
     },
     where: eq(posts.iri, announce.id.href),
   });
-  if (existingPost != null) return existingPost;
+  if (existingPost != null) return { ...existingPost, isNew: false };
   const actor = await announce.getActor(options);
   if (actor == null) return null;
   const account =
@@ -518,6 +517,19 @@ export async function persistSharingPost(
     skipUpdate: true,
   });
   if (originalPost == null) return null;
+  const existingSharingPost = await db.query.posts.findFirst({
+    with: {
+      account: { with: { owner: true } },
+      sharing: { with: { account: { with: { owner: true } } } },
+    },
+    where: and(
+      eq(posts.accountId, account.id),
+      eq(posts.sharingId, originalPost.id),
+    ),
+  });
+  if (existingSharingPost != null) {
+    return { ...existingSharingPost, isNew: false };
+  }
   const id = uuidv7();
   const updated = new Date();
   const result = await db
@@ -533,16 +545,34 @@ export async function persistSharingPost(
       quoteTargetId: null,
       visibility: announce.toIds
         .map((iri) => iri.href)
-        .includes(PUBLIC_COLLECTION.href)
+        .includes(vocab.PUBLIC_COLLECTION.href)
         ? "public"
-        : announce.ccIds.map((iri) => iri.href).includes(PUBLIC_COLLECTION.href)
+        : announce.ccIds
+              .map((iri) => iri.href)
+              .includes(vocab.PUBLIC_COLLECTION.href)
           ? "unlisted"
           : "private",
       url: originalPost.url,
       published: toDate(announce.published) ?? updated,
       updated,
     } satisfies NewPost)
+    .onConflictDoNothing({
+      target: [posts.accountId, posts.sharingId],
+    })
     .returning();
+  if (result[0] == null) {
+    const conflictedPost = await db.query.posts.findFirst({
+      with: {
+        account: { with: { owner: true } },
+        sharing: { with: { account: { with: { owner: true } } } },
+      },
+      where: and(
+        eq(posts.accountId, account.id),
+        eq(posts.sharingId, originalPost.id),
+      ),
+    });
+    return conflictedPost == null ? null : { ...conflictedPost, isNew: false };
+  }
   await db
     .update(posts)
     .set({ sharesCount: sql`coalesce(${posts.sharesCount}, 0) + 1` })
@@ -553,9 +583,7 @@ export async function persistSharingPost(
     mentions: [],
     replyTarget: null,
   });
-  return result[0] == null
-    ? null
-    : { ...result[0], account, sharing: originalPost };
+  return { ...result[0], account, sharing: originalPost, isNew: true };
 }
 
 export async function persistPollVote(
@@ -735,7 +763,7 @@ export function toObject(
       // For private posts, include followers collection
       // For direct messages, don't include any collections
       ...(post.visibility === "public"
-        ? [PUBLIC_COLLECTION]
+        ? [vocab.PUBLIC_COLLECTION]
         : post.visibility === "private" && post.account.owner != null
           ? [ctx.getFollowersUri(post.account.owner.handle)]
           : []),
@@ -744,7 +772,7 @@ export function toObject(
     ],
     // For unlisted posts, include PUBLIC_COLLECTION in cc
     // For all other visibilities, cc is null
-    cc: post.visibility === "unlisted" ? PUBLIC_COLLECTION : null,
+    cc: post.visibility === "unlisted" ? vocab.PUBLIC_COLLECTION : null,
     summaries:
       post.summary == null
         ? []

@@ -321,7 +321,10 @@ profile.get("/atom.xml", async (c) => {
   if (owner == null) return c.notFound();
   const postList = await db.query.posts.findMany({
     with: { account: true },
-    where: eq(posts.accountId, owner.id),
+    where: and(
+      eq(posts.accountId, owner.id),
+      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+    ),
     orderBy: desc(posts.published),
     limit: 100,
   });
