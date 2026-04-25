@@ -101,17 +101,46 @@ export async function enqueueRemoteReplyScrape(
       updated: now,
     };
 
-    if (existingJob == null) {
-      await tx.insert(remoteReplyScrapeJobs).values({
-        ...values,
-        id: uuidv7(),
-        created: now,
+    const targetJob =
+      existingJob ??
+      (
+        await tx
+          .insert(remoteReplyScrapeJobs)
+          .values({
+            ...values,
+            id: uuidv7(),
+            created: now,
+          })
+          .onConflictDoNothing({
+            target: remoteReplyScrapeJobs.repliesIri,
+          })
+          .returning()
+      )[0];
+
+    if (targetJob == null) {
+      const conflictingJob = await tx.query.remoteReplyScrapeJobs.findFirst({
+        where: eq(remoteReplyScrapeJobs.repliesIri, repliesIri.href),
       });
-    } else {
+
+      if (
+        conflictingJob == null ||
+        conflictingJob.status === "pending" ||
+        conflictingJob.status === "processing" ||
+        (conflictingJob.completedAt != null &&
+          conflictingJob.completedAt > cooldownStartedAt)
+      ) {
+        return;
+      }
+
       await tx
         .update(remoteReplyScrapeJobs)
         .set(values)
-        .where(eq(remoteReplyScrapeJobs.id, existingJob.id));
+        .where(eq(remoteReplyScrapeJobs.id, conflictingJob.id));
+    } else if (existingJob != null) {
+      await tx
+        .update(remoteReplyScrapeJobs)
+        .set(values)
+        .where(eq(remoteReplyScrapeJobs.id, targetJob.id));
     }
   });
 }
