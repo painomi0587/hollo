@@ -382,21 +382,26 @@ STORAGE_URL_BASE=https://your-bucket.s3.amazonaws.com
 
 ### Optional variables
 
-| Variable                       | Default | Description                              |
-| ------------------------------ | ------- | ---------------------------------------- |
-| `PORT`                         | 3000    | Server port                              |
-| `BIND`                         | -       | Bind address                             |
-| `NODE_TYPE`                    | all     | Node type: `all`, `web`, or `worker`     |
-| `BEHIND_PROXY`                 | false   | Trust proxy headers                      |
-| `LOG_LEVEL`                    | info    | Logging level                            |
-| `LOG_QUERY`                    | false   | Log database queries                     |
-| `LOG_FILE`                     | -       | JSON log file path                       |
-| `SENTRY_DSN`                   | -       | Sentry error tracking                    |
-| `HOME_URL`                     | -       | Home page redirect URL                   |
-| `ALLOW_PRIVATE_ADDRESS`        | false   | Disable SSRF protection                  |
-| `REMOTE_ACTOR_FETCH_POSTS`     | 10      | Posts to fetch from remote actors        |
-| `REMOTE_ACTOR_STALENESS_DAYS`  | 7       | Days before remote actor data is stale   |
-| `REFRESH_ACTORS_ON_INTERACTION`| false   | Refresh actors on all activity types     |
+| Variable                                 | Default | Description                              |
+| ---------------------------------------- | ------- | ---------------------------------------- |
+| `PORT`                                   | 3000    | Server port                              |
+| `BIND`                                   | -       | Bind address                             |
+| `NODE_TYPE`                              | all     | Node type: `all`, `web`, or `worker`     |
+| `BEHIND_PROXY`                           | false   | Trust proxy headers                      |
+| `LOG_LEVEL`                              | info    | Logging level                            |
+| `LOG_QUERY`                              | false   | Log database queries                     |
+| `LOG_FILE`                               | -       | JSON log file path                       |
+| `SENTRY_DSN`                             | -       | Sentry error tracking                    |
+| `HOME_URL`                               | -       | Home page redirect URL                   |
+| `ALLOW_PRIVATE_ADDRESS`                  | false   | Disable SSRF protection                  |
+| `REMOTE_ACTOR_FETCH_POSTS`               | 10      | Posts to fetch from remote actors        |
+| `REMOTE_ACTOR_STALENESS_DAYS`            | 7       | Days before remote actor data is stale   |
+| `REFRESH_ACTORS_ON_INTERACTION`          | false   | Refresh actors on all activity types     |
+| `REMOTE_REPLIES_SCRAPE_DEPTH`            | 2       | Reply scraping depth for remote posts    |
+| `REMOTE_REPLIES_SCRAPE_MAX_ITEMS`        | 100     | Replies to process per scraping job      |
+| `REMOTE_REPLIES_SCRAPE_INTERVAL_SECONDS` | 5       | Delay between scrape requests per origin |
+| `REMOTE_REPLIES_SCRAPE_BACKOFF_SECONDS`  | 300     | Backoff for 429 without `Retry-After`    |
+| `REMOTE_REPLIES_SCRAPE_COOLDOWN_SECONDS` | 300     | Completed scrape deduplication window    |
 
 
 Adding new environment variables
