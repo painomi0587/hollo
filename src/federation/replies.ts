@@ -1,4 +1,10 @@
-import { and, eq, type ExtractTablesWithRelations, inArray } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  type ExtractTablesWithRelations,
+  inArray,
+} from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 
@@ -149,8 +155,8 @@ export async function countActiveRemoteReplyScrapeJobs(
   db: Database,
   repliesIri: URL,
 ): Promise<number> {
-  const rows = await db
-    .select({ id: remoteReplyScrapeJobs.id })
+  const [row] = await db
+    .select({ count: count() })
     .from(remoteReplyScrapeJobs)
     .where(
       and(
@@ -158,7 +164,7 @@ export async function countActiveRemoteReplyScrapeJobs(
         inArray(remoteReplyScrapeJobs.status, ["pending", "processing"]),
       ),
     );
-  return rows.length;
+  return row?.count ?? 0;
 }
 
 function parsePositiveInteger(name: string, fallback: number): number {

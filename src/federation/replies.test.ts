@@ -6,7 +6,10 @@ import db from "../db";
 import { accounts, instances, posts, remoteReplyScrapeJobs } from "../schema";
 import type { Uuid } from "../uuid";
 import { uuidv7 } from "../uuid";
-import { enqueueRemoteReplyScrape } from "./replies";
+import {
+  countActiveRemoteReplyScrapeJobs,
+  enqueueRemoteReplyScrape,
+} from "./replies";
 
 async function seedRemotePost() {
   const accountId = crypto.randomUUID() as Uuid;
@@ -82,5 +85,48 @@ describe("enqueueRemoteReplyScrape", () => {
       .from(remoteReplyScrapeJobs)
       .where(eq(remoteReplyScrapeJobs.repliesIri, repliesIri.href));
     expect(jobs).toHaveLength(1);
+  });
+
+  it("counts active jobs for a replies collection", async () => {
+    expect.assertions(1);
+    const post = await seedRemotePost();
+    const repliesIri = new URL("https://remote.test/@author/posts/1/replies");
+    const otherRepliesIri = new URL(
+      "https://remote.test/@author/posts/2/replies",
+    );
+
+    await db.insert(remoteReplyScrapeJobs).values([
+      {
+        id: uuidv7(),
+        postId: post.id,
+        postIri: post.iri,
+        repliesIri: repliesIri.href,
+        baseUrl: "https://hollo.test",
+        originHost: repliesIri.host,
+        status: "processing",
+      },
+      {
+        id: uuidv7(),
+        postId: post.id,
+        postIri: post.iri,
+        repliesIri: otherRepliesIri.href,
+        baseUrl: "https://hollo.test",
+        originHost: otherRepliesIri.host,
+        status: "completed",
+      },
+      {
+        id: uuidv7(),
+        postId: post.id,
+        postIri: post.iri,
+        repliesIri: "https://remote.test/@author/posts/3/replies",
+        baseUrl: "https://hollo.test",
+        originHost: "remote.test",
+        status: "pending",
+      },
+    ]);
+
+    await expect(
+      countActiveRemoteReplyScrapeJobs(db, repliesIri),
+    ).resolves.toBe(1);
   });
 });
