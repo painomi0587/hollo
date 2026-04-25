@@ -364,13 +364,18 @@ describe("remote replies scrape worker", () => {
     expect(origin?.nextRequestAt.getTime()).toBe(now.getTime() + 120_000);
   });
 
-  it("records one timestamp for throttled origin request fields", async () => {
-    expect.assertions(2);
+  it("records per-request timestamps for throttled origin request fields", async () => {
+    expect.assertions(3);
     const { postIri, repliesIri } = await seedPostWithScrapeJob();
     const now = new Date("2026-04-25T00:00:00.000Z");
+    const requestTimes = [
+      new Date("2026-04-25T00:00:01.000Z"),
+      new Date("2026-04-25T00:00:02.000Z"),
+    ];
     await seedRemoteAccount("replyer");
 
     await processDueRemoteReplyScrapeJobs({
+      clock: () => requestTimes.shift() ?? new Date("2026-04-25T00:00:03.000Z"),
       documentLoader: makeLoader({
         [repliesIri]: collection(repliesIri, [
           reply({
@@ -386,7 +391,12 @@ describe("remote replies scrape worker", () => {
     });
 
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
-    expect(origin?.lastRequestAt?.getTime()).toBe(now.getTime());
-    expect(origin?.updated.getTime()).toBe(now.getTime());
+    expect(origin?.lastRequestAt?.toISOString()).toBe(
+      "2026-04-25T00:00:02.000Z",
+    );
+    expect(origin?.nextRequestAt.toISOString()).toBe(
+      "2026-04-25T00:00:12.000Z",
+    );
+    expect(origin?.updated.toISOString()).toBe("2026-04-25T00:00:02.000Z");
   });
 });

@@ -30,6 +30,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 export interface ProcessRemoteReplyScrapeJobsOptions {
   backoffSeconds?: number;
+  clock?: () => Date;
   documentLoader?: DocumentLoader;
   intervalSeconds?: number;
   maxDepth?: number;
@@ -212,7 +213,7 @@ async function processRemoteReplyScrapeJob(
       documentLoader,
       intervalSeconds:
         options.intervalSeconds ?? REMOTE_REPLIES_SCRAPE_INTERVAL_SECONDS,
-      now,
+      clock: options.clock ?? (() => new Date()),
       sleep: options.sleep ?? sleep,
     });
     let lastFetchError: unknown;
@@ -302,12 +303,12 @@ function createThrottledDocumentLoader(
   {
     documentLoader,
     intervalSeconds,
-    now,
+    clock,
     sleep,
   }: {
+    clock: () => Date;
     documentLoader: DocumentLoader;
     intervalSeconds: number;
-    now: Date;
     sleep: (milliseconds: number) => Promise<void>;
   },
 ): DocumentLoader {
@@ -324,7 +325,7 @@ function createThrottledDocumentLoader(
       return await documentLoader(url, options);
     } finally {
       if (sameOrigin) {
-        const requestTime = now;
+        const requestTime = clock();
         await db
           .update(remoteReplyScrapeOrigins)
           .set({
@@ -374,7 +375,7 @@ async function completeJob(
       .set({
         processingJobId: null,
         processingStartedAt: null,
-        updated: now,
+        updated: sql`greatest(${remoteReplyScrapeOrigins.updated}, ${now.toISOString()}::timestamptz)`,
       })
       .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
   });
@@ -401,7 +402,7 @@ async function failJob(
       .set({
         processingJobId: null,
         processingStartedAt: null,
-        updated: now,
+        updated: sql`greatest(${remoteReplyScrapeOrigins.updated}, ${now.toISOString()}::timestamptz)`,
       })
       .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
   });
@@ -431,7 +432,7 @@ async function backOffJob(
         nextRequestAt: nextAttemptAt,
         processingJobId: null,
         processingStartedAt: null,
-        updated: now,
+        updated: sql`greatest(${remoteReplyScrapeOrigins.updated}, ${now.toISOString()}::timestamptz)`,
       })
       .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
   });
