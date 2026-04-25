@@ -196,13 +196,13 @@ async function processRemoteReplyScrapeJob(
   job: RemoteReplyScrapeJob,
   options: ProcessRemoteReplyScrapeJobsOptions,
 ): Promise<number> {
-  const now = options.now ?? new Date();
+  const clock = options.clock ?? (() => options.now ?? new Date());
   const post = await db.query.posts.findFirst({
     where: eq(posts.id, job.postId),
   });
 
   if (post == null) {
-    await failJob(job, "Post not found", now);
+    await failJob(job, "Post not found", clock());
     return 0;
   }
 
@@ -213,7 +213,7 @@ async function processRemoteReplyScrapeJob(
       documentLoader,
       intervalSeconds:
         options.intervalSeconds ?? REMOTE_REPLIES_SCRAPE_INTERVAL_SECONDS,
-      clock: options.clock ?? (() => new Date()),
+      clock,
       sleep: options.sleep ?? sleep,
     });
     let lastFetchError: unknown;
@@ -275,24 +275,25 @@ async function processRemoteReplyScrapeJob(
 
     await updatePostStats(db, { id: job.postId });
     await updateScrapedRepliesCount(job.postId);
-    await completeJob(job, fetchedItems, now);
+    await completeJob(job, fetchedItems, clock());
     return fetchedItems;
   } catch (error) {
     if (getErrorStatus(error) === 429) {
+      const failedAt = clock();
       await backOffJob(
         job,
-        retryAfterSeconds(error) ??
+        retryAfterSeconds(error, failedAt) ??
           options.backoffSeconds ??
           REMOTE_REPLIES_SCRAPE_BACKOFF_SECONDS,
         error,
-        now,
+        failedAt,
       );
       return 0;
     }
     await failJob(
       job,
       error instanceof Error ? error.message : String(error),
-      now,
+      clock(),
     );
     return 0;
   }
@@ -458,7 +459,7 @@ function getErrorStatus(error: unknown): number | null {
   return error.response.status;
 }
 
-function retryAfterSeconds(error: unknown): number | null {
+function retryAfterSeconds(error: unknown, now = new Date()): number | null {
   if (
     error == null ||
     typeof error !== "object" ||
@@ -476,7 +477,7 @@ function retryAfterSeconds(error: unknown): number | null {
 
   const date = Date.parse(retryAfter);
   if (Number.isNaN(date)) return null;
-  return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+  return Math.max(0, Math.ceil((date - now.getTime()) / 1000));
 }
 
 function sleep(milliseconds: number): Promise<void> {

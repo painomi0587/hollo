@@ -364,6 +364,52 @@ describe("remote replies scrape worker", () => {
     expect(origin?.nextRequestAt.getTime()).toBe(now.getTime() + 120_000);
   });
 
+  it("bases 429 backoff on the actual failure time", async () => {
+    expect.assertions(3);
+    const { jobId, postIri, repliesIri } = await seedPostWithScrapeJob();
+    const now = new Date("2026-04-25T00:00:00.000Z");
+    const failureTime = new Date("2026-04-25T00:10:00.000Z");
+    const error = new Error("rate limited") as Error & {
+      response: Response;
+    };
+    error.response = new Response(null, {
+      status: 429,
+      headers: { "Retry-After": "120" },
+    });
+
+    await processDueRemoteReplyScrapeJobs({
+      clock: () => failureTime,
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url === repliesIri) {
+          return {
+            contextUrl: null,
+            document: collection(repliesIri, [
+              reply({
+                id: "https://remote.test/@replyer/posts/1",
+                replyTarget: postIri,
+              }),
+            ]),
+            documentUrl: url,
+          };
+        }
+        if (url === "https://remote.test/@replyer") throw error;
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+      now,
+      sleep: async () => undefined,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
+    expect(job?.status).toBe("pending");
+    expect(job?.nextAttemptAt.getTime()).toBe(failureTime.getTime() + 120_000);
+    expect(origin?.nextRequestAt.getTime()).toBe(
+      failureTime.getTime() + 120_000,
+    );
+  });
+
   it("records per-request timestamps for throttled origin request fields", async () => {
     expect.assertions(3);
     const { postIri, repliesIri } = await seedPostWithScrapeJob();
@@ -397,6 +443,6 @@ describe("remote replies scrape worker", () => {
     expect(origin?.nextRequestAt.toISOString()).toBe(
       "2026-04-25T00:00:12.000Z",
     );
-    expect(origin?.updated.toISOString()).toBe("2026-04-25T00:00:02.000Z");
+    expect(origin?.updated.toISOString()).toBe("2026-04-25T00:00:03.000Z");
   });
 });
