@@ -1504,8 +1504,17 @@ export const remoteReplyScrapeJobs = pgTable(
       .default(currentTimestamp),
   },
   (table) => [
-    index().on(table.status, table.nextAttemptAt),
-    index().on(table.originHost, table.status, table.nextAttemptAt),
+    index("remote_reply_scrape_jobs_claim_index").on(
+      table.status,
+      table.nextAttemptAt,
+      table.created,
+    ),
+    index("remote_reply_scrape_jobs_origin_claim_index").on(
+      table.originHost,
+      table.status,
+      table.nextAttemptAt,
+      table.created,
+    ),
   ],
 );
 

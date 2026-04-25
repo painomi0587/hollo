@@ -229,6 +229,8 @@ async function processRemoteReplyScrapeJob(
       documentLoader,
       intervalSeconds:
         options.intervalSeconds ?? REMOTE_REPLIES_SCRAPE_INTERVAL_SECONDS,
+      staleProcessingSeconds:
+        options.staleProcessingSeconds ?? STALE_PROCESSING_TIMEOUT_SECONDS,
       clock,
       sleep: options.sleep ?? sleep,
     });
@@ -323,6 +325,7 @@ function createThrottledDocumentLoader(
   {
     documentLoader,
     intervalSeconds,
+    staleProcessingSeconds,
     clock,
     sleep,
   }: {
@@ -330,6 +333,7 @@ function createThrottledDocumentLoader(
     documentLoader: DocumentLoader;
     intervalSeconds: number;
     sleep: (milliseconds: number) => Promise<void>;
+    staleProcessingSeconds: number;
   },
 ): DocumentLoader {
   let originRequests = 0;
@@ -337,7 +341,12 @@ function createThrottledDocumentLoader(
   return async (url, options) => {
     const sameOrigin = new URL(url).host === job.originHost;
     if (sameOrigin && originRequests > 0) {
-      await sleep(intervalSeconds * 1000);
+      await sleepWithProcessingHeartbeats(job, {
+        clock,
+        seconds: intervalSeconds,
+        sleep,
+        staleProcessingSeconds,
+      });
     }
     if (sameOrigin) originRequests++;
 
@@ -377,6 +386,67 @@ function createThrottledDocumentLoader(
       });
     }
   };
+}
+
+async function sleepWithProcessingHeartbeats(
+  job: RemoteReplyScrapeJob,
+  {
+    clock,
+    seconds,
+    sleep,
+    staleProcessingSeconds,
+  }: {
+    clock: () => Date;
+    seconds: number;
+    sleep: (milliseconds: number) => Promise<void>;
+    staleProcessingSeconds: number;
+  },
+): Promise<void> {
+  let remainingMilliseconds = seconds * 1000;
+  if (remainingMilliseconds <= 0) return;
+
+  const heartbeatMilliseconds =
+    Math.max(1, Math.floor(staleProcessingSeconds / 2)) * 1000;
+
+  while (remainingMilliseconds > 0) {
+    await updateProcessingHeartbeat(job, clock());
+    const sleepMilliseconds = Math.min(
+      remainingMilliseconds,
+      heartbeatMilliseconds,
+    );
+    await sleep(sleepMilliseconds);
+    remainingMilliseconds -= sleepMilliseconds;
+  }
+}
+
+async function updateProcessingHeartbeat(
+  job: RemoteReplyScrapeJob,
+  now: Date,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .update(remoteReplyScrapeOrigins)
+      .set({
+        processingStartedAt: now,
+        updated: now,
+      })
+      .where(
+        and(
+          eq(remoteReplyScrapeOrigins.originHost, job.originHost),
+          eq(remoteReplyScrapeOrigins.processingJobId, job.id),
+        ),
+      );
+
+    await tx
+      .update(remoteReplyScrapeJobs)
+      .set({ updated: now })
+      .where(
+        and(
+          eq(remoteReplyScrapeJobs.id, job.id),
+          eq(remoteReplyScrapeJobs.status, "processing"),
+        ),
+      );
+  });
 }
 
 async function updateScrapedRepliesCount(
