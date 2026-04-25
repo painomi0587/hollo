@@ -135,12 +135,14 @@ function actor(username: string, host = "remote.test") {
 
 function reply({
   content = "Reply",
+  host = "remote.test",
   id,
   replyTarget,
   replies,
   username = "replyer",
 }: {
   content?: string;
+  host?: string;
   id: string;
   replyTarget: string;
   replies?: string;
@@ -149,7 +151,7 @@ function reply({
   return {
     id,
     type: "Note",
-    attributedTo: `https://remote.test/@${username}`,
+    attributedTo: `https://${host}/@${username}`,
     content: `<p>${content}</p>`,
     inReplyTo: replyTarget,
     to: PUBLIC_COLLECTION,
@@ -348,6 +350,93 @@ describe("remote replies scrape worker", () => {
     });
     expect(processed).toBe(1);
     expect(reclaimedDuringSleep).toBe(false);
+    expect(job?.status).toBe("completed");
+    expect(job?.attempts).toBe(1);
+  });
+
+  it("does not reclaim processing jobs after cross-origin heartbeats", async () => {
+    expect.assertions(3);
+    const { jobId, postIri, repliesIri } = await seedPostWithScrapeJob();
+    const startedAt = new Date("2026-04-25T00:00:00.000Z");
+    const crossOriginHeartbeatAt = new Date("2026-04-25T00:00:30.000Z");
+    const reclaimAt = new Date("2026-04-25T00:01:01.000Z");
+    const requestTimes = [
+      startedAt,
+      crossOriginHeartbeatAt,
+      new Date("2026-04-25T00:01:02.000Z"),
+      new Date("2026-04-25T00:01:03.000Z"),
+    ];
+    let reclaimedDuringCrossOriginFetch = false;
+    const firstCrossOriginReply = reply({
+      host: "other.test",
+      id: "https://other.test/@replyer/posts/1",
+      replyTarget: postIri,
+    });
+    const secondCrossOriginReply = reply({
+      host: "other2.test",
+      id: "https://other2.test/@replyer/posts/2",
+      replyTarget: postIri,
+    });
+
+    await processDueRemoteReplyScrapeJobs({
+      clock: () => requestTimes.shift() ?? new Date("2026-04-25T00:01:04.000Z"),
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url === repliesIri) {
+          return {
+            contextUrl: null,
+            document: collection(repliesIri, [
+              firstCrossOriginReply,
+              secondCrossOriginReply,
+            ]),
+            documentUrl: url,
+          };
+        }
+        if (url === "https://other.test/@replyer/posts/1") {
+          return {
+            contextUrl: null,
+            document: firstCrossOriginReply,
+            documentUrl: url,
+          };
+        }
+        if (url === "https://other2.test/@replyer/posts/2") {
+          const reclaimed = await claimRemoteReplyScrapeJob(
+            "other-worker",
+            reclaimAt,
+            60,
+          );
+          reclaimedDuringCrossOriginFetch = reclaimed != null;
+          return {
+            contextUrl: null,
+            document: secondCrossOriginReply,
+            documentUrl: url,
+          };
+        }
+        if (url === "https://other.test/@replyer") {
+          return {
+            contextUrl: null,
+            document: actor("replyer", "other.test"),
+            documentUrl: url,
+          };
+        }
+        if (url === "https://other2.test/@replyer") {
+          return {
+            contextUrl: null,
+            document: actor("replyer", "other2.test"),
+            documentUrl: url,
+          };
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+      intervalSeconds: 10,
+      now: startedAt,
+      sleep: async () => undefined,
+      staleProcessingSeconds: 60,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    expect(reclaimedDuringCrossOriginFetch).toBe(false);
     expect(job?.status).toBe("completed");
     expect(job?.attempts).toBe(1);
   });

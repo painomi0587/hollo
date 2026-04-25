@@ -342,9 +342,9 @@ function createThrottledDocumentLoader(
     try {
       return await documentLoader(url, options);
     } finally {
-      if (sameOrigin) {
-        const requestTime = clock();
-        await db.transaction(async (tx) => {
+      const requestTime = clock();
+      await db.transaction(async (tx) => {
+        if (sameOrigin) {
           await tx
             .update(remoteReplyScrapeOrigins)
             .set({
@@ -354,17 +354,25 @@ function createThrottledDocumentLoader(
               updated: requestTime,
             })
             .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+        } else {
           await tx
-            .update(remoteReplyScrapeJobs)
-            .set({ updated: requestTime })
-            .where(
-              and(
-                eq(remoteReplyScrapeJobs.id, job.id),
-                eq(remoteReplyScrapeJobs.status, "processing"),
-              ),
-            );
-        });
-      }
+            .update(remoteReplyScrapeOrigins)
+            .set({
+              processingStartedAt: requestTime,
+              updated: requestTime,
+            })
+            .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+        }
+        await tx
+          .update(remoteReplyScrapeJobs)
+          .set({ updated: requestTime })
+          .where(
+            and(
+              eq(remoteReplyScrapeJobs.id, job.id),
+              eq(remoteReplyScrapeJobs.status, "processing"),
+            ),
+          );
+      });
     }
   };
 }
