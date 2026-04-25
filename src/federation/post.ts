@@ -274,7 +274,6 @@ export async function persistPost(
     emojis,
     sensitive: object.sensitive ?? false,
     url: object.url instanceof Link ? object.url.href?.href : object.url?.href,
-    repliesCount: existingPost?.repliesCount ?? 0,
     sharesCount: shares?.totalItems ?? 0,
     likesCount: likes?.totalItems ?? 0,
     published,
@@ -284,6 +283,7 @@ export async function persistPost(
     .insert(posts)
     .values({
       ...values,
+      repliesCount: existingPost?.repliesCount ?? 0,
       id: uuidv7(+(published ?? updated)),
       iri: object.id.href,
     })

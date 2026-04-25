@@ -318,4 +318,64 @@ describe("persistPost", () => {
     expect(documentLoader).not.toHaveBeenCalledWith(repliesIri);
     expect(jobs.map((job) => job.repliesIri)).toEqual([repliesIri]);
   });
+
+  it("does not overwrite replies counts during post updates", async () => {
+    expect.assertions(2);
+    const author = await seedRemoteAccount("author");
+    const repliesIri = "https://remote.test/@author/posts/1/replies";
+
+    const first = await persistPost(
+      db,
+      new Note({
+        id: new URL("https://remote.test/@author/posts/1"),
+        attribution: createPerson(author),
+        content: "<p>Hello</p>",
+        replies: new URL(repliesIri),
+        to: PUBLIC_COLLECTION,
+      }),
+      "https://hollo.test",
+      { account: author },
+    );
+    if (first == null) throw new Error("Failed to persist post");
+
+    await persistPost(
+      db,
+      new Note({
+        id: new URL("https://remote.test/@author/posts/1"),
+        attribution: new URL(author.iri),
+        content: "<p>Hello again</p>",
+        replies: new URL(repliesIri),
+        to: PUBLIC_COLLECTION,
+      }),
+      "https://hollo.test",
+      {
+        documentLoader: async (url): Promise<RemoteDocument> => {
+          if (url !== author.iri) throw new Error(`Unexpected fetch: ${url}`);
+          await db
+            .update(posts)
+            .set({ repliesCount: 3 })
+            .where(eq(posts.id, first.id));
+          return {
+            contextUrl: null,
+            document: {
+              "@context": "https://www.w3.org/ns/activitystreams",
+              id: author.iri,
+              type: "Person",
+              name: author.handle,
+              inbox: `${author.iri}/inbox`,
+              followers: author.followersUrl,
+            },
+            documentUrl: url,
+          };
+        },
+      },
+    );
+
+    const post = await db.query.posts.findFirst({
+      where: eq(posts.id, first.id),
+    });
+    const jobs = await db.query.remoteReplyScrapeJobs.findMany();
+    expect(post?.repliesCount).toBe(3);
+    expect(jobs.map((job) => job.repliesIri)).toEqual([repliesIri]);
+  });
 });

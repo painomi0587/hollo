@@ -129,4 +129,72 @@ describe("enqueueRemoteReplyScrape", () => {
       countActiveRemoteReplyScrapeJobs(db, repliesIri),
     ).resolves.toBe(1);
   });
+
+  it("re-enqueues recently failed jobs without completed cooldown", async () => {
+    expect.assertions(4);
+    const post = await seedRemotePost();
+    const repliesIri = new URL("https://remote.test/@author/posts/1/replies");
+    const failedAt = new Date();
+
+    await db.insert(remoteReplyScrapeJobs).values({
+      id: uuidv7(),
+      postId: post.id,
+      postIri: post.iri,
+      repliesIri: repliesIri.href,
+      baseUrl: "https://hollo.test",
+      originHost: repliesIri.host,
+      status: "failed",
+      attempts: 2,
+      errorMessage: "temporary failure",
+      completedAt: failedAt,
+      startedAt: failedAt,
+      fetchedItems: 3,
+    });
+
+    await enqueueRemoteReplyScrape(db, {
+      baseUrl: "https://hollo.test",
+      post,
+      repliesIri,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.repliesIri, repliesIri.href),
+    });
+    expect(job?.status).toBe("pending");
+    expect(job?.attempts).toBe(0);
+    expect(job?.completedAt).toBeNull();
+    expect(job?.errorMessage).toBeNull();
+  });
+
+  it("keeps recently completed jobs in cooldown", async () => {
+    expect.assertions(2);
+    const post = await seedRemotePost();
+    const repliesIri = new URL("https://remote.test/@author/posts/1/replies");
+    const completedAt = new Date();
+
+    await db.insert(remoteReplyScrapeJobs).values({
+      id: uuidv7(),
+      postId: post.id,
+      postIri: post.iri,
+      repliesIri: repliesIri.href,
+      baseUrl: "https://hollo.test",
+      originHost: repliesIri.host,
+      status: "completed",
+      attempts: 2,
+      completedAt,
+      fetchedItems: 3,
+    });
+
+    await enqueueRemoteReplyScrape(db, {
+      baseUrl: "https://hollo.test",
+      post,
+      repliesIri,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.repliesIri, repliesIri.href),
+    });
+    expect(job?.status).toBe("completed");
+    expect(job?.attempts).toBe(2);
+  });
 });

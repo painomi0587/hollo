@@ -471,7 +471,7 @@ describe("remote replies scrape worker", () => {
   });
 
   it("backs off jobs and origins when a replies collection returns HTTP 429", async () => {
-    expect.assertions(4);
+    expect.assertions(6);
     const { jobId, repliesIri } = await seedPostWithScrapeJob();
     const now = new Date("2026-04-25T00:00:00.000Z");
     const error = new Error("rate limited") as Error & {
@@ -498,7 +498,117 @@ describe("remote replies scrape worker", () => {
     expect(processed).toBe(0);
     expect(job?.status).toBe("pending");
     expect(job?.nextAttemptAt.getTime()).toBe(now.getTime() + 120_000);
+    expect(job?.startedAt).toBeNull();
+    expect(job?.completedAt).toBeNull();
     expect(origin?.nextRequestAt.getTime()).toBe(now.getTime() + 120_000);
+  });
+
+  it("updates scraped replies count before backing off partial jobs", async () => {
+    expect.assertions(3);
+    const { jobId, postId, postIri, repliesIri } =
+      await seedPostWithScrapeJob();
+    const now = new Date("2026-04-25T00:00:00.000Z");
+    const failureTime = new Date("2026-04-25T00:01:00.000Z");
+    const firstPage = `${repliesIri}?page=1`;
+    const secondPage = `${repliesIri}?page=2`;
+    const error = new Error("rate limited") as Error & {
+      response: Response;
+    };
+    error.response = new Response(null, { status: 429 });
+
+    await processDueRemoteReplyScrapeJobs({
+      clock: () => failureTime,
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url === repliesIri) {
+          return {
+            contextUrl: null,
+            document: {
+              "@context": "https://www.w3.org/ns/activitystreams",
+              id: repliesIri,
+              type: "OrderedCollection",
+              totalItems: 2,
+              first: {
+                id: firstPage,
+                type: "OrderedCollectionPage",
+                partOf: repliesIri,
+                next: secondPage,
+                orderedItems: [
+                  reply({
+                    id: "https://remote.test/@replyer/posts/1",
+                    replyTarget: postIri,
+                  }),
+                ],
+              },
+            },
+            documentUrl: url,
+          };
+        }
+        if (url === firstPage) {
+          return {
+            contextUrl: null,
+            document: {
+              "@context": "https://www.w3.org/ns/activitystreams",
+              id: firstPage,
+              type: "OrderedCollectionPage",
+              partOf: repliesIri,
+              next: secondPage,
+              orderedItems: [
+                reply({
+                  id: "https://remote.test/@replyer/posts/1",
+                  replyTarget: postIri,
+                }),
+              ],
+            },
+            documentUrl: url,
+          };
+        }
+        if (url === "https://remote.test/@replyer") {
+          return {
+            contextUrl: null,
+            document: actor("replyer"),
+            documentUrl: url,
+          };
+        }
+        if (url === secondPage) {
+          const replyer = await seedRemoteAccount("replyer");
+          await db
+            .insert(posts)
+            .values({
+              id: uuidv7(),
+              iri: "https://remote.test/@replyer/posts/1",
+              type: "Note",
+              accountId: replyer.id,
+              replyTargetId: postId,
+              visibility: "public",
+              contentHtml: "<p>Reply</p>",
+              content: "Reply",
+              tags: {},
+              emojis: {},
+              sensitive: false,
+              published: new Date(),
+              updated: new Date(),
+            })
+            .onConflictDoNothing({
+              target: posts.iri,
+            });
+          throw error;
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+      maxDepth: 2,
+      now,
+      sleep: async () => undefined,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    const post = await db.query.posts.findFirst({
+      where: eq(posts.id, postId),
+    });
+    expect(job?.status).toBe("pending");
+    expect(job?.fetchedItems).toBe(0);
+    expect(post?.repliesCount).toBe(1);
   });
 
   it("uses fallback backoff when Retry-After has negative seconds", async () => {

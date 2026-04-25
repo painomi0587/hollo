@@ -10,6 +10,7 @@ import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 
 import type * as schema from "../schema";
 import {
+  type RemoteReplyScrapeJob,
   remoteReplyScrapeJobs,
   remoteReplyScrapeOrigins,
   type Post,
@@ -82,10 +83,7 @@ export async function enqueueRemoteReplyScrape(
 
     if (
       existingJob != null &&
-      (existingJob.status === "pending" ||
-        existingJob.status === "processing" ||
-        (existingJob.completedAt != null &&
-          existingJob.completedAt > cooldownStartedAt))
+      isActiveOrCoolingDown(existingJob, cooldownStartedAt)
     ) {
       return;
     }
@@ -130,10 +128,7 @@ export async function enqueueRemoteReplyScrape(
 
       if (
         conflictingJob == null ||
-        conflictingJob.status === "pending" ||
-        conflictingJob.status === "processing" ||
-        (conflictingJob.completedAt != null &&
-          conflictingJob.completedAt > cooldownStartedAt)
+        isActiveOrCoolingDown(conflictingJob, cooldownStartedAt)
       ) {
         return;
       }
@@ -165,6 +160,19 @@ export async function countActiveRemoteReplyScrapeJobs(
       ),
     );
   return row?.count ?? 0;
+}
+
+function isActiveOrCoolingDown(
+  job: RemoteReplyScrapeJob,
+  cooldownStartedAt: Date,
+): boolean {
+  return (
+    job.status === "pending" ||
+    job.status === "processing" ||
+    (job.status === "completed" &&
+      job.completedAt != null &&
+      job.completedAt > cooldownStartedAt)
+  );
 }
 
 function parsePositiveInteger(name: string, fallback: number): number {

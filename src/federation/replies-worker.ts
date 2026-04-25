@@ -220,6 +220,8 @@ async function processRemoteReplyScrapeJob(
     return 0;
   }
 
+  let fetchedItems = 0;
+
   try {
     const documentLoader =
       options.documentLoader ?? (await getDefaultDocumentLoader(job.baseUrl));
@@ -257,7 +259,6 @@ async function processRemoteReplyScrapeJob(
       );
     }
 
-    let fetchedItems = 0;
     for await (const item of iterateCollection(collection, {
       documentLoader: recordingDocumentLoader,
     })) {
@@ -295,6 +296,7 @@ async function processRemoteReplyScrapeJob(
     await completeJob(job, fetchedItems, clock());
     return fetchedItems;
   } catch (error) {
+    await updateScrapedRepliesCount(job.postId);
     if (getErrorStatus(error) === 429) {
       const failedAt = clock();
       await backOffJob(
@@ -460,6 +462,8 @@ async function backOffJob(
         status: "pending",
         nextAttemptAt,
         errorMessage: error instanceof Error ? error.message : String(error),
+        startedAt: null,
+        completedAt: null,
         updated: now,
       })
       .where(eq(remoteReplyScrapeJobs.id, job.id));
