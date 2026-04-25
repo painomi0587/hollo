@@ -223,6 +223,9 @@ async function processRemoteReplyScrapeJob(
   let fetchedItems = 0;
   let lastFetchError: unknown;
   let lastFetchErrorUrl: URL | undefined;
+  const isLastFetchOriginRateLimit = (error: unknown = lastFetchError) =>
+    error === lastFetchError &&
+    isOriginRateLimit(error, lastFetchErrorUrl, job);
 
   try {
     const documentLoader =
@@ -249,10 +252,7 @@ async function processRemoteReplyScrapeJob(
       documentLoader: recordingDocumentLoader,
     });
 
-    if (
-      collection == null &&
-      isOriginRateLimit(lastFetchError, lastFetchError, lastFetchErrorUrl, job)
-    ) {
+    if (collection == null && isLastFetchOriginRateLimit()) {
       throw lastFetchError;
     }
 
@@ -276,12 +276,14 @@ async function processRemoteReplyScrapeJob(
       }
       if (!isPost(item)) continue;
 
+      await updateProcessingHeartbeat(job, clock());
       const reply = await persistPost(db, item, job.baseUrl, {
         documentLoader: recordingDocumentLoader,
         enqueueRemoteReplies: false,
         replyTarget: post,
         skipUpdate: true,
       });
+      await updateProcessingHeartbeat(job, clock());
       if (reply == null) continue;
 
       fetchedItems++;
@@ -304,7 +306,7 @@ async function processRemoteReplyScrapeJob(
     return fetchedItems;
   } catch (error) {
     await updateScrapedRepliesCount(job.postId);
-    if (isOriginRateLimit(error, lastFetchError, lastFetchErrorUrl, job)) {
+    if (isLastFetchOriginRateLimit(error)) {
       const failedAt = clock();
       await backOffJob(
         job,
@@ -360,6 +362,13 @@ function createThrottledDocumentLoader(
     } finally {
       const requestTime = clock();
       await db.transaction(async (tx) => {
+        const [updatedJob] = await tx
+          .update(remoteReplyScrapeJobs)
+          .set({ updated: requestTime })
+          .where(processingJobAttemptCondition(job))
+          .returning({ id: remoteReplyScrapeJobs.id });
+        if (updatedJob == null) return;
+
         if (sameOrigin) {
           await tx
             .update(remoteReplyScrapeOrigins)
@@ -389,18 +398,20 @@ function createThrottledDocumentLoader(
               ),
             );
         }
-        await tx
-          .update(remoteReplyScrapeJobs)
-          .set({ updated: requestTime })
-          .where(
-            and(
-              eq(remoteReplyScrapeJobs.id, job.id),
-              eq(remoteReplyScrapeJobs.status, "processing"),
-            ),
-          );
       });
     }
   };
+}
+
+function processingJobAttemptCondition(job: RemoteReplyScrapeJob) {
+  return and(
+    eq(remoteReplyScrapeJobs.id, job.id),
+    eq(remoteReplyScrapeJobs.status, "processing"),
+    eq(remoteReplyScrapeJobs.attempts, job.attempts),
+    job.startedAt == null
+      ? isNull(remoteReplyScrapeJobs.startedAt)
+      : eq(remoteReplyScrapeJobs.startedAt, job.startedAt),
+  );
 }
 
 async function sleepWithProcessingHeartbeats(
@@ -439,6 +450,13 @@ async function updateProcessingHeartbeat(
   now: Date,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    const [updatedJob] = await tx
+      .update(remoteReplyScrapeJobs)
+      .set({ updated: now })
+      .where(processingJobAttemptCondition(job))
+      .returning({ id: remoteReplyScrapeJobs.id });
+    if (updatedJob == null) return;
+
     await tx
       .update(remoteReplyScrapeOrigins)
       .set({
@@ -449,16 +467,6 @@ async function updateProcessingHeartbeat(
         and(
           eq(remoteReplyScrapeOrigins.originHost, job.originHost),
           eq(remoteReplyScrapeOrigins.processingJobId, job.id),
-        ),
-      );
-
-    await tx
-      .update(remoteReplyScrapeJobs)
-      .set({ updated: now })
-      .where(
-        and(
-          eq(remoteReplyScrapeJobs.id, job.id),
-          eq(remoteReplyScrapeJobs.status, "processing"),
         ),
       );
   });
@@ -484,7 +492,7 @@ async function completeJob(
   now: Date,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx
+    const [updatedJob] = await tx
       .update(remoteReplyScrapeJobs)
       .set({
         status: "completed",
@@ -493,7 +501,9 @@ async function completeJob(
         errorMessage: null,
         updated: now,
       })
-      .where(eq(remoteReplyScrapeJobs.id, job.id));
+      .where(processingJobAttemptCondition(job))
+      .returning({ id: remoteReplyScrapeJobs.id });
+    if (updatedJob == null) return;
 
     await tx
       .update(remoteReplyScrapeOrigins)
@@ -517,7 +527,7 @@ async function failJob(
   now: Date,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx
+    const [updatedJob] = await tx
       .update(remoteReplyScrapeJobs)
       .set({
         status: "failed",
@@ -525,7 +535,9 @@ async function failJob(
         completedAt: now,
         updated: now,
       })
-      .where(eq(remoteReplyScrapeJobs.id, job.id));
+      .where(processingJobAttemptCondition(job))
+      .returning({ id: remoteReplyScrapeJobs.id });
+    if (updatedJob == null) return;
 
     await tx
       .update(remoteReplyScrapeOrigins)
@@ -551,7 +563,7 @@ async function backOffJob(
 ): Promise<void> {
   const nextAttemptAt = laterBySeconds(seconds, now);
   await db.transaction(async (tx) => {
-    await tx
+    const [updatedJob] = await tx
       .update(remoteReplyScrapeJobs)
       .set({
         status: "pending",
@@ -561,7 +573,9 @@ async function backOffJob(
         completedAt: null,
         updated: now,
       })
-      .where(eq(remoteReplyScrapeJobs.id, job.id));
+      .where(processingJobAttemptCondition(job))
+      .returning({ id: remoteReplyScrapeJobs.id });
+    if (updatedJob == null) return;
 
     await tx
       .update(remoteReplyScrapeOrigins)
@@ -602,15 +616,10 @@ function getErrorStatus(error: unknown): number | null {
 
 function isOriginRateLimit(
   error: unknown,
-  lastFetchError: unknown,
-  lastFetchErrorUrl: URL | undefined,
+  errorUrl: URL | undefined,
   job: RemoteReplyScrapeJob,
 ): boolean {
-  return (
-    error === lastFetchError &&
-    getErrorStatus(error) === 429 &&
-    lastFetchErrorUrl?.host === job.originHost
-  );
+  return getErrorStatus(error) === 429 && errorUrl?.host === job.originHost;
 }
 
 function retryAfterSeconds(error: unknown, now = new Date()): number | null {

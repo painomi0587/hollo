@@ -409,6 +409,66 @@ describe("remote replies scrape worker", () => {
     expect(job?.attempts).toBe(1);
   });
 
+  it("does not reclaim jobs during long reply persistence steps", async () => {
+    expect.assertions(4);
+    const { jobId, postIri, repliesIri } = await seedPostWithScrapeJob();
+    await seedRemoteAccount("replyer");
+    const startedAt = new Date("2026-04-25T00:00:00.000Z");
+    const persistenceStartedAt = new Date("2026-04-25T00:00:30.000Z");
+    const reclaimAt = new Date("2026-04-25T00:01:01.000Z");
+    const requestTimes = [
+      startedAt,
+      persistenceStartedAt,
+      new Date("2026-04-25T00:01:02.000Z"),
+      new Date("2026-04-25T00:01:03.000Z"),
+    ];
+    let reclaimedDuringPersistence = false;
+
+    const processed = await processDueRemoteReplyScrapeJobs({
+      clock: () => requestTimes.shift() ?? new Date("2026-04-25T00:01:04.000Z"),
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url === repliesIri) {
+          return {
+            contextUrl: null,
+            document: collection(repliesIri, [
+              reply({
+                id: "https://remote.test/@replyer/posts/1",
+                replyTarget: postIri,
+              }),
+            ]),
+            documentUrl: url,
+          };
+        }
+        if (url === "https://remote.test/@replyer") {
+          const reclaimed = await claimRemoteReplyScrapeJob(
+            "other-worker",
+            reclaimAt,
+            60,
+          );
+          reclaimedDuringPersistence = reclaimed != null;
+          return {
+            contextUrl: null,
+            document: actor("replyer"),
+            documentUrl: url,
+          };
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+      intervalSeconds: 0,
+      now: startedAt,
+      sleep: async () => undefined,
+      staleProcessingSeconds: 60,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    expect(processed).toBe(1);
+    expect(reclaimedDuringPersistence).toBe(false);
+    expect(job?.status).toBe("completed");
+    expect(job?.attempts).toBe(1);
+  });
+
   it("does not reclaim processing jobs after cross-origin heartbeats", async () => {
     expect.assertions(3);
     const { jobId, postIri, repliesIri } = await seedPostWithScrapeJob();
@@ -868,6 +928,55 @@ describe("remote replies scrape worker", () => {
     );
   });
 
+  it("does not let stale attempts overwrite newer terminal state", async () => {
+    expect.assertions(5);
+    const { jobId, repliesIri } = await seedPostWithScrapeJob();
+    const secondStartedAt = new Date("2026-04-25T00:02:00.000Z");
+    const firstCompletedAt = new Date("2026-04-25T00:02:01.000Z");
+
+    await processDueRemoteReplyScrapeJobs({
+      clock: () => firstCompletedAt,
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url !== repliesIri) throw new Error(`Unexpected fetch: ${url}`);
+        await db
+          .update(remoteReplyScrapeJobs)
+          .set({
+            attempts: 2,
+            startedAt: secondStartedAt,
+            status: "processing",
+            updated: secondStartedAt,
+          })
+          .where(eq(remoteReplyScrapeJobs.id, jobId));
+        await db
+          .update(remoteReplyScrapeOrigins)
+          .set({
+            processingJobId: jobId,
+            processingStartedAt: secondStartedAt,
+          })
+          .where(eq(remoteReplyScrapeOrigins.originHost, "remote.test"));
+        return {
+          contextUrl: null,
+          document: collection(repliesIri, []),
+          documentUrl: url,
+        };
+      },
+      now: firstCompletedAt,
+      sleep: async () => undefined,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
+    expect(job?.status).toBe("processing");
+    expect(job?.attempts).toBe(2);
+    expect(job?.startedAt?.toISOString()).toBe(secondStartedAt.toISOString());
+    expect(origin?.processingJobId).toBe(jobId);
+    expect(origin?.processingStartedAt?.toISOString()).toBe(
+      secondStartedAt.toISOString(),
+    );
+  });
+
   it("records per-request timestamps for throttled origin request fields", async () => {
     expect.assertions(3);
     const { postIri, repliesIri } = await seedPostWithScrapeJob();
@@ -876,6 +985,8 @@ describe("remote replies scrape worker", () => {
       new Date("2026-04-25T00:00:01.000Z"),
       new Date("2026-04-25T00:00:02.000Z"),
       new Date("2026-04-25T00:00:03.000Z"),
+      new Date("2026-04-25T00:00:04.000Z"),
+      new Date("2026-04-25T00:00:05.000Z"),
     ];
     await seedRemoteAccount("replyer");
 
@@ -897,12 +1008,12 @@ describe("remote replies scrape worker", () => {
 
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(origin?.lastRequestAt?.toISOString()).toBe(
-      "2026-04-25T00:00:03.000Z",
+      "2026-04-25T00:00:04.000Z",
     );
     expect(origin?.nextRequestAt.toISOString()).toBe(
-      "2026-04-25T00:00:13.000Z",
+      "2026-04-25T00:00:14.000Z",
     );
-    expect(origin?.updated.toISOString()).toBe("2026-04-25T00:00:04.000Z");
+    expect(origin?.updated.toISOString()).toBe("2026-04-25T00:00:05.000Z");
   });
 
   it("skips overlapping worker polls in the same process", async () => {
