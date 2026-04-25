@@ -221,6 +221,8 @@ async function processRemoteReplyScrapeJob(
   }
 
   let fetchedItems = 0;
+  let lastFetchError: unknown;
+  let lastFetchErrorUrl: URL | undefined;
 
   try {
     const documentLoader =
@@ -234,12 +236,12 @@ async function processRemoteReplyScrapeJob(
       clock,
       sleep: options.sleep ?? sleep,
     });
-    let lastFetchError: unknown;
     const recordingDocumentLoader: DocumentLoader = async (url, options) => {
       try {
         return await throttledDocumentLoader(url, options);
       } catch (error) {
         lastFetchError = error;
+        lastFetchErrorUrl = new URL(url);
         throw error;
       }
     };
@@ -247,7 +249,10 @@ async function processRemoteReplyScrapeJob(
       documentLoader: recordingDocumentLoader,
     });
 
-    if (collection == null && getErrorStatus(lastFetchError) === 429) {
+    if (
+      collection == null &&
+      isOriginRateLimit(lastFetchError, lastFetchError, lastFetchErrorUrl, job)
+    ) {
       throw lastFetchError;
     }
 
@@ -299,7 +304,7 @@ async function processRemoteReplyScrapeJob(
     return fetchedItems;
   } catch (error) {
     await updateScrapedRepliesCount(job.postId);
-    if (getErrorStatus(error) === 429) {
+    if (isOriginRateLimit(error, lastFetchError, lastFetchErrorUrl, job)) {
       const failedAt = clock();
       await backOffJob(
         job,
@@ -364,7 +369,12 @@ function createThrottledDocumentLoader(
               processingStartedAt: requestTime,
               updated: requestTime,
             })
-            .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+            .where(
+              and(
+                eq(remoteReplyScrapeOrigins.originHost, job.originHost),
+                eq(remoteReplyScrapeOrigins.processingJobId, job.id),
+              ),
+            );
         } else {
           await tx
             .update(remoteReplyScrapeOrigins)
@@ -372,7 +382,12 @@ function createThrottledDocumentLoader(
               processingStartedAt: requestTime,
               updated: requestTime,
             })
-            .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+            .where(
+              and(
+                eq(remoteReplyScrapeOrigins.originHost, job.originHost),
+                eq(remoteReplyScrapeOrigins.processingJobId, job.id),
+              ),
+            );
         }
         await tx
           .update(remoteReplyScrapeJobs)
@@ -487,7 +502,12 @@ async function completeJob(
         processingStartedAt: null,
         updated: sql`greatest(${remoteReplyScrapeOrigins.updated}, ${now.toISOString()}::timestamptz)`,
       })
-      .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+      .where(
+        and(
+          eq(remoteReplyScrapeOrigins.originHost, job.originHost),
+          eq(remoteReplyScrapeOrigins.processingJobId, job.id),
+        ),
+      );
   });
 }
 
@@ -514,7 +534,12 @@ async function failJob(
         processingStartedAt: null,
         updated: sql`greatest(${remoteReplyScrapeOrigins.updated}, ${now.toISOString()}::timestamptz)`,
       })
-      .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+      .where(
+        and(
+          eq(remoteReplyScrapeOrigins.originHost, job.originHost),
+          eq(remoteReplyScrapeOrigins.processingJobId, job.id),
+        ),
+      );
   });
 }
 
@@ -546,7 +571,12 @@ async function backOffJob(
         processingStartedAt: null,
         updated: sql`greatest(${remoteReplyScrapeOrigins.updated}, ${now.toISOString()}::timestamptz)`,
       })
-      .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+      .where(
+        and(
+          eq(remoteReplyScrapeOrigins.originHost, job.originHost),
+          eq(remoteReplyScrapeOrigins.processingJobId, job.id),
+        ),
+      );
   });
 }
 
@@ -568,6 +598,19 @@ function getErrorStatus(error: unknown): number | null {
     return null;
   }
   return error.response.status;
+}
+
+function isOriginRateLimit(
+  error: unknown,
+  lastFetchError: unknown,
+  lastFetchErrorUrl: URL | undefined,
+  job: RemoteReplyScrapeJob,
+): boolean {
+  return (
+    error === lastFetchError &&
+    getErrorStatus(error) === 429 &&
+    lastFetchErrorUrl?.host === job.originHost
+  );
 }
 
 function retryAfterSeconds(error: unknown, now = new Date()): number | null {

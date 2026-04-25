@@ -558,6 +558,56 @@ describe("remote replies scrape worker", () => {
     expect(origin?.nextRequestAt.getTime()).toBe(now.getTime() + 120_000);
   });
 
+  it("does not back off the job origin for cross-origin HTTP 429s", async () => {
+    expect.assertions(5);
+    const { jobId, repliesIri } = await seedPostWithScrapeJob();
+    const now = new Date("2026-04-25T00:00:00.000Z");
+    const failedAt = new Date("2026-04-25T00:01:00.000Z");
+    const crossOriginPage =
+      "https://other.test/@author/posts/root/replies?page=1";
+    const crossOriginError = new Error("cross-origin rate limited") as Error & {
+      response: Response;
+    };
+    crossOriginError.response = new Response(null, {
+      status: 429,
+      headers: { "Retry-After": "120" },
+    });
+
+    const processed = await processDueRemoteReplyScrapeJobs({
+      clock: () => failedAt,
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url === repliesIri) {
+          return {
+            contextUrl: null,
+            document: {
+              "@context": "https://www.w3.org/ns/activitystreams",
+              id: repliesIri,
+              type: "OrderedCollection",
+              totalItems: 1,
+              first: crossOriginPage,
+            },
+            documentUrl: url,
+          };
+        }
+        if (url === crossOriginPage) throw crossOriginError;
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+      intervalSeconds: 0,
+      now,
+      sleep: async () => undefined,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
+    expect(processed).toBe(0);
+    expect(job?.status).toBe("failed");
+    expect(job?.errorMessage).toBe("cross-origin rate limited");
+    expect(job?.nextAttemptAt.getTime()).toBe(0);
+    expect(origin?.nextRequestAt.getTime()).toBe(failedAt.getTime());
+  });
+
   it("updates scraped replies count before backing off partial jobs", async () => {
     expect.assertions(3);
     const { jobId, postId, postIri, repliesIri } =
@@ -766,6 +816,55 @@ describe("remote replies scrape worker", () => {
     expect(job?.nextAttemptAt.getTime()).toBe(failureTime.getTime() + 120_000);
     expect(origin?.nextRequestAt.getTime()).toBe(
       failureTime.getTime() + 120_000,
+    );
+  });
+
+  it("does not clear another worker's origin lock when finishing stale work", async () => {
+    expect.assertions(3);
+    const { jobId, repliesIri } = await seedPostWithScrapeJob();
+    const replacement = await seedPostWithScrapeJob({
+      postIri: "https://remote.test/@author/posts/replacement",
+      repliesIri: "https://remote.test/@author/posts/replacement/replies",
+    });
+    const replacementStartedAt = new Date("2026-04-25T00:02:00.000Z");
+    const completedAt = new Date("2026-04-25T00:02:01.000Z");
+
+    await processDueRemoteReplyScrapeJobs({
+      clock: () => completedAt,
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url !== repliesIri) throw new Error(`Unexpected fetch: ${url}`);
+        await db
+          .update(remoteReplyScrapeJobs)
+          .set({
+            status: "processing",
+            updated: replacementStartedAt,
+          })
+          .where(eq(remoteReplyScrapeJobs.id, replacement.jobId));
+        await db
+          .update(remoteReplyScrapeOrigins)
+          .set({
+            processingJobId: replacement.jobId,
+            processingStartedAt: replacementStartedAt,
+          })
+          .where(eq(remoteReplyScrapeOrigins.originHost, "remote.test"));
+        return {
+          contextUrl: null,
+          document: collection(repliesIri, []),
+          documentUrl: url,
+        };
+      },
+      now: completedAt,
+      sleep: async () => undefined,
+    });
+
+    const staleJob = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
+    expect(staleJob?.status).toBe("completed");
+    expect(origin?.processingJobId).toBe(replacement.jobId);
+    expect(origin?.processingStartedAt?.toISOString()).toBe(
+      replacementStartedAt.toISOString(),
     );
   });
 
