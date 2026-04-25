@@ -172,8 +172,8 @@ describe("remote replies scrape worker", () => {
   });
 
   it("limits how many reply items a single job persists", async () => {
-    expect.assertions(3);
-    const { postIri, repliesIri } = await seedPostWithScrapeJob();
+    expect.assertions(4);
+    const { postId, postIri, repliesIri } = await seedPostWithScrapeJob();
     await seedRemoteAccount("replyer");
 
     const firstReply = "https://remote.test/@replyer/posts/1";
@@ -195,9 +195,13 @@ describe("remote replies scrape worker", () => {
       orderBy: posts.iri,
     });
     const job = await db.query.remoteReplyScrapeJobs.findFirst();
+    const post = await db.query.posts.findFirst({
+      where: eq(posts.id, postId),
+    });
     expect(processed).toBe(1);
     expect(replyPosts.map((post) => post.iri)).toEqual([firstReply]);
     expect(job?.fetchedItems).toBe(1);
+    expect(post?.repliesCount).toBe(1);
   });
 
   it("scrapes replies to replies up to the configured depth", async () => {
@@ -273,6 +277,62 @@ describe("remote replies scrape worker", () => {
     expect(skipped).toBeNull();
   });
 
+  it("reclaims stale processing jobs and origin locks", async () => {
+    expect.assertions(4);
+    const first = await seedPostWithScrapeJob();
+    await seedPostWithScrapeJob({
+      postIri: "https://remote.test/@author/posts/second",
+      repliesIri: "https://remote.test/@author/posts/second/replies",
+    });
+    const startedAt = new Date("2026-04-25T00:00:00.000Z");
+    const reclaimedAt = new Date("2026-04-25T00:01:01.000Z");
+
+    const claimed = await claimRemoteReplyScrapeJob("test-worker", startedAt);
+    const reclaimed = await claimRemoteReplyScrapeJob(
+      "test-worker",
+      reclaimedAt,
+      60,
+    );
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, first.jobId),
+    });
+    const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
+    expect(claimed?.id).toBe(first.jobId);
+    expect(reclaimed?.id).toBe(first.jobId);
+    expect(job?.attempts).toBe(2);
+    expect(origin?.processingJobId).toBe(first.jobId);
+  });
+
+  it("skips unavailable origins without starving later claimable jobs", async () => {
+    expect.assertions(1);
+    const now = new Date("2026-04-25T00:00:00.000Z");
+    const future = new Date("2026-04-25T01:00:00.000Z");
+
+    for (let i = 0; i < 10; i++) {
+      const host = `blocked-${i}.test`;
+      await seedPostWithScrapeJob({
+        host,
+        postIri: `https://${host}/@author/posts/root`,
+        repliesIri: `https://${host}/@author/posts/root/replies`,
+      });
+      await db
+        .update(remoteReplyScrapeOrigins)
+        .set({ nextRequestAt: future })
+        .where(eq(remoteReplyScrapeOrigins.originHost, host));
+    }
+
+    const available = await seedPostWithScrapeJob({
+      host: "available.test",
+      postIri: "https://available.test/@author/posts/root",
+      repliesIri: "https://available.test/@author/posts/root/replies",
+    });
+
+    const claimed = await claimRemoteReplyScrapeJob("test-worker", now);
+
+    expect(claimed?.id).toBe(available.jobId);
+  });
+
   it("backs off jobs and origins when a replies collection returns HTTP 429", async () => {
     expect.assertions(4);
     const { jobId, repliesIri } = await seedPostWithScrapeJob();
@@ -302,5 +362,31 @@ describe("remote replies scrape worker", () => {
     expect(job?.status).toBe("pending");
     expect(job?.nextAttemptAt.getTime()).toBe(now.getTime() + 120_000);
     expect(origin?.nextRequestAt.getTime()).toBe(now.getTime() + 120_000);
+  });
+
+  it("records one timestamp for throttled origin request fields", async () => {
+    expect.assertions(2);
+    const { postIri, repliesIri } = await seedPostWithScrapeJob();
+    const now = new Date("2026-04-25T00:00:00.000Z");
+    await seedRemoteAccount("replyer");
+
+    await processDueRemoteReplyScrapeJobs({
+      documentLoader: makeLoader({
+        [repliesIri]: collection(repliesIri, [
+          reply({
+            id: "https://remote.test/@replyer/posts/1",
+            replyTarget: postIri,
+          }),
+        ]),
+        "https://remote.test/@replyer": actor("replyer"),
+      }),
+      intervalSeconds: 10,
+      now,
+      sleep: async () => undefined,
+    });
+
+    const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
+    expect(origin?.lastRequestAt?.getTime()).toBe(now.getTime());
+    expect(origin?.updated.getTime()).toBe(now.getTime());
   });
 });

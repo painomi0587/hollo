@@ -1,6 +1,6 @@
 import { Collection, type DocumentLoader, lookupObject } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
-import { and, asc, eq, lte, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 
 import db from "../db";
 import {
@@ -23,6 +23,7 @@ import {
 const logger = getLogger(["hollo", "federation", "replies-worker"]);
 
 const POLL_INTERVAL_MS = 5000;
+const STALE_PROCESSING_TIMEOUT_SECONDS = 15 * 60;
 
 let isRunning = false;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -36,6 +37,7 @@ export interface ProcessRemoteReplyScrapeJobsOptions {
   maxJobs?: number;
   now?: Date;
   sleep?: (milliseconds: number) => Promise<void>;
+  staleProcessingSeconds?: number;
   workerId?: string;
 }
 
@@ -82,6 +84,7 @@ export async function processDueRemoteReplyScrapeJobs(
     const job = await claimRemoteReplyScrapeJob(
       options.workerId ?? `worker:${process.pid}`,
       options.now,
+      options.staleProcessingSeconds,
     );
     if (job == null) break;
     processedItems += await processRemoteReplyScrapeJob(job, options);
@@ -93,66 +96,94 @@ export async function processDueRemoteReplyScrapeJobs(
 export async function claimRemoteReplyScrapeJob(
   _workerId: string,
   now = new Date(),
+  staleProcessingSeconds = STALE_PROCESSING_TIMEOUT_SECONDS,
 ): Promise<RemoteReplyScrapeJob | null> {
   return await db.transaction(async (tx) => {
-    const dueJobs = await tx
-      .select()
+    const staleStartedBefore = new Date(
+      now.getTime() - staleProcessingSeconds * 1000,
+    );
+
+    await tx
+      .update(remoteReplyScrapeJobs)
+      .set({
+        status: "pending",
+        nextAttemptAt: now,
+        errorMessage: "Reclaimed stale processing job",
+        startedAt: null,
+        updated: now,
+      })
+      .where(
+        and(
+          eq(remoteReplyScrapeJobs.status, "processing"),
+          lte(remoteReplyScrapeJobs.startedAt, staleStartedBefore),
+        ),
+      );
+
+    await tx
+      .update(remoteReplyScrapeOrigins)
+      .set({
+        processingJobId: null,
+        processingStartedAt: null,
+        updated: now,
+      })
+      .where(
+        and(
+          isNotNull(remoteReplyScrapeOrigins.processingStartedAt),
+          lte(remoteReplyScrapeOrigins.processingStartedAt, staleStartedBefore),
+        ),
+      );
+
+    const [claimableJob] = await tx
+      .select({ job: remoteReplyScrapeJobs })
       .from(remoteReplyScrapeJobs)
+      .innerJoin(
+        remoteReplyScrapeOrigins,
+        eq(
+          remoteReplyScrapeOrigins.originHost,
+          remoteReplyScrapeJobs.originHost,
+        ),
+      )
       .where(
         and(
           eq(remoteReplyScrapeJobs.status, "pending"),
           lte(remoteReplyScrapeJobs.nextAttemptAt, now),
+          isNull(remoteReplyScrapeOrigins.processingJobId),
+          lte(remoteReplyScrapeOrigins.nextRequestAt, now),
         ),
       )
       .orderBy(asc(remoteReplyScrapeJobs.created))
-      .limit(10)
+      .limit(1)
       .for("update", { skipLocked: true });
 
-    for (const job of dueJobs) {
-      const [origin] = await tx
-        .select()
-        .from(remoteReplyScrapeOrigins)
-        .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost))
-        .limit(1)
-        .for("update", { skipLocked: true });
+    const job = claimableJob?.job;
+    if (job == null) return null;
 
-      if (
-        origin == null ||
-        origin.processingJobId != null ||
-        origin.nextRequestAt > now
-      ) {
-        continue;
-      }
-
-      await tx
-        .update(remoteReplyScrapeJobs)
-        .set({
-          status: "processing",
-          attempts: sql`${remoteReplyScrapeJobs.attempts} + 1`,
-          startedAt: now,
-          updated: now,
-        })
-        .where(eq(remoteReplyScrapeJobs.id, job.id));
-
-      await tx
-        .update(remoteReplyScrapeOrigins)
-        .set({
-          processingJobId: job.id,
-          processingStartedAt: now,
-          updated: now,
-        })
-        .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
-
-      return {
-        ...job,
+    await tx
+      .update(remoteReplyScrapeJobs)
+      .set({
         status: "processing",
-        attempts: job.attempts + 1,
+        attempts: sql`${remoteReplyScrapeJobs.attempts} + 1`,
         startedAt: now,
         updated: now,
-      };
-    }
+      })
+      .where(eq(remoteReplyScrapeJobs.id, job.id));
 
-    return null;
+    await tx
+      .update(remoteReplyScrapeOrigins)
+      .set({
+        processingJobId: job.id,
+        processingStartedAt: now,
+        updated: now,
+      })
+      .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+
+    return {
+      ...job,
+      status: "processing",
+      attempts: job.attempts + 1,
+      startedAt: now,
+      updated: now,
+    };
   });
 }
 
@@ -242,6 +273,7 @@ async function processRemoteReplyScrapeJob(
     }
 
     await updatePostStats(db, { id: job.postId });
+    await updateScrapedRepliesCount(job.postId);
     await completeJob(job, fetchedItems, now);
     return fetchedItems;
   } catch (error) {
@@ -292,18 +324,32 @@ function createThrottledDocumentLoader(
       return await documentLoader(url, options);
     } finally {
       if (sameOrigin) {
-        const requestTime = new Date();
+        const requestTime = now;
         await db
           .update(remoteReplyScrapeOrigins)
           .set({
             lastRequestAt: requestTime,
             nextRequestAt: laterBySeconds(intervalSeconds, requestTime),
-            updated: now,
+            updated: requestTime,
           })
           .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
       }
     }
   };
+}
+
+async function updateScrapedRepliesCount(
+  postId: RemoteReplyScrapeJob["postId"],
+) {
+  await db.execute(sql`
+    update ${posts}
+    set replies_count = (
+      select count(*)
+      from ${posts} as replies
+      where replies.reply_target_id = ${postId}
+    )
+    where ${posts.id} = ${postId}
+  `);
 }
 
 async function completeJob(
