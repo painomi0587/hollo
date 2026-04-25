@@ -16,6 +16,7 @@ import { uuidv7 } from "../uuid";
 import {
   claimRemoteReplyScrapeJob,
   processDueRemoteReplyScrapeJobs,
+  runRemoteReplyScrapeWorkerPoll,
 } from "./replies-worker";
 
 const PUBLIC_COLLECTION = "https://www.w3.org/ns/activitystreams#Public";
@@ -411,6 +412,38 @@ describe("remote replies scrape worker", () => {
     expect(origin?.nextRequestAt.getTime()).toBe(now.getTime() + 120_000);
   });
 
+  it("uses fallback backoff when Retry-After has negative seconds", async () => {
+    expect.assertions(4);
+    const { jobId, repliesIri } = await seedPostWithScrapeJob();
+    const now = new Date("2026-04-25T00:00:00.000Z");
+    const error = new Error("rate limited") as Error & {
+      response: Response;
+    };
+    error.response = new Response(null, {
+      status: 429,
+      headers: { "Retry-After": "-1" },
+    });
+
+    const processed = await processDueRemoteReplyScrapeJobs({
+      backoffSeconds: 60,
+      documentLoader: async (url) => {
+        if (url === repliesIri) throw error;
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+      now,
+      sleep: async () => undefined,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
+    expect(processed).toBe(0);
+    expect(job?.status).toBe("pending");
+    expect(job?.nextAttemptAt.getTime()).toBe(now.getTime() + 60_000);
+    expect(origin?.nextRequestAt.getTime()).toBe(now.getTime() + 60_000);
+  });
+
   it("records a clear failure when replies collection lookup returns null", async () => {
     expect.assertions(3);
     const { jobId, repliesIri } = await seedPostWithScrapeJob();
@@ -516,5 +549,31 @@ describe("remote replies scrape worker", () => {
       "2026-04-25T00:00:12.000Z",
     );
     expect(origin?.updated.toISOString()).toBe("2026-04-25T00:00:03.000Z");
+  });
+
+  it("skips overlapping worker polls in the same process", async () => {
+    expect.assertions(2);
+    let releasePoll: (() => void) | undefined;
+    let calls = 0;
+
+    const firstPoll = runRemoteReplyScrapeWorkerPoll(async () => {
+      calls++;
+      await new Promise<void>((resolve) => {
+        releasePoll = resolve;
+      });
+    });
+    await Promise.resolve();
+
+    await runRemoteReplyScrapeWorkerPoll(async () => {
+      calls++;
+    });
+    expect(calls).toBe(1);
+
+    releasePoll?.();
+    await firstPoll;
+    await runRemoteReplyScrapeWorkerPoll(async () => {
+      calls++;
+    });
+    expect(calls).toBe(2);
   });
 });

@@ -26,6 +26,7 @@ const POLL_INTERVAL_MS = 5000;
 const STALE_PROCESSING_TIMEOUT_SECONDS = 15 * 60;
 
 let isRunning = false;
+let isPolling = false;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 export interface ProcessRemoteReplyScrapeJobsOptions {
@@ -51,14 +52,14 @@ export function startRemoteReplyScrapeWorker(): void {
   isRunning = true;
   logger.info("Starting remote reply scrape worker");
 
-  pollAndProcess().catch((error) => {
+  runRemoteReplyScrapeWorkerPoll().catch((error) => {
     logger.error("Error in initial remote reply scrape worker poll: {error}", {
       error,
     });
   });
 
   pollTimer = setInterval(() => {
-    pollAndProcess().catch((error) => {
+    runRemoteReplyScrapeWorkerPoll().catch((error) => {
       logger.error("Error in remote reply scrape worker poll: {error}", {
         error,
       });
@@ -190,6 +191,19 @@ export async function claimRemoteReplyScrapeJob(
 
 async function pollAndProcess(): Promise<void> {
   await processDueRemoteReplyScrapeJobs();
+}
+
+export async function runRemoteReplyScrapeWorkerPoll(
+  processJobs: () => Promise<void> = pollAndProcess,
+): Promise<void> {
+  if (isPolling) return;
+
+  isPolling = true;
+  try {
+    await processJobs();
+  } finally {
+    isPolling = false;
+  }
 }
 
 async function processRemoteReplyScrapeJob(
@@ -487,10 +501,13 @@ function retryAfterSeconds(error: unknown, now = new Date()): number | null {
   const retryAfter = error.response.headers.get("Retry-After");
   if (retryAfter == null) return null;
 
-  const seconds = Number.parseInt(retryAfter, 10);
-  if (Number.isInteger(seconds)) return seconds;
+  const trimmedRetryAfter = retryAfter.trim();
+  if (/^-?\d+$/.test(trimmedRetryAfter)) {
+    const seconds = Number.parseInt(trimmedRetryAfter, 10);
+    return seconds >= 0 ? seconds : null;
+  }
 
-  const date = Date.parse(retryAfter);
+  const date = Date.parse(trimmedRetryAfter);
   if (Number.isNaN(date)) return null;
   return Math.max(0, Math.ceil((date - now.getTime()) / 1000));
 }
