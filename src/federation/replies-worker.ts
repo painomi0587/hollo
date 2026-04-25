@@ -10,7 +10,7 @@ import {
   remoteReplyScrapeOrigins,
 } from "../schema";
 import { iterateCollection } from "./collection";
-import { isPost, persistPost, updatePostStats } from "./post";
+import { isPost, persistPost } from "./post";
 import {
   enqueueRemoteReplyScrape,
   laterBySeconds,
@@ -116,7 +116,7 @@ export async function claimRemoteReplyScrapeJob(
       .where(
         and(
           eq(remoteReplyScrapeJobs.status, "processing"),
-          lte(remoteReplyScrapeJobs.startedAt, staleStartedBefore),
+          lte(remoteReplyScrapeJobs.updated, staleStartedBefore),
         ),
       );
 
@@ -233,6 +233,10 @@ async function processRemoteReplyScrapeJob(
       throw lastFetchError;
     }
 
+    if (collection == null) {
+      throw new Error(`Replies collection not found: ${job.repliesIri}`);
+    }
+
     if (!(collection instanceof Collection)) {
       throw new Error(
         `Replies collection is not a Collection: ${job.repliesIri}`,
@@ -273,7 +277,6 @@ async function processRemoteReplyScrapeJob(
       }
     }
 
-    await updatePostStats(db, { id: job.postId });
     await updateScrapedRepliesCount(job.postId);
     await completeJob(job, fetchedItems, clock());
     return fetchedItems;
@@ -327,14 +330,26 @@ function createThrottledDocumentLoader(
     } finally {
       if (sameOrigin) {
         const requestTime = clock();
-        await db
-          .update(remoteReplyScrapeOrigins)
-          .set({
-            lastRequestAt: requestTime,
-            nextRequestAt: laterBySeconds(intervalSeconds, requestTime),
-            updated: requestTime,
-          })
-          .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+        await db.transaction(async (tx) => {
+          await tx
+            .update(remoteReplyScrapeOrigins)
+            .set({
+              lastRequestAt: requestTime,
+              nextRequestAt: laterBySeconds(intervalSeconds, requestTime),
+              processingStartedAt: requestTime,
+              updated: requestTime,
+            })
+            .where(eq(remoteReplyScrapeOrigins.originHost, job.originHost));
+          await tx
+            .update(remoteReplyScrapeJobs)
+            .set({ updated: requestTime })
+            .where(
+              and(
+                eq(remoteReplyScrapeJobs.id, job.id),
+                eq(remoteReplyScrapeJobs.status, "processing"),
+              ),
+            );
+        });
       }
     }
   };

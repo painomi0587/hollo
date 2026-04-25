@@ -304,6 +304,53 @@ describe("remote replies scrape worker", () => {
     expect(origin?.processingJobId).toBe(first.jobId);
   });
 
+  it("does not reclaim processing jobs with recent request heartbeats", async () => {
+    expect.assertions(4);
+    const { jobId, postIri, repliesIri } = await seedPostWithScrapeJob();
+    await seedRemoteAccount("replyer");
+    const startedAt = new Date("2026-04-25T00:00:00.000Z");
+    const heartbeatAt = new Date("2026-04-25T00:00:30.000Z");
+    const reclaimAt = new Date("2026-04-25T00:01:01.000Z");
+    const requestTimes = [
+      heartbeatAt,
+      new Date("2026-04-25T00:01:02.000Z"),
+      new Date("2026-04-25T00:01:03.000Z"),
+    ];
+    let reclaimedDuringSleep = false;
+
+    const processed = await processDueRemoteReplyScrapeJobs({
+      clock: () => requestTimes.shift() ?? new Date("2026-04-25T00:01:04.000Z"),
+      documentLoader: makeLoader({
+        [repliesIri]: collection(repliesIri, [
+          reply({
+            id: "https://remote.test/@replyer/posts/1",
+            replyTarget: postIri,
+          }),
+        ]),
+        "https://remote.test/@replyer": actor("replyer"),
+      }),
+      intervalSeconds: 10,
+      now: startedAt,
+      sleep: async () => {
+        const reclaimed = await claimRemoteReplyScrapeJob(
+          "other-worker",
+          reclaimAt,
+          60,
+        );
+        reclaimedDuringSleep = reclaimed != null;
+      },
+      staleProcessingSeconds: 60,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    expect(processed).toBe(1);
+    expect(reclaimedDuringSleep).toBe(false);
+    expect(job?.status).toBe("completed");
+    expect(job?.attempts).toBe(1);
+  });
+
   it("skips unavailable origins without starving later claimable jobs", async () => {
     expect.assertions(1);
     const now = new Date("2026-04-25T00:00:00.000Z");
@@ -362,6 +409,31 @@ describe("remote replies scrape worker", () => {
     expect(job?.status).toBe("pending");
     expect(job?.nextAttemptAt.getTime()).toBe(now.getTime() + 120_000);
     expect(origin?.nextRequestAt.getTime()).toBe(now.getTime() + 120_000);
+  });
+
+  it("records a clear failure when replies collection lookup returns null", async () => {
+    expect.assertions(3);
+    const { jobId, repliesIri } = await seedPostWithScrapeJob();
+    const now = new Date("2026-04-25T00:00:00.000Z");
+
+    const processed = await processDueRemoteReplyScrapeJobs({
+      documentLoader: async (url): Promise<RemoteDocument> => ({
+        contextUrl: null,
+        document: url === repliesIri ? null : {},
+        documentUrl: url,
+      }),
+      now,
+      sleep: async () => undefined,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    expect(processed).toBe(0);
+    expect(job?.status).toBe("failed");
+    expect(job?.errorMessage).toBe(
+      `Replies collection not found: ${repliesIri}`,
+    );
   });
 
   it("bases 429 backoff on the actual failure time", async () => {
