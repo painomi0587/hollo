@@ -71,14 +71,17 @@ if (NODE_TYPE === "worker" || NODE_TYPE === "all") {
     { federation },
     { startImportWorker, stopImportWorker },
     { startCleanupWorker, stopCleanupWorker },
+    { startRemoteReplyScrapeWorker, stopRemoteReplyScrapeWorker },
   ] = await Promise.all([
     import("../src/federation"),
     import("../src/import/worker"),
     import("../src/cleanup/worker"),
+    import("../src/federation/replies-worker"),
   ]);
   stopWorkers = () => {
     stopImportWorker();
     stopCleanupWorker();
+    stopRemoteReplyScrapeWorker();
   };
 
   // Start the Fedify message queue
@@ -93,8 +96,11 @@ if (NODE_TYPE === "worker" || NODE_TYPE === "all") {
   // Start the workers for background job processing
   startImportWorker();
   startCleanupWorker();
+  startRemoteReplyScrapeWorker();
 
-  console.log("Worker started (Fedify queue + Import worker + Cleanup worker)");
+  console.log(
+    "Worker started (Fedify queue + Import worker + Cleanup worker + Remote reply scrape worker)",
+  );
 }
 
 // Graceful shutdown handling
