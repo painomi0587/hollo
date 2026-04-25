@@ -1463,3 +1463,86 @@ export const cleanupJobItemRelations = relations(
     }),
   }),
 );
+
+export const remoteReplyScrapeJobStatusEnum = pgEnum(
+  "remote_reply_scrape_job_status",
+  ["pending", "processing", "completed", "failed"],
+);
+
+export type RemoteReplyScrapeJobStatus =
+  (typeof remoteReplyScrapeJobStatusEnum.enumValues)[number];
+
+export const remoteReplyScrapeJobs = pgTable(
+  "remote_reply_scrape_jobs",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    postId: uuid("post_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    postIri: text("post_iri").notNull(),
+    repliesIri: text("replies_iri").notNull().unique(),
+    baseUrl: text("base_url").notNull(),
+    originHost: text("origin_host").notNull(),
+    depth: integer("depth").notNull().default(0),
+    status: remoteReplyScrapeJobStatusEnum("status")
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    fetchedItems: integer("fetched_items").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    errorMessage: text("error_message"),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    updated: timestamp("updated", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [
+    index().on(table.status, table.nextAttemptAt),
+    index().on(table.originHost, table.status, table.nextAttemptAt),
+  ],
+);
+
+export type RemoteReplyScrapeJob = typeof remoteReplyScrapeJobs.$inferSelect;
+export type NewRemoteReplyScrapeJob = typeof remoteReplyScrapeJobs.$inferInsert;
+
+export const remoteReplyScrapeOrigins = pgTable(
+  "remote_reply_scrape_origins",
+  {
+    originHost: text("origin_host").primaryKey(),
+    nextRequestAt: timestamp("next_request_at", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    lastRequestAt: timestamp("last_request_at", { withTimezone: true }),
+    processingJobId: uuid("processing_job_id").$type<Uuid>(),
+    processingStartedAt: timestamp("processing_started_at", {
+      withTimezone: true,
+    }),
+    updated: timestamp("updated", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [
+    index().on(table.nextRequestAt),
+    index().on(table.processingJobId),
+  ],
+);
+
+export type RemoteReplyScrapeOrigin =
+  typeof remoteReplyScrapeOrigins.$inferSelect;
+
+export const remoteReplyScrapeJobRelations = relations(
+  remoteReplyScrapeJobs,
+  ({ one }) => ({
+    post: one(posts, {
+      fields: [remoteReplyScrapeJobs.postId],
+      references: [posts.id],
+    }),
+  }),
+);

@@ -1,5 +1,11 @@
 import type { InboxContext } from "@fedify/fedify";
-import { Announce, Note, Person, PUBLIC_COLLECTION } from "@fedify/vocab";
+import {
+  Announce,
+  Note,
+  Person,
+  PUBLIC_COLLECTION,
+  type RemoteDocument,
+} from "@fedify/vocab";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +15,7 @@ import db from "../db";
 import { accounts, follows, instances, posts, timelinePosts } from "../schema";
 import type { Uuid } from "../uuid";
 import { onPostShared } from "./inbox";
-import { persistSharingPost } from "./post";
+import { persistPost, persistSharingPost } from "./post";
 
 async function seedRemoteAccount(username: string) {
   const id = crypto.randomUUID() as Uuid;
@@ -260,5 +266,56 @@ describe("persistSharingPost", () => {
     );
 
     expect(forwardActivity).toHaveBeenCalledOnce();
+  });
+});
+
+describe("persistPost", () => {
+  beforeEach(async () => {
+    await cleanDatabase();
+  });
+
+  it("does not fetch remote replies collections synchronously", async () => {
+    expect.assertions(4);
+    const author = await seedRemoteAccount("author");
+    const repliesIri = "https://remote.test/@author/posts/1/replies";
+    const documentLoader = vi.fn(
+      async (url: string): Promise<RemoteDocument> => {
+        if (url === repliesIri) {
+          throw new Error("replies collection was fetched synchronously");
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+    );
+
+    const first = await persistPost(
+      db,
+      new Note({
+        id: new URL("https://remote.test/@author/posts/1"),
+        attribution: createPerson(author),
+        content: "<p>Hello</p>",
+        replies: new URL(repliesIri),
+        to: PUBLIC_COLLECTION,
+      }),
+      "https://hollo.test",
+      { account: author, documentLoader },
+    );
+    const second = await persistPost(
+      db,
+      new Note({
+        id: new URL("https://remote.test/@author/posts/1"),
+        attribution: createPerson(author),
+        content: "<p>Hello again</p>",
+        replies: new URL(repliesIri),
+        to: PUBLIC_COLLECTION,
+      }),
+      "https://hollo.test",
+      { account: author, documentLoader },
+    );
+    const jobs = await db.query.remoteReplyScrapeJobs.findMany();
+
+    expect(first).not.toBeNull();
+    expect(second?.id).toBe(first?.id);
+    expect(documentLoader).not.toHaveBeenCalledWith(repliesIri);
+    expect(jobs.map((job) => job.repliesIri)).toEqual([repliesIri]);
   });
 });
