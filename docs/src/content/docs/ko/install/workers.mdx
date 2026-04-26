@@ -30,20 +30,22 @@ import { Aside, Code, Tabs, TabItem } from '@astrojs/starlight/components';
 작동 방식
 ---------
 
-Hollo는 세 가지 주요 구성 요소로 이루어져 있습니다:
+Hollo는 다섯 가지 주요 구성 요소로 이루어져 있습니다:
 
  1. *웹 서버*: HTTP 요청(API, 웹 UI) 처리
  2. *Fedify 메시지 큐*: ActivityPub inbox/outbox 메시지 처리
  3. *임포트 워커*: 백그라운드 데이터 가져오기 작업 처리
+ 4. *정리 워커*: 백그라운드 정리 작업 처리
+ 5. *원격 답글 가져오기 워커*: 원격 답글 컬렉션을 천천히 가져오기
 
-기본적으로(`NODE_TYPE=all`) 세 가지 모두 단일 프로세스에서 실행됩니다.
+기본적으로(`NODE_TYPE=all`) 다섯 가지 모두 단일 프로세스에서 실행됩니다.
 `NODE_TYPE` 환경 변수를 사용하여 분리할 수 있습니다:
 
-| `NODE_TYPE` | 웹 서버 | Fedify 큐 | 임포트 워커 |
-| ----------- | ------- | --------- | ----------- |
-| `all` (기본값) | ✓ | ✓ | ✓ |
-| `web` | ✓ | ✗ | ✗ |
-| `worker` | ✗ | ✓ | ✓ |
+| `NODE_TYPE` | 웹 서버 | Fedify 큐 | 임포트 워커 | 정리 워커 | 답글 워커 |
+| ----------- | ------- | --------- | ----------- | --------- | --------- |
+| `all` (기본값) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `web` | ✓ | ✗ | ✗ | ✗ | ✗ |
+| `worker` | ✗ | ✓ | ✓ | ✓ | ✓ |
 
 모든 노드는 동일한 PostgreSQL 데이터베이스를 공유하며,
 `LISTEN`/`NOTIFY`를 사용하여 실시간 메시지 전달을 위한 메시지 큐 백엔드로 작동합니다.
@@ -250,10 +252,11 @@ sudo journalctl -u hollo-worker -f
 워커 노드가 시작되면 다음과 같이 표시됩니다:
 
 ```
-Worker started (Fedify queue + Import worker)
+Worker started (Fedify queue + Import worker + Cleanup worker + Remote reply scrape worker)
 ```
 
-워커가 정상적으로 작동하는지 확인하려면 액티비티 처리 및 가져오기 작업에 대한 메시지를 확인하세요.
+워커가 정상적으로 작동하는지 확인하려면 액티비티 처리, 가져오기, 정리,
+원격 답글 가져오기에 대한 메시지를 확인하세요.
 
 
 문제 해결

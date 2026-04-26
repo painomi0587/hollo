@@ -28,20 +28,22 @@ import { Aside, Code, Tabs, TabItem } from '@astrojs/starlight/components';
 工作原理
 --------
 
-Hollo由三个主要组件组成：
+Hollo由五个主要组件组成：
 
  1. *Web服务器*：处理HTTP请求（API、Web UI）
  2. *Fedify消息队列*：处理ActivityPub inbox/outbox消息
  3. *导入工作器*：处理后台数据导入作业
+ 4. *清理工作器*：处理后台清理作业
+ 5. *远程回复抓取工作器*：缓慢抓取远程回复集合
 
-默认情况下（`NODE_TYPE=all`），所有三个都在单个进程中运行。
+默认情况下（`NODE_TYPE=all`），所有五个都在单个进程中运行。
 您可以使用`NODE_TYPE`环境变量来分离它们：
 
-| `NODE_TYPE` | Web服务器 | Fedify队列 | 导入工作器 |
-| ----------- | --------- | ---------- | ---------- |
-| `all`（默认） | ✓ | ✓ | ✓ |
-| `web` | ✓ | ✗ | ✗ |
-| `worker` | ✗ | ✓ | ✓ |
+| `NODE_TYPE` | Web服务器 | Fedify队列 | 导入工作器 | 清理工作器 | 回复工作器 |
+| ----------- | --------- | ---------- | ---------- | ---------- | ---------- |
+| `all`（默认） | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `web` | ✓ | ✗ | ✗ | ✗ | ✗ |
+| `worker` | ✗ | ✓ | ✓ | ✓ | ✓ |
 
 所有节点共享相同的PostgreSQL数据库，该数据库使用`LISTEN`/`NOTIFY`
 作为消息队列后端进行实时消息传递。
@@ -246,10 +248,10 @@ sudo journalctl -u hollo-worker -f
 当工作节点启动时，您应该看到：
 
 ```
-Worker started (Fedify queue + Import worker)
+Worker started (Fedify queue + Import worker + Cleanup worker + Remote reply scrape worker)
 ```
 
-观察有关处理活动和导入作业的消息，以确认工作器正常运行。
+观察有关处理活动、导入、清理和远程回复抓取的消息，以确认工作器正常运行。
 
 
 故障排除

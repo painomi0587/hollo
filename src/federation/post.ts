@@ -70,9 +70,9 @@ import {
   persistAccount,
   persistAccountByIri,
 } from "./account";
-import { iterateCollection } from "./collection";
 import { toDate, toTemporalInstant } from "./date";
 import { toEmoji } from "./emoji";
+import { enqueueRemoteReplyScrape } from "./replies";
 import { appendPostToTimelines } from "./timeline";
 
 const logger = getLogger(["hollo", "federation", "post"]);
@@ -106,6 +106,7 @@ export async function persistPost(
   baseUrl: URL | string,
   options: PersistAccountOptions & {
     account?: Account & { owner: AccountOwner | null };
+    enqueueRemoteReplies?: boolean;
     replyTarget?: Post;
   } = {},
 ): Promise<
@@ -230,7 +231,7 @@ export async function persistPost(
   }
   const to = new Set(object.toIds.map((url) => url.href));
   const cc = new Set(object.ccIds.map((url) => url.href));
-  const replies = await object.getReplies(options);
+  const repliesIri = object.repliesId;
   const shares = await object.getShares(options);
   const likes = await object.getLikes(options);
   const previewLink =
@@ -273,7 +274,6 @@ export async function persistPost(
     emojis,
     sensitive: object.sensitive ?? false,
     url: object.url instanceof Link ? object.url.href?.href : object.url?.href,
-    repliesCount: replies?.totalItems ?? 0,
     sharesCount: shares?.totalItems ?? 0,
     likesCount: likes?.totalItems ?? 0,
     published,
@@ -283,6 +283,7 @@ export async function persistPost(
     .insert(posts)
     .values({
       ...values,
+      repliesCount: existingPost?.repliesCount ?? 0,
       id: uuidv7(+(published ?? updated)),
       iri: object.id.href,
     })
@@ -457,18 +458,16 @@ export async function persistPost(
     with: { account: true, media: true },
   });
   if (post == null) return null;
-  if (replies != null) {
-    for await (const item of iterateCollection(replies, {
-      ...options,
-      suppressError: true,
-    })) {
-      if (!isPost(item)) continue;
-      await persistPost(db, item, baseUrl, {
-        ...options,
-        skipUpdate: true,
-        replyTarget: post,
-      });
-    }
+  if (
+    options.enqueueRemoteReplies !== false &&
+    account.owner == null &&
+    repliesIri != null
+  ) {
+    await enqueueRemoteReplyScrape(db, {
+      baseUrl,
+      post,
+      repliesIri,
+    });
   }
   await appendPostToTimelines(db, {
     ...post,
