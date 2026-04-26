@@ -144,6 +144,11 @@ To be released.
     editor and is now returned from `GET /api/v1/preferences`, which helps
     clients like Phanpy honor each account's preferred CW behavior.  [[#425]]
 
+ -  Fixed Mastodon API compatibility for clients such as the official Mastodon
+    iOS app by returning empty arrays for unimplemented trends and suggestions
+    endpoints instead of `404 Not Found` responses.  The suggestions endpoints
+    still require an authenticated user token.  [[#421], [#427] by Vignesh]
+
  -  Added a new dashboard page for thumbnail cleanup at `/thumbnail_cleanup`.
     Thumbnails from remote posts that have not been bookmarked, liked, reacted
     to, shared nor quoted by a local account before a given cut-off data can
@@ -159,8 +164,10 @@ To be released.
 [#357]: https://github.com/fedify-dev/hollo/issues/357
 [#409]: https://github.com/fedify-dev/hollo/issues/409
 [#420]: https://github.com/fedify-dev/hollo/issues/420
+[#421]: https://github.com/fedify-dev/hollo/issues/421
 [#424]: https://github.com/fedify-dev/hollo/issues/424
 [#425]: https://github.com/fedify-dev/hollo/issues/425
+[#427]: https://github.com/fedify-dev/hollo/pull/427
 [#435]: https://github.com/fedify-dev/hollo/issues/435
 [#436]: https://github.com/fedify-dev/hollo/pull/436
 [#445]: https://github.com/fedify-dev/hollo/issues/445
