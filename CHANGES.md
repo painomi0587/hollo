@@ -108,6 +108,10 @@ To be released.
     `410 Gone`, preventing repeated delivery retries for actors that have
     already been permanently deleted.
 
+ -  Optimized follower-only status visibility checks by preloading approved
+    follow relationships and reusing simple `WHERE IN` conditions for status,
+    conversation context, quote, and timeline queries.  [[#173], [#448]]
+
  -  Added `FEDIFY_DEBUG` environment variable to enable the [Fedify debugger],
     an embedded real-time dashboard for inspecting ActivityPub traces and
     activities.  When enabled, the debug dashboard is accessible at
@@ -149,6 +153,7 @@ To be released.
 
  -  Upgraded Fedify to 2.1.7.
 
+[#173]: https://github.com/fedify-dev/hollo/issues/173
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
 [#357]: https://github.com/fedify-dev/hollo/issues/357
@@ -160,6 +165,7 @@ To be released.
 [#436]: https://github.com/fedify-dev/hollo/pull/436
 [#445]: https://github.com/fedify-dev/hollo/issues/445
 [#447]: https://github.com/fedify-dev/hollo/pull/447
+[#448]: https://github.com/fedify-dev/hollo/pull/448
 [Fedify debugger]: https://fedify.dev/manual/debug
 
 

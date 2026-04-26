@@ -8,7 +8,10 @@ import {
   getAccessToken,
   getApplication,
 } from "../../../tests/helpers/oauth";
+import db from "../../db";
 import app from "../../index";
+import { follows, posts } from "../../schema";
+import { uuidv7 } from "../../uuid";
 
 describe.sequential("/api/v1/accounts/verify_credentials", () => {
   let client: Awaited<ReturnType<typeof createOAuthApplication>>;
@@ -208,5 +211,143 @@ describe.sequential("/api/v1/accounts/verify_credentials", () => {
     expect(json.sensitive).toBe(false);
     expect(json.language).not.toBeNull();
     expect(json.poll).toBeNull(); // This one stays null as expected
+  });
+});
+
+describe.sequential("/api/v1/statuses visibility", () => {
+  let viewer: Awaited<ReturnType<typeof createAccount>>;
+  let approvedAuthor: Awaited<ReturnType<typeof createAccount>>;
+  let pendingAuthor: Awaited<ReturnType<typeof createAccount>>;
+  let client: Awaited<ReturnType<typeof createOAuthApplication>>;
+  let accessToken: Awaited<ReturnType<typeof getAccessToken>>;
+
+  beforeEach(async () => {
+    await cleanDatabase();
+
+    viewer = await createAccount({ username: "viewer" });
+    approvedAuthor = await createAccount({ username: "approved-author" });
+    pendingAuthor = await createAccount({ username: "pending-author" });
+    client = await createOAuthApplication({
+      scopes: ["read:statuses"],
+    });
+    accessToken = await getAccessToken(client, viewer, ["read:statuses"]);
+
+    await db.insert(follows).values([
+      {
+        iri: `https://hollo.test/follows/${crypto.randomUUID()}`,
+        followingId: approvedAuthor.id,
+        followerId: viewer.id,
+        approved: new Date(),
+      },
+      {
+        iri: `https://hollo.test/follows/${crypto.randomUUID()}`,
+        followingId: pendingAuthor.id,
+        followerId: viewer.id,
+        approved: null,
+      },
+    ]);
+  });
+
+  it("allows private statuses from approved follows only", async () => {
+    expect.assertions(4);
+
+    const approvedPostId = uuidv7();
+    const pendingPostId = uuidv7();
+
+    await db.insert(posts).values([
+      {
+        id: approvedPostId,
+        iri: `https://hollo.test/@approved-author/${approvedPostId}`,
+        type: "Note",
+        accountId: approvedAuthor.id,
+        visibility: "private",
+        content: "Approved followers-only post",
+        contentHtml: "<p>Approved followers-only post</p>",
+        published: new Date(),
+      },
+      {
+        id: pendingPostId,
+        iri: `https://hollo.test/@pending-author/${pendingPostId}`,
+        type: "Note",
+        accountId: pendingAuthor.id,
+        visibility: "private",
+        content: "Pending followers-only post",
+        contentHtml: "<p>Pending followers-only post</p>",
+        published: new Date(),
+      },
+    ]);
+
+    const approvedResponse = await app.request(
+      `/api/v1/statuses/${approvedPostId}`,
+      {
+        headers: {
+          authorization: bearerAuthorization(accessToken),
+        },
+      },
+    );
+    const pendingResponse = await app.request(
+      `/api/v1/statuses/${pendingPostId}`,
+      {
+        headers: {
+          authorization: bearerAuthorization(accessToken),
+        },
+      },
+    );
+
+    expect(approvedResponse.status).toBe(200);
+    expect(pendingResponse.status).toBe(404);
+
+    const json = await approvedResponse.json();
+
+    expect(json.id).toBe(approvedPostId);
+    expect(json.visibility).toBe("private");
+  });
+
+  it("includes private ancestors from approved follows in status context", async () => {
+    expect.assertions(4);
+
+    const ancestorPostId = uuidv7();
+    const childPostId = uuidv7();
+
+    await db.insert(posts).values([
+      {
+        id: ancestorPostId,
+        iri: `https://hollo.test/@approved-author/${ancestorPostId}`,
+        type: "Note",
+        accountId: approvedAuthor.id,
+        visibility: "private",
+        content: "Private ancestor",
+        contentHtml: "<p>Private ancestor</p>",
+        published: new Date(),
+      },
+      {
+        id: childPostId,
+        iri: `https://hollo.test/@approved-author/${childPostId}`,
+        type: "Note",
+        accountId: approvedAuthor.id,
+        replyTargetId: ancestorPostId,
+        visibility: "public",
+        content: "Public reply",
+        contentHtml: "<p>Public reply</p>",
+        published: new Date(),
+      },
+    ]);
+
+    const response = await app.request(
+      `/api/v1/statuses/${childPostId}/context`,
+      {
+        headers: {
+          authorization: bearerAuthorization(accessToken),
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+
+    const json = await response.json();
+
+    expect(json.ancestors).toHaveLength(1);
+    expect(json.ancestors[0].id).toBe(ancestorPostId);
+    expect(json.descendants).toHaveLength(0);
   });
 });

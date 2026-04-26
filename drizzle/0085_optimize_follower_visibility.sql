@@ -1,0 +1,1 @@
+CREATE INDEX "follows_follower_id_following_id_approved_index" ON "follows" USING btree ("follower_id","following_id") WHERE "follows"."approved" is not null;

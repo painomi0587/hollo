@@ -31,7 +31,6 @@ import {
 import {
   accountOwners,
   blocks,
-  follows,
   listMembers,
   listPosts,
   lists,
@@ -41,6 +40,10 @@ import {
   timelinePosts,
 } from "../../schema";
 import { isUuid, uuid } from "../../uuid";
+import {
+  getApprovedFollowingAccountIds,
+  postAccountIdInArray,
+} from "../visibility";
 
 const app = new Hono<{ Variables: Variables }>();
 
@@ -323,6 +326,9 @@ app.get(
         limit: query.limit,
       });
     } else {
+      const followingAccountIds = await getApprovedFollowingAccountIds(
+        owner.id,
+      );
       const followedTags: SQL[] = owner.followedTags.map(
         // oxlint-disable-next-line prefer-template
         (t) => sql`${"#" + t}`,
@@ -333,13 +339,7 @@ app.get(
             eq(posts.accountId, owner.id),
             and(
               ne(posts.visibility, "direct"),
-              inArray(
-                posts.accountId,
-                db
-                  .select({ id: follows.followingId })
-                  .from(follows)
-                  .where(eq(follows.followerId, owner.id)),
-              ),
+              postAccountIdInArray(followingAccountIds),
               notInArray(
                 posts.accountId,
                 db
@@ -379,13 +379,7 @@ app.get(
                 .where(
                   or(
                     eq(posts.accountId, owner.id),
-                    inArray(
-                      posts.accountId,
-                      db
-                        .select({ id: follows.followingId })
-                        .from(follows)
-                        .where(eq(follows.followerId, owner.id)),
-                    ),
+                    postAccountIdInArray(followingAccountIds),
                   ),
                 ),
             ),
@@ -627,6 +621,9 @@ app.get(
         limit: query.limit,
       });
     } else {
+      const followingAccountIds = await getApprovedFollowingAccountIds(
+        owner.id,
+      );
       timeline = await db.query.posts.findMany({
         where: and(
           ne(posts.visibility, "direct"),
@@ -650,13 +647,7 @@ app.get(
                       or(
                         eq(posts.accountId, owner.id),
                         list.repliesPolicy === "followed"
-                          ? inArray(
-                              posts.accountId,
-                              db
-                                .select({ id: follows.followingId })
-                                .from(follows)
-                                .where(eq(follows.followerId, owner.id)),
-                            )
+                          ? postAccountIdInArray(followingAccountIds)
                           : inArray(
                               posts.accountId,
                               db
@@ -787,19 +778,14 @@ app.get(
     }
     const query = c.req.valid("query");
     const hashtag = `#${c.req.param("hashtag")}`;
+    const followingAccountIds = await getApprovedFollowingAccountIds(owner.id);
     const timeline = await db.query.posts.findMany({
       where: and(
         or(
           eq(posts.accountId, owner.id),
           and(
             ne(posts.visibility, "direct"),
-            inArray(
-              posts.accountId,
-              db
-                .select({ id: follows.followingId })
-                .from(follows)
-                .where(eq(follows.followerId, owner.id)),
-            ),
+            postAccountIdInArray(followingAccountIds),
           ),
           and(
             ne(posts.visibility, "private"),

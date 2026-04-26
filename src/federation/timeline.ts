@@ -33,6 +33,10 @@ export const TIMELINE_INBOX_LIMIT = 1000;
 
 const logger = getLogger(["hollo", "federation", "timeline"]);
 
+function isApprovedFollow(follow: Follow): boolean {
+  return follow.approved != null;
+}
+
 export function isPostVisibleToAccount(
   post: Post & { mentions: Mention[] },
   account: Account & { following: Follow[]; blockedBy: Block[] },
@@ -49,7 +53,9 @@ export function isPostVisibleToAccount(
   }
   if (post.visibility === "private") {
     for (const follow of account.following) {
-      if (follow.followingId === post.accountId) return true;
+      if (isApprovedFollow(follow) && follow.followingId === post.accountId) {
+        return true;
+      }
     }
   }
   return false;
@@ -128,13 +134,13 @@ export function shouldIncludePostInTimeline(
     if (mention.accountId === owner.id) return true;
   }
   for (const follow of owner.account.following) {
-    if (follow.followingId === post.accountId) {
+    if (isApprovedFollow(follow) && follow.followingId === post.accountId) {
       const replyTarget = post.replyTarget;
       return (
         replyTarget == null ||
         replyTarget.accountId === owner.id ||
         (owner.account.following.some(
-          (f) => f.followingId === replyTarget.accountId,
+          (f) => isApprovedFollow(f) && f.followingId === replyTarget.accountId,
         ) &&
           !owner.account.blocks.some(
             (b) => b.blockedAccountId === replyTarget.accountId,
@@ -183,7 +189,7 @@ export function shouldIncludePostInList(
     const originalAuthorId = post.replyTarget.accountId;
     if (list.repliesPolicy === "followed") {
       return list.accountOwner.account.following.some(
-        (f) => f.followingId === originalAuthorId,
+        (f) => isApprovedFollow(f) && f.followingId === originalAuthorId,
       );
     }
     if (list.repliesPolicy === "list") {

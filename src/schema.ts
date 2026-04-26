@@ -252,6 +252,9 @@ export const follows = pgTable(
     index()
       .on(table.followingId, table.approved)
       .where(isNotNull(table.approved)),
+    index("follows_follower_id_following_id_approved_index")
+      .on(table.followerId, table.followingId)
+      .where(isNotNull(table.approved)),
     index().on(table.followingId, table.created),
   ],
 );

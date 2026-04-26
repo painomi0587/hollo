@@ -14,9 +14,7 @@ import {
   and,
   desc,
   eq,
-  exists,
   gt,
-  inArray,
   isNotNull,
   isNull,
   lt,
@@ -57,7 +55,6 @@ import {
   blocks,
   bookmarks,
   customEmojis,
-  follows,
   type Like,
   likes,
   type Mention,
@@ -77,6 +74,10 @@ import {
   reactions,
 } from "../../schema";
 import { isUuid, type Uuid, uuid, uuidv7 } from "../../uuid";
+import {
+  buildPostVisibilityConditions,
+  getPostVisibilityScope,
+} from "../visibility";
 
 const app = new Hono<{ Variables: Variables }>();
 const logger = getLogger(["hollo", "api", "v1", "statuses"]);
@@ -95,63 +96,6 @@ function getReactionOrderingKey(
   emoji: string,
 ): string {
   return `react:${actorIri}:${postIri}:${emoji}`;
-}
-
-/**
- * Builds visibility conditions for post queries based on viewer's permissions.
- * For unauthenticated users, only public/unlisted posts are visible.
- * For authenticated users, includes private posts from accounts they follow,
- * and direct posts where they are mentioned or are the author.
- */
-function buildVisibilityConditions(viewerAccountId: Uuid | null | undefined) {
-  if (viewerAccountId == null) {
-    // Unauthenticated: only public and unlisted posts
-    return inArray(posts.visibility, ["public", "unlisted"]);
-  }
-
-  // Authenticated: include private and direct posts based on relationships
-  return or(
-    inArray(posts.visibility, ["public", "unlisted"]),
-    and(
-      eq(posts.visibility, "private"),
-      or(
-        // User's own posts
-        eq(posts.accountId, viewerAccountId),
-        // Posts from accounts the user follows (approved follows only)
-        exists(
-          db
-            .select({ id: follows.followingId })
-            .from(follows)
-            .where(
-              and(
-                eq(follows.followingId, posts.accountId),
-                eq(follows.followerId, viewerAccountId),
-                isNotNull(follows.approved),
-              ),
-            ),
-        ),
-      ),
-    ),
-    and(
-      inArray(posts.visibility, ["private", "direct"]),
-      or(
-        // User's own direct posts
-        eq(posts.accountId, viewerAccountId),
-        // Direct posts where the user is mentioned
-        exists(
-          db
-            .select({ postId: mentions.postId })
-            .from(mentions)
-            .where(
-              and(
-                eq(mentions.postId, posts.id),
-                eq(mentions.accountId, viewerAccountId),
-              ),
-            ),
-        ),
-      ),
-    ),
-  );
 }
 
 /**
@@ -550,8 +494,12 @@ app.get("/:id", async (c) => {
 
   if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
 
+  const visibilityScope = await getPostVisibilityScope(owner?.id);
   const post = await db.query.posts.findFirst({
-    where: and(eq(posts.id, id), buildVisibilityConditions(owner?.id)),
+    where: and(
+      eq(posts.id, id),
+      buildPostVisibilityConditions(visibilityScope),
+    ),
     with: getPostRelations(owner?.id),
   });
 
@@ -650,8 +598,12 @@ app.get("/:id/context", async (c) => {
   const id = c.req.param("id");
   if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
 
+  const visibilityScope = await getPostVisibilityScope(owner?.id);
   const post = await db.query.posts.findFirst({
-    where: and(eq(posts.id, id), buildVisibilityConditions(owner?.id)),
+    where: and(
+      eq(posts.id, id),
+      buildPostVisibilityConditions(visibilityScope),
+    ),
     with: getPostRelations(owner?.id),
   });
   if (post == null) return c.json({ error: "Record not found" }, 404);
@@ -661,7 +613,7 @@ app.get("/:id/context", async (c) => {
     p = await db.query.posts.findFirst({
       where: and(
         eq(posts.id, p.replyTargetId),
-        buildVisibilityConditions(owner?.id),
+        buildPostVisibilityConditions(visibilityScope),
         buildMuteAndBlockConditions(owner?.id),
       ),
       with: getPostRelations(owner?.id),
@@ -677,7 +629,7 @@ app.get("/:id/context", async (c) => {
     const replies = await db.query.posts.findMany({
       where: and(
         eq(posts.replyTargetId, p.id),
-        buildVisibilityConditions(owner?.id),
+        buildPostVisibilityConditions(visibilityScope),
         buildMuteAndBlockConditions(owner?.id),
       ),
       with: getPostRelations(owner?.id),
@@ -1482,8 +1434,12 @@ app.get("/:id/quotes", async (c) => {
   const id = c.req.param("id");
   if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
 
+  const visibilityScope = await getPostVisibilityScope(owner?.id);
   const post = await db.query.posts.findFirst({
-    where: and(eq(posts.id, id), buildVisibilityConditions(owner?.id)),
+    where: and(
+      eq(posts.id, id),
+      buildPostVisibilityConditions(visibilityScope),
+    ),
   });
   if (post == null) return c.json({ error: "Record not found" }, 404);
 
@@ -1500,7 +1456,7 @@ app.get("/:id/quotes", async (c) => {
     where: and(
       eq(posts.quoteTargetId, id),
       isNull(posts.sharingId),
-      buildVisibilityConditions(owner?.id),
+      buildPostVisibilityConditions(visibilityScope),
       buildMuteAndBlockConditions(owner?.id),
       query.max_id != null ? lt(posts.id, query.max_id) : undefined,
       query.since_id != null ? gt(posts.id, query.since_id) : undefined,
