@@ -1,0 +1,1 @@
+CREATE INDEX "remote_reply_scrape_jobs_stale_processing_index" ON "remote_reply_scrape_jobs" USING btree ("status","updated");

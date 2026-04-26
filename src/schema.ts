@@ -1515,6 +1515,10 @@ export const remoteReplyScrapeJobs = pgTable(
       table.nextAttemptAt,
       table.created,
     ),
+    index("remote_reply_scrape_jobs_stale_processing_index").on(
+      table.status,
+      table.updated,
+    ),
   ],
 );
 

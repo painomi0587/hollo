@@ -409,6 +409,49 @@ describe("remote replies scrape worker", () => {
     expect(job?.attempts).toBe(1);
   });
 
+  it("does not reclaim jobs during long remote fetches", async () => {
+    expect.assertions(4);
+    const { jobId, repliesIri } = await seedPostWithScrapeJob();
+    const startedAt = new Date("2026-04-25T00:00:00.000Z");
+    const fetchStartedAt = new Date("2026-04-25T00:00:30.000Z");
+    const reclaimAt = new Date("2026-04-25T00:01:01.000Z");
+    const requestTimes = [
+      fetchStartedAt,
+      new Date("2026-04-25T00:01:02.000Z"),
+      new Date("2026-04-25T00:01:03.000Z"),
+    ];
+    let reclaimedDuringFetch = false;
+
+    const processed = await processDueRemoteReplyScrapeJobs({
+      clock: () => requestTimes.shift() ?? new Date("2026-04-25T00:01:04.000Z"),
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url !== repliesIri) throw new Error(`Unexpected fetch: ${url}`);
+        const reclaimed = await claimRemoteReplyScrapeJob(
+          "other-worker",
+          reclaimAt,
+          60,
+        );
+        reclaimedDuringFetch = reclaimed != null;
+        return {
+          contextUrl: null,
+          document: collection(repliesIri, []),
+          documentUrl: url,
+        };
+      },
+      now: startedAt,
+      sleep: async () => undefined,
+      staleProcessingSeconds: 60,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    expect(processed).toBe(0);
+    expect(reclaimedDuringFetch).toBe(false);
+    expect(job?.status).toBe("completed");
+    expect(job?.attempts).toBe(1);
+  });
+
   it("does not reclaim jobs during long reply persistence steps", async () => {
     expect.assertions(4);
     const { jobId, postIri, repliesIri } = await seedPostWithScrapeJob();
@@ -987,6 +1030,9 @@ describe("remote replies scrape worker", () => {
       new Date("2026-04-25T00:00:03.000Z"),
       new Date("2026-04-25T00:00:04.000Z"),
       new Date("2026-04-25T00:00:05.000Z"),
+      new Date("2026-04-25T00:00:06.000Z"),
+      new Date("2026-04-25T00:00:07.000Z"),
+      new Date("2026-04-25T00:00:08.000Z"),
     ];
     await seedRemoteAccount("replyer");
 
@@ -1008,12 +1054,12 @@ describe("remote replies scrape worker", () => {
 
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(origin?.lastRequestAt?.toISOString()).toBe(
-      "2026-04-25T00:00:04.000Z",
+      "2026-04-25T00:00:06.000Z",
     );
     expect(origin?.nextRequestAt.toISOString()).toBe(
-      "2026-04-25T00:00:14.000Z",
+      "2026-04-25T00:00:16.000Z",
     );
-    expect(origin?.updated.toISOString()).toBe("2026-04-25T00:00:05.000Z");
+    expect(origin?.updated.toISOString()).toBe("2026-04-25T00:00:08.000Z");
   });
 
   it("skips overlapping worker polls in the same process", async () => {

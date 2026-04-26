@@ -358,6 +358,7 @@ function createThrottledDocumentLoader(
     if (sameOrigin) originRequests++;
 
     try {
+      await updateProcessingHeartbeat(job, clock());
       return await documentLoader(url, options);
     } finally {
       const requestTime = clock();

@@ -589,6 +589,13 @@
       "when": 1777129670102,
       "tag": "0083_remote_reply_scrape_claim_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1777177569926,
+      "tag": "0084_remote_reply_scrape_stale_index",
+      "breakpoints": true
     }
   ]
 }
