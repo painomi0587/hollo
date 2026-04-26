@@ -1020,6 +1020,49 @@ describe("remote replies scrape worker", () => {
     );
   });
 
+  it("releases origin locks when processing jobs are deleted", async () => {
+    expect.assertions(4);
+    const { jobId, postId, repliesIri } = await seedPostWithScrapeJob();
+    const next = await seedPostWithScrapeJob({
+      postIri: "https://remote.test/@author/posts/second",
+      repliesIri: "https://remote.test/@author/posts/second/replies",
+    });
+    const startedAt = new Date("2026-04-25T00:00:00.000Z");
+    const deletedAt = new Date("2026-04-25T00:00:01.000Z");
+    const completedAt = new Date("2026-04-25T00:00:02.000Z");
+    const requestTimes = [
+      deletedAt,
+      new Date("2026-04-25T00:00:03.000Z"),
+      completedAt,
+    ];
+
+    const processed = await processDueRemoteReplyScrapeJobs({
+      clock: () => requestTimes.shift() ?? completedAt,
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        if (url !== repliesIri) throw new Error(`Unexpected fetch: ${url}`);
+        await db.delete(posts).where(eq(posts.id, postId));
+        return {
+          contextUrl: null,
+          document: collection(repliesIri, []),
+          documentUrl: url,
+        };
+      },
+      intervalSeconds: 0,
+      now: startedAt,
+      sleep: async () => undefined,
+    });
+
+    const deletedJob = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    const claimed = await claimRemoteReplyScrapeJob("test-worker", completedAt);
+    const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
+    expect(processed).toBe(0);
+    expect(deletedJob).toBeUndefined();
+    expect(claimed?.id).toBe(next.jobId);
+    expect(origin?.processingJobId).toBe(next.jobId);
+  });
+
   it("records per-request timestamps for throttled origin request fields", async () => {
     expect.assertions(3);
     const { postIri, repliesIri } = await seedPostWithScrapeJob();

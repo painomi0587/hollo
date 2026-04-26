@@ -368,7 +368,10 @@ function createThrottledDocumentLoader(
           .set({ updated: requestTime })
           .where(processingJobAttemptCondition(job))
           .returning({ id: remoteReplyScrapeJobs.id });
-        if (updatedJob == null) return;
+        if (updatedJob == null) {
+          await releaseOriginLeaseIfJobDeleted(tx, job, requestTime);
+          return;
+        }
 
         if (sameOrigin) {
           await tx
@@ -456,7 +459,10 @@ async function updateProcessingHeartbeat(
       .set({ updated: now })
       .where(processingJobAttemptCondition(job))
       .returning({ id: remoteReplyScrapeJobs.id });
-    if (updatedJob == null) return;
+    if (updatedJob == null) {
+      await releaseOriginLeaseIfJobDeleted(tx, job, now);
+      return;
+    }
 
     await tx
       .update(remoteReplyScrapeOrigins)
@@ -504,7 +510,10 @@ async function completeJob(
       })
       .where(processingJobAttemptCondition(job))
       .returning({ id: remoteReplyScrapeJobs.id });
-    if (updatedJob == null) return;
+    if (updatedJob == null) {
+      await releaseOriginLeaseIfJobDeleted(tx, job, now);
+      return;
+    }
 
     await tx
       .update(remoteReplyScrapeOrigins)
@@ -538,7 +547,10 @@ async function failJob(
       })
       .where(processingJobAttemptCondition(job))
       .returning({ id: remoteReplyScrapeJobs.id });
-    if (updatedJob == null) return;
+    if (updatedJob == null) {
+      await releaseOriginLeaseIfJobDeleted(tx, job, now);
+      return;
+    }
 
     await tx
       .update(remoteReplyScrapeOrigins)
@@ -576,7 +588,10 @@ async function backOffJob(
       })
       .where(processingJobAttemptCondition(job))
       .returning({ id: remoteReplyScrapeJobs.id });
-    if (updatedJob == null) return;
+    if (updatedJob == null) {
+      await releaseOriginLeaseIfJobDeleted(tx, job, now);
+      return;
+    }
 
     await tx
       .update(remoteReplyScrapeOrigins)
@@ -593,6 +608,33 @@ async function backOffJob(
         ),
       );
   });
+}
+
+async function releaseOriginLeaseIfJobDeleted(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  job: RemoteReplyScrapeJob,
+  now: Date,
+): Promise<void> {
+  const [existingJob] = await tx
+    .select({ id: remoteReplyScrapeJobs.id })
+    .from(remoteReplyScrapeJobs)
+    .where(eq(remoteReplyScrapeJobs.id, job.id))
+    .limit(1);
+  if (existingJob != null) return;
+
+  await tx
+    .update(remoteReplyScrapeOrigins)
+    .set({
+      processingJobId: null,
+      processingStartedAt: null,
+      updated: sql`greatest(${remoteReplyScrapeOrigins.updated}, ${now.toISOString()}::timestamptz)`,
+    })
+    .where(
+      and(
+        eq(remoteReplyScrapeOrigins.originHost, job.originHost),
+        eq(remoteReplyScrapeOrigins.processingJobId, job.id),
+      ),
+    );
 }
 
 async function getDefaultDocumentLoader(
