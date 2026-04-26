@@ -21,7 +21,7 @@ Hollo does not have its own web interface.  Instead, it implements
 Mastodon-compatible APIs so that you can integrate it with the most of
 the [existing Mastodon clients](https://docs.hollo.social/clients/).
 
-[Matrix badge]: https://img.shields.io/matrix/hollo-users%3Amatrix.org?logo=matrix
+[Matrix badge]: https://img.shields.io/matrix/fedify%3Amatrix.org?logo=matrix
 [Matrix]: https://matrix.to/#/%23hollo-users:matrix.org
 [Discord badge]: https://img.shields.io/discord/1295652627505217647?logo=discord&cacheSeconds=60
 [Discord]: https://discord.gg/hGXXxUq2jK
