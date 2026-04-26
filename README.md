@@ -8,7 +8,6 @@ Hollo
 =====
 
 [![Matrix][Matrix badge]][Matrix]
-[![Discord][Discord badge]][Discord]
 [![Official Hollo][Official Hollo badge]][Official Hollo]
 
 Hollo is a federated single-user microblogging software powered by [Fedify].
@@ -23,8 +22,6 @@ the [existing Mastodon clients](https://docs.hollo.social/clients/).
 
 [Matrix badge]: https://img.shields.io/matrix/fedify%3Amatrix.org?logo=matrix
 [Matrix]: https://matrix.to/#/%23hollo-users:matrix.org
-[Discord badge]: https://img.shields.io/discord/1295652627505217647?logo=discord&cacheSeconds=60
-[Discord]: https://discord.gg/hGXXxUq2jK
 [Official Hollo]: https://hollo.social/@hollo
 [Official Hollo badge]: https://fedi-badge.deno.dev/@hollo@hollo.social/followers.svg
 [Fedify]: https://fedify.dev/

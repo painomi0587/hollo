@@ -18,11 +18,6 @@ export default defineConfig({
       customCss: ["./src/styles/custom.css"],
       social: [
         {
-          icon: "discord",
-          label: "Discord",
-          href: "https://discord.gg/hGXXxUq2jK",
-        },
-        {
           icon: "matrix",
           label: "Matrix",
           href: "https://matrix.to/#/%23hollo-users:matrix.org",
