@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.13
 --------------
 
-To be released.
+Released on April 26, 2026.
 
  -  Fixed a Mastodon API compatibility regression where replies to local posts
     were stored as `status` notifications, causing clients to show generic
