@@ -41,8 +41,8 @@ Hollo has five main components:
 By default (`NODE_TYPE=all`), all five run in a single process. You can
 separate them using the `NODE_TYPE` environment variable:
 
-| `NODE_TYPE` | Web server | Fedify queue | Import worker | Cleanup worker | Replies worker |
-| ----------- | ---------- | ------------ | ------------- | -------------- | -------------- |
+| `NODE_TYPE` | Web server | Fedify queue | Import worker | Cleanup worker | Remote replies scrape worker |
+| ----------- | ---------- | ------------ | ------------- | -------------- | ---------------------------- |
 | `all` (default) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `web` | ✓ | ✗ | ✗ | ✗ | ✗ |
 | `worker` | ✗ | ✓ | ✓ | ✓ | ✓ |
