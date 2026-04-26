@@ -11,6 +11,7 @@ import db from "../../db";
 import app from "../../index";
 import {
   accounts,
+  follows,
   instances,
   listMembers,
   lists,
@@ -139,5 +140,85 @@ describe.sequential("/api/v1/timelines/list/:list_id", () => {
     expect(json[0].mentions[0].url).toBe("https://remote.test/users/mentioned");
     expect(json[0].mentions[0].acct).toBe("mentioned@remote.test");
     expect(json[0].media_attachments[0].type).toBe("unknown");
+  });
+});
+
+describe.sequential("/api/v1/timelines/home", () => {
+  let owner: Awaited<ReturnType<typeof createAccount>>;
+  let approvedAuthor: Awaited<ReturnType<typeof createAccount>>;
+  let pendingAuthor: Awaited<ReturnType<typeof createAccount>>;
+  let client: Awaited<ReturnType<typeof createOAuthApplication>>;
+  let accessToken: Awaited<ReturnType<typeof getAccessToken>>;
+
+  beforeEach(async () => {
+    await cleanDatabase();
+
+    owner = await createAccount({ username: "timeline-owner" });
+    approvedAuthor = await createAccount({ username: "timeline-approved" });
+    pendingAuthor = await createAccount({ username: "timeline-pending" });
+    client = await createOAuthApplication({
+      scopes: ["read:statuses"],
+    });
+    accessToken = await getAccessToken(client, owner, ["read:statuses"]);
+
+    await db.insert(follows).values([
+      {
+        iri: `https://hollo.test/follows/${crypto.randomUUID()}`,
+        followingId: approvedAuthor.id,
+        followerId: owner.id,
+        approved: new Date(),
+      },
+      {
+        iri: `https://hollo.test/follows/${crypto.randomUUID()}`,
+        followingId: pendingAuthor.id,
+        followerId: owner.id,
+        approved: null,
+      },
+    ]);
+  });
+
+  it("includes private posts from approved follows only", async () => {
+    expect.assertions(4);
+
+    const approvedPostId = uuidv7();
+    const pendingPostId = uuidv7();
+
+    await db.insert(posts).values([
+      {
+        id: approvedPostId,
+        iri: `https://hollo.test/@timeline-approved/${approvedPostId}`,
+        type: "Note",
+        accountId: approvedAuthor.id,
+        visibility: "private",
+        content: "Approved timeline post",
+        contentHtml: "<p>Approved timeline post</p>",
+        published: new Date(),
+      },
+      {
+        id: pendingPostId,
+        iri: `https://hollo.test/@timeline-pending/${pendingPostId}`,
+        type: "Note",
+        accountId: pendingAuthor.id,
+        visibility: "private",
+        content: "Pending timeline post",
+        contentHtml: "<p>Pending timeline post</p>",
+        published: new Date(),
+      },
+    ]);
+
+    const response = await app.request("/api/v1/timelines/home", {
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+
+    const json = await response.json();
+    const ids = json.map((status: { id: string }) => status.id);
+
+    expect(json).toHaveLength(1);
+    expect(ids).toEqual([approvedPostId]);
   });
 });
