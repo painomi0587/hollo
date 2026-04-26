@@ -40,7 +40,6 @@ export interface ProcessRemoteReplyScrapeJobsOptions {
   now?: Date;
   sleep?: (milliseconds: number) => Promise<void>;
   staleProcessingSeconds?: number;
-  workerId?: string;
 }
 
 export function startRemoteReplyScrapeWorker(): void {
@@ -79,12 +78,13 @@ export function stopRemoteReplyScrapeWorker(): void {
 export async function processDueRemoteReplyScrapeJobs(
   options: ProcessRemoteReplyScrapeJobsOptions = {},
 ): Promise<number> {
+  if ((options.maxDepth ?? REMOTE_REPLIES_SCRAPE_DEPTH) < 1) return 0;
+
   const maxJobs = options.maxJobs ?? 1;
   let processedItems = 0;
 
   for (let i = 0; i < maxJobs; i++) {
     const job = await claimRemoteReplyScrapeJob(
-      options.workerId ?? `worker:${process.pid}`,
       options.now,
       options.staleProcessingSeconds,
     );
@@ -96,7 +96,6 @@ export async function processDueRemoteReplyScrapeJobs(
 }
 
 export async function claimRemoteReplyScrapeJob(
-  _workerId: string,
   now = new Date(),
   staleProcessingSeconds = STALE_PROCESSING_TIMEOUT_SECONDS,
 ): Promise<RemoteReplyScrapeJob | null> {

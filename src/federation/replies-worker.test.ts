@@ -273,11 +273,33 @@ describe("remote replies scrape worker", () => {
       repliesIri: "https://remote.test/@author/posts/second/replies",
     });
 
-    const claimed = await claimRemoteReplyScrapeJob("test-worker");
-    const skipped = await claimRemoteReplyScrapeJob("test-worker");
+    const claimed = await claimRemoteReplyScrapeJob();
+    const skipped = await claimRemoteReplyScrapeJob();
 
     expect(claimed?.id).toBe(first.jobId);
     expect(skipped).toBeNull();
+  });
+
+  it("does not process queued jobs when scraping is disabled", async () => {
+    expect.assertions(3);
+    const { jobId, repliesIri } = await seedPostWithScrapeJob();
+    let fetches = 0;
+
+    const processed = await processDueRemoteReplyScrapeJobs({
+      documentLoader: async (url): Promise<RemoteDocument> => {
+        fetches++;
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+      maxDepth: 0,
+      sleep: async () => undefined,
+    });
+
+    const job = await db.query.remoteReplyScrapeJobs.findFirst({
+      where: eq(remoteReplyScrapeJobs.id, jobId),
+    });
+    expect(processed).toBe(0);
+    expect(fetches).toBe(0);
+    expect(job?.repliesIri).toBe(repliesIri);
   });
 
   it("reclaims stale processing jobs and origin locks", async () => {
@@ -290,12 +312,8 @@ describe("remote replies scrape worker", () => {
     const startedAt = new Date("2026-04-25T00:00:00.000Z");
     const reclaimedAt = new Date("2026-04-25T00:01:01.000Z");
 
-    const claimed = await claimRemoteReplyScrapeJob("test-worker", startedAt);
-    const reclaimed = await claimRemoteReplyScrapeJob(
-      "test-worker",
-      reclaimedAt,
-      60,
-    );
+    const claimed = await claimRemoteReplyScrapeJob(startedAt);
+    const reclaimed = await claimRemoteReplyScrapeJob(reclaimedAt, 60);
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
       where: eq(remoteReplyScrapeJobs.id, first.jobId),
@@ -335,11 +353,7 @@ describe("remote replies scrape worker", () => {
       intervalSeconds: 10,
       now: startedAt,
       sleep: async () => {
-        const reclaimed = await claimRemoteReplyScrapeJob(
-          "other-worker",
-          reclaimAt,
-          60,
-        );
+        const reclaimed = await claimRemoteReplyScrapeJob(reclaimAt, 60);
         reclaimedDuringSleep = reclaimed != null;
       },
       staleProcessingSeconds: 60,
@@ -391,7 +405,6 @@ describe("remote replies scrape worker", () => {
       sleep: async (milliseconds) => {
         sleepMilliseconds.push(milliseconds);
         const reclaimed = await claimRemoteReplyScrapeJob(
-          "other-worker",
           reclaimTimes.shift() ?? new Date("2026-04-25T00:20:01.000Z"),
           15 * 60,
         );
@@ -426,11 +439,7 @@ describe("remote replies scrape worker", () => {
       clock: () => requestTimes.shift() ?? new Date("2026-04-25T00:01:04.000Z"),
       documentLoader: async (url): Promise<RemoteDocument> => {
         if (url !== repliesIri) throw new Error(`Unexpected fetch: ${url}`);
-        const reclaimed = await claimRemoteReplyScrapeJob(
-          "other-worker",
-          reclaimAt,
-          60,
-        );
+        const reclaimed = await claimRemoteReplyScrapeJob(reclaimAt, 60);
         reclaimedDuringFetch = reclaimed != null;
         return {
           contextUrl: null,
@@ -483,11 +492,7 @@ describe("remote replies scrape worker", () => {
           };
         }
         if (url === "https://remote.test/@replyer") {
-          const reclaimed = await claimRemoteReplyScrapeJob(
-            "other-worker",
-            reclaimAt,
-            60,
-          );
+          const reclaimed = await claimRemoteReplyScrapeJob(reclaimAt, 60);
           reclaimedDuringPersistence = reclaimed != null;
           return {
             contextUrl: null,
@@ -557,11 +562,7 @@ describe("remote replies scrape worker", () => {
           };
         }
         if (url === "https://other2.test/@replyer/posts/2") {
-          const reclaimed = await claimRemoteReplyScrapeJob(
-            "other-worker",
-            reclaimAt,
-            60,
-          );
+          const reclaimed = await claimRemoteReplyScrapeJob(reclaimAt, 60);
           reclaimedDuringCrossOriginFetch = reclaimed != null;
           return {
             contextUrl: null,
@@ -623,7 +624,7 @@ describe("remote replies scrape worker", () => {
       repliesIri: "https://available.test/@author/posts/root/replies",
     });
 
-    const claimed = await claimRemoteReplyScrapeJob("test-worker", now);
+    const claimed = await claimRemoteReplyScrapeJob(now);
 
     expect(claimed?.id).toBe(available.jobId);
   });
@@ -1055,7 +1056,7 @@ describe("remote replies scrape worker", () => {
     const deletedJob = await db.query.remoteReplyScrapeJobs.findFirst({
       where: eq(remoteReplyScrapeJobs.id, jobId),
     });
-    const claimed = await claimRemoteReplyScrapeJob("test-worker", completedAt);
+    const claimed = await claimRemoteReplyScrapeJob(completedAt);
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(processed).toBe(0);
     expect(deletedJob).toBeUndefined();
