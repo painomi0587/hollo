@@ -1,3 +1,21 @@
+FROM docker.io/node:24-alpine AS builder
+
+ARG VERSION
+
+RUN apk add --no-cache ffmpeg jq libstdc++ pnpm
+
+COPY pnpm-lock.yaml package.json /app/
+WORKDIR /app/
+RUN pnpm install --frozen-lockfile
+
+COPY . /app/
+RUN \
+  if [ "$VERSION" != "" ]; then \
+    jq --arg version "$VERSION" '.version = $version' package.json > .pkg.json \
+    && mv .pkg.json package.json; \
+  fi \
+  && pnpm run build
+
 FROM docker.io/node:24-alpine
 
 LABEL org.opencontainers.image.title="Hollo"
@@ -14,6 +32,7 @@ WORKDIR /app/
 RUN pnpm install --frozen-lockfile --prod
 
 COPY . /app/
+COPY --from=builder /app/dist /app/dist
 
 ARG VERSION
 LABEL org.opencontainers.image.version="${VERSION}"

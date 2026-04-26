@@ -38,6 +38,12 @@ To be released.
      -  Preview card scraping, media processing, and authentication helpers now
         load on demand instead of eagerly during route registration.
 
+ -  Added a production build step powered by `tsdown`, and changed
+    `pnpm prod` and `pnpm worker` to run the compiled JavaScript output with
+    Node.js instead of running TypeScript through `tsx`.  Docker images now
+    build these JavaScript files in a builder stage and include them in the
+    runtime image.  [[#357]]
+
  -  Moved remote replies scraping from synchronous post ingestion to a
     rate-limited background worker.  Remote posts now enqueue reply collection
     scraping jobs instead of fetching nested replies inline, which prevents
@@ -145,6 +151,7 @@ To be released.
 
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
+[#357]: https://github.com/fedify-dev/hollo/issues/357
 [#409]: https://github.com/fedify-dev/hollo/issues/409
 [#420]: https://github.com/fedify-dev/hollo/issues/420
 [#424]: https://github.com/fedify-dev/hollo/issues/424

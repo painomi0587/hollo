@@ -5,11 +5,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prod": "pnpm run migrate && tsx --env-file-if-exists=.env --dns-result-order=ipv6first bin/server.ts",
+    "prod": "pnpm run migrate && node --env-file-if-exists=.env --dns-result-order=ipv6first dist/bin/server.js",
     "dev": "pnpm run migrate && tsx watch --env-file-if-exists=.env --dns-result-order=ipv6first bin/server.ts",
-    "worker": "NODE_TYPE=worker tsx --env-file-if-exists=.env --dns-result-order=ipv6first bin/server.ts",
+    "worker": "NODE_TYPE=worker node --env-file-if-exists=.env --dns-result-order=ipv6first dist/bin/server.js",
     "list:routes": "tsx --env-file-if-exists=.env bin/routes.ts",
     "measure:memory": "node --expose-gc --import tsx --env-file-if-exists=.env scripts/measure-memory.ts",
+    "build": "tsdown",
     "test": "pnpm run migrate:test && vitest",
     "test:ci": "vitest",
     "typecheck": "tsgo --noEmit",
@@ -94,6 +95,7 @@
     "oxfmt": "^0.46.0",
     "oxlint": "^1.61.0",
     "timekeeper": "^2.3.1",
+    "tsdown": "^0.21.10",
     "typescript": "^6.0.3",
     "vitest": "^3.1.4"
   },

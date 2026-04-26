@@ -1,5 +1,6 @@
 .env
 assets/
+dist/
 fedify-hollo-*.tgz
 *.jsonl
 node_modules/
