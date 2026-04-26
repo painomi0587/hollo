@@ -110,9 +110,14 @@ app.get("/trends", (c) => {
   return c.json([]);
 });
 
-app.get("/suggestions", (c) => {
-  return c.json([]);
-});
+app.get(
+  "/suggestions",
+  tokenRequired,
+  scopeRequired(["read:accounts"]),
+  (c) => {
+    return c.json([]);
+  },
+);
 
 app.get(
   "/favourites",
