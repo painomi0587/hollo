@@ -156,7 +156,7 @@ To be released.
     not deleted, neither is the relationship to the original media nor the `alt`
     text.  [[#409], [#436] by aliceif]
 
- -  Upgraded Fedify to 2.1.7.
+ -  Upgraded Fedify to 2.1.10.
 
 [#173]: https://github.com/fedify-dev/hollo/issues/173
 [#348]: https://github.com/fedify-dev/hollo/issues/348
