@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.8.0
 -------------
 
-To be released.
+Released on April 27, 2026.
 
  -  Added support for separating worker nodes from the web server for better
     scalability in high-traffic scenarios.  This allows running web server and
