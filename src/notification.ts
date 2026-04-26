@@ -258,10 +258,11 @@ export async function createReblogNotification(
 }
 
 /**
- * Creates a status notification when someone posts a reply to a user's post.
- * This is different from mention - it specifically means "someone replied to your post".
+ * Creates a mention notification when someone replies to a user's post.
+ * Mastodon clients render reply notifications from mention notifications
+ * whose status points back to the current account via in_reply_to_account_id.
  */
-export async function createStatusNotification(
+export async function createReplyMentionNotification(
   replier: Account,
   replyPost: Post,
   originalPost: Post & { account: Account & { owner: AccountOwner | null } },
@@ -278,7 +279,7 @@ export async function createStatusNotification(
 
   return await createNotification({
     accountOwnerId: originalPost.account.owner.id,
-    type: "status",
+    type: "mention",
     actorAccountId: replier.id,
     targetPostId: replyPost.id,
   });
@@ -305,10 +306,9 @@ export async function createMentionNotifications(
       continue;
     }
 
-    // Skip mention notification for the reply target author to avoid duplicates.
-    // When someone replies to a post and mentions the original author,
-    // they will receive a "status" notification for the reply, so we don't
-    // need to send a separate "mention" notification for the same post.
+    // Skip explicit mention notification for the reply target author to avoid
+    // duplicates. Reply notifications are already represented as "mention"
+    // notifications for Mastodon API compatibility.
     if (replyTargetAuthorId != null && mentioned.id === replyTargetAuthorId) {
       logger.debug(
         "Skipping mention notification for reply target author {accountId} on post {postId}",

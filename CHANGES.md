@@ -6,6 +6,13 @@ Version 0.7.13
 
 To be released.
 
+ -  Fixed a Mastodon API compatibility regression where replies to local posts
+    were stored as `status` notifications, causing clients to show generic
+    “posted” titles instead of reply notifications.  Replies are now stored as
+    `mention` notifications.  [[#380]]
+
+[#380]: https://github.com/fedify-dev/hollo/issues/380
+
 
 Version 0.7.12
 --------------

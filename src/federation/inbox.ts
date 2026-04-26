@@ -35,7 +35,7 @@ import {
   createQuotedUpdateNotifications,
   createQuoteNotification,
   createReblogNotification,
-  createStatusNotification,
+  createReplyMentionNotification,
 } from "../notification";
 import {
   type Account,
@@ -431,12 +431,14 @@ export async function onPostCreated(
     await updatePostStats(db, { id: post.replyTargetId });
   }
 
-  // Create status notification for reply target author (if this is a reply)
+  // Create mention notification for reply target author (if this is a reply)
   // and mention notifications for other mentioned local users
   if (post != null) {
     let replyTargetAuthorId: typeof post.accountId | null = null;
 
-    // If this is a reply, create a "status" notification for the original post author
+    // If this is a reply, create a "mention" notification for the original
+    // post author. Mastodon clients render this as a reply based on the
+    // attached status's in_reply_to_account_id.
     if (post.replyTargetId != null) {
       const replyTarget = await db.query.posts.findFirst({
         where: eq(posts.id, post.replyTargetId),
@@ -448,13 +450,12 @@ export async function onPostCreated(
       if (replyTarget != null) {
         replyTargetAuthorId = replyTarget.accountId;
 
-        // Create status notification for the reply target author
-        await createStatusNotification(post.account, post, replyTarget);
+        await createReplyMentionNotification(post.account, post, replyTarget);
       }
     }
 
     // Create mention notifications for mentioned local users
-    // Skip the reply target author since they already got a "status" notification
+    // Skip the reply target author since they already got a reply mention.
     if (post.mentions.length > 0) {
       const mentionedAccountsWithOwners = await db.query.accounts.findMany({
         where: inArray(
