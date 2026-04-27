@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.8.1
 -------------
 
-To be released.
+Released on April 27, 2026.
 
  -  Fixed thumbnail cleanup preview counts over 999 being truncated after the
     localized count was passed through the redirect URL.  The preview now keeps
