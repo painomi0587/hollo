@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import { cleanDatabase } from "../../../tests/helpers";
 import {
   basicAuthorization,
@@ -9,9 +10,7 @@ import {
   getAccessToken,
   getApplication,
 } from "../../../tests/helpers/oauth";
-
 import type * as Schema from "../../schema";
-
 import { OOB_REDIRECT_URI } from "../constants";
 import revokeEndpoint from "./revoke";
 

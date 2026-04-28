@@ -11,6 +11,7 @@ import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import db from "../../db";
 import { serializeFeaturedTag } from "../../entities/tag";
 import {

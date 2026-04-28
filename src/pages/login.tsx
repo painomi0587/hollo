@@ -1,17 +1,16 @@
 import { zValidator } from "@hono/zod-validator";
-import { verify } from "argon2";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getSignedCookie, setSignedCookie } from "hono/cookie";
-import { TOTP } from "otpauth";
 import { z } from "zod";
+
 import { Layout } from "../components/Layout.tsx";
 import { LoginForm } from "../components/LoginForm.tsx";
 import { OtpForm } from "../components/OtpForm.tsx";
 import { db } from "../db.ts";
 import { credentials } from "../schema.ts";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const SECRET_KEY = process.env["SECRET_KEY"];
 if (SECRET_KEY == null) throw new Error("SECRET_KEY is required");
 
@@ -43,6 +42,7 @@ login.post("/", async (c) => {
   const credential = await db.query.credentials.findFirst({
     where: eq(credentials.email, email),
   });
+  const { verify } = await import("argon2");
   if (
     credential == null ||
     !(await verify(credential.passwordHash, password))
@@ -122,6 +122,7 @@ login.post(
     }
     const totp = await db.query.totps.findFirst();
     if (totp == null) return c.redirect(form.next ?? "/");
+    const { TOTP } = await import("otpauth");
     const totpInstance = new TOTP(totp);
     const valid = totpInstance.validate({
       token: form.token,

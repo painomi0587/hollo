@@ -1,5 +1,6 @@
 import { and, inArray, isNotNull } from "drizzle-orm";
 import { Hono } from "hono";
+
 import metadata from "../../../package.json" with { type: "json" };
 import { db } from "../../db";
 import { serializeAccountOwner } from "../../entities/account";
@@ -31,7 +32,7 @@ app.get("/", async (c) => {
     .groupBy(posts.language);
   return c.json({
     api_versions: {
-      mastodon: 2,
+      mastodon: 7,
     },
     domain: url.host,
     title: url.host,

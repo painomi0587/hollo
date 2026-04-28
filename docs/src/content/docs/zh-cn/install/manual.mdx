@@ -83,9 +83,10 @@ import { Steps } from "@astrojs/starlight/components";
 启动服务端
 ----------
 
-要启动服务端，请运行以下命令：
+先构建 JavaScript 文件，然后启动服务端：
 
 ~~~~ sh frame="none"
+pnpm run build
 pnpm run prod
 ~~~~
 
@@ -108,7 +109,13 @@ pnpm run prod
     pnpm install
     ~~~~
 
- 3. 重启服务端：
+ 3. 重新构建 JavaScript 文件：
+
+    ~~~~ sh frame="none"
+    pnpm run build
+    ~~~~
+
+ 4. 重启服务端：
 
     ~~~~ sh frame="none"
     pnpm run prod

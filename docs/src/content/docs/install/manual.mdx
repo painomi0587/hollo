@@ -91,9 +91,10 @@ Hollo.
 Starting the server
 -------------------
 
-To start the server, run the following command:
+Build the JavaScript files and start the server:
 
 ~~~~ sh frame="none"
+pnpm run build
 pnpm run prod
 ~~~~
 
@@ -117,7 +118,13 @@ dependencies:
     pnpm install
     ~~~~
 
- 3. Restart the server:
+ 3. Rebuild the JavaScript files:
+
+    ~~~~ sh frame="none"
+    pnpm run build
+    ~~~~
+
+ 4. Restart the server:
 
     ~~~~ sh frame="none"
     pnpm run prod

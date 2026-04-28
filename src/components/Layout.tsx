@@ -1,4 +1,5 @@
 import type { PropsWithChildren } from "hono/jsx";
+
 import type { ThemeColor } from "../schema";
 
 export interface LayoutProps {

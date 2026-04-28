@@ -1,5 +1,5 @@
-import { Block, isActor, lookupObject, Undo } from "@fedify/fedify";
-import * as vocab from "@fedify/fedify/vocab";
+import * as vocab from "@fedify/vocab";
+import { Block, isActor, lookupObject, Undo } from "@fedify/vocab";
 import { zValidator } from "@hono/zod-validator";
 import {
   and,
@@ -20,6 +20,7 @@ import {
 import { Hono } from "hono";
 import mime from "mime";
 import { z } from "zod";
+
 import { db } from "../../db";
 import {
   serializeAccount,
@@ -32,6 +33,7 @@ import { federation } from "../../federation";
 import {
   blockAccount,
   followAccount,
+  getBlockOrderingKey,
   persistAccount,
   persistAccountPosts,
   REMOTE_ACTOR_FETCH_POSTS,
@@ -58,8 +60,6 @@ import {
   pinnedPosts,
   posts,
 } from "../../schema";
-import { drive } from "../../storage";
-import { extractCustomEmojis, formatText } from "../../text";
 import { isUuid, type Uuid } from "../../uuid";
 import { timelineQuerySchema } from "./timelines";
 
@@ -112,6 +112,10 @@ app.patch(
     }),
   ),
   async (c) => {
+    const [{ drive }, { extractCustomEmojis, formatText }] = await Promise.all([
+      import("../../storage"),
+      import("../../text"),
+    ]);
     const disk = drive.use();
     const owner = c.get("token").accountOwner;
     if (owner == null) {
@@ -565,6 +569,10 @@ app.get(
     }
     const query = c.req.valid("query");
     const limit = query.limit ?? 20;
+    const tagged =
+      query.tagged == null || query.tagged.trim() === ""
+        ? undefined
+        : `${query.tagged.startsWith("#") ? query.tagged : `#${query.tagged}`}`.toLowerCase();
     const following = await db
       .select({ id: follows.followingId })
       .from(follows)
@@ -665,6 +673,7 @@ app.get(
         query.only_media === "true"
           ? inArray(posts.id, db.select({ id: media.postId }).from(media))
           : undefined,
+        tagged == null ? undefined : sql`${posts.tags} ? ${tagged}`,
         query.max_id == null ? undefined : lt(posts.id, query.max_id),
         query.min_id == null ? undefined : gt(posts.id, query.min_id),
       ),
@@ -1051,6 +1060,7 @@ app.post(
       );
     if (acct.owner == null) {
       const fedCtx = federation.createContext(c.req.raw, undefined);
+      const orderingKey = getBlockOrderingKey(owner.account.iri, acct.iri);
       await fedCtx.sendActivity(
         { username: owner.handle },
         {
@@ -1066,7 +1076,10 @@ app.post(
             object: new URL(acct.iri),
           }),
         }),
-        { excludeBaseUris: [new URL(fedCtx.url)] },
+        {
+          orderingKey,
+          excludeBaseUris: [new URL(fedCtx.url)],
+        },
       );
     }
     const result = await db.query.accounts.findFirst({

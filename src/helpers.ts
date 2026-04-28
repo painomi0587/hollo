@@ -5,7 +5,7 @@ import type z from "zod";
 export async function requestBody<T extends z.ZodType = z.ZodTypeAny>(
   req: HonoRequest,
   schema: T,
-  // biome-ignore lint/suspicious/noExplicitAny: Input type is `any` as it comes from the request
+  // oxlint-disable-next-line typescript/no-explicit-any
 ): Promise<z.ZodSafeParseSuccess<z.output<T>> | z.ZodSafeParseError<any>> {
   const contentType = req.header("Content-Type")?.toLowerCase();
   if (

@@ -1,6 +1,8 @@
-import { Accept, type InboxContext, Reject } from "@fedify/fedify";
+import type { InboxContext } from "@fedify/fedify";
+import { Accept, Reject } from "@fedify/vocab";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import { cleanDatabase } from "../../tests/helpers";
 import { createAccount } from "../../tests/helpers/oauth";
 import db from "../db";

@@ -2,6 +2,7 @@ import { getLogger } from "@logtape/logtape";
 import { desc, inArray, isNotNull, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import mime from "mime";
+
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import { loginRequired } from "../login";
@@ -181,6 +182,7 @@ emojis.get("/new", async (c) => {
 });
 
 emojis.post("/", async (c) => {
+  const { drive } = await import("../storage");
   const disk = drive.use();
   const form = await c.req.formData();
   const categoryValue = form.get("category")?.toString();

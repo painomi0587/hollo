@@ -1,5 +1,6 @@
 import "./logging";
 import { join, relative } from "node:path";
+
 import { federation } from "@fedify/hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { captureException } from "@sentry/core";
@@ -12,7 +13,7 @@ import image from "./image";
 import oauth from "./oauth";
 import oauthMetadataEndpoint from "./oauth/endpoints/metadata";
 import pages from "./pages";
-import { DRIVE_DISK, FS_STORAGE_PATH } from "./storage";
+import { DRIVE_DISK, FS_STORAGE_PATH } from "./storage-config";
 
 const app = new Hono();
 

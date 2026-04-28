@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { type Scope, scopeEnum } from "../schema";
 
 export const scopesSchema = z

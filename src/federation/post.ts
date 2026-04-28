@@ -1,13 +1,13 @@
+import type { Context } from "@fedify/fedify";
+import * as vocab from "@fedify/vocab";
 import {
   type Announce,
   Article,
   ChatMessage,
   Collection,
-  type Context,
   Create,
   Delete,
   Document,
-  type DocumentLoader,
   Emoji,
   Hashtag,
   Image,
@@ -23,8 +23,7 @@ import {
   Tombstone,
   Update,
   Video,
-} from "@fedify/fedify";
-import * as vocab from "@fedify/fedify/vocab";
+} from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import {
   and,
@@ -38,9 +37,10 @@ import {
 } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
-import sharp from "sharp";
 // @ts-expect-error: No type definitions available
 import { isSSRFSafeURL } from "ssrfcheck";
+
+import { extractPreviewLink } from "../html";
 import { makeVideoScreenshot, type Thumbnail, uploadThumbnail } from "../media";
 import { fetchPreviewCard } from "../previewcard";
 import type * as schema from "../schema";
@@ -64,12 +64,15 @@ import {
   pollVotes,
   posts,
 } from "../schema";
-import { extractPreviewLink } from "../text";
 import { type Uuid, uuidv7 } from "../uuid";
-import { persistAccount, persistAccountByIri } from "./account";
-import { iterateCollection } from "./collection";
+import {
+  type PersistAccountOptions,
+  persistAccount,
+  persistAccountByIri,
+} from "./account";
 import { toDate, toTemporalInstant } from "./date";
 import { toEmoji } from "./emoji";
+import { enqueueRemoteReplyScrape } from "./replies";
 import { appendPostToTimelines } from "./timeline";
 
 const logger = getLogger(["hollo", "federation", "post"]);
@@ -101,12 +104,10 @@ export async function persistPost(
   >,
   object: ASPost,
   baseUrl: URL | string,
-  options: {
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
+  options: PersistAccountOptions & {
     account?: Account & { owner: AccountOwner | null };
+    enqueueRemoteReplies?: boolean;
     replyTarget?: Post;
-    skipUpdate?: boolean;
   } = {},
 ): Promise<
   | (Post & {
@@ -230,13 +231,13 @@ export async function persistPost(
   }
   const to = new Set(object.toIds.map((url) => url.href));
   const cc = new Set(object.ccIds.map((url) => url.href));
-  const replies = await object.getReplies(options);
+  const repliesIri = object.repliesId;
   const shares = await object.getShares(options);
   const likes = await object.getLikes(options);
   const previewLink =
     object.content == null
       ? null
-      : extractPreviewLink(object.content.toString());
+      : await extractPreviewLink(object.content.toString());
   const previewCard =
     previewLink == null ? null : await fetchPreviewCard(previewLink);
   const published = toDate(object.published);
@@ -264,16 +265,15 @@ export async function persistPost(
     contentHtml: object.content?.toString(),
     language:
       object.content instanceof LanguageString
-        ? object.content.language.compact()
+        ? object.content.locale.toString()
         : object.summary instanceof LanguageString
-          ? object.summary.language.compact()
+          ? object.summary.locale.toString()
           : null,
     previewCard,
     tags,
     emojis,
     sensitive: object.sensitive ?? false,
     url: object.url instanceof Link ? object.url.href?.href : object.url?.href,
-    repliesCount: replies?.totalItems ?? 0,
     sharesCount: shares?.totalItems ?? 0,
     likesCount: likes?.totalItems ?? 0,
     published,
@@ -283,6 +283,7 @@ export async function persistPost(
     .insert(posts)
     .values({
       ...values,
+      repliesCount: existingPost?.repliesCount ?? 0,
       id: uuidv7(+(published ?? updated)),
       iri: object.id.href,
     })
@@ -424,6 +425,7 @@ export async function persistPost(
       if (mediaType.startsWith("video/")) {
         imageBytes = await makeVideoScreenshot(imageData);
       }
+      const { default: sharp } = await import("sharp");
       const image = sharp(imageBytes);
       metadata = await image.metadata();
       thumbnail = await uploadThumbnail(id, image);
@@ -456,18 +458,16 @@ export async function persistPost(
     with: { account: true, media: true },
   });
   if (post == null) return null;
-  if (replies != null) {
-    for await (const item of iterateCollection(replies, {
-      ...options,
-      suppressError: true,
-    })) {
-      if (!isPost(item)) continue;
-      await persistPost(db, item, baseUrl, {
-        ...options,
-        skipUpdate: true,
-        replyTarget: post,
-      });
-    }
+  if (
+    options.enqueueRemoteReplies !== false &&
+    account.owner == null &&
+    repliesIri != null
+  ) {
+    await enqueueRemoteReplyScrape(db, {
+      baseUrl,
+      post,
+      repliesIri,
+    });
   }
   await appendPostToTimelines(db, {
     ...post,
@@ -487,10 +487,8 @@ export async function persistSharingPost(
   announce: Announce,
   object: ASPost,
   baseUrl: URL | string,
-  options: {
+  options: PersistAccountOptions & {
     account?: Account & { owner: AccountOwner | null };
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
   } = {},
 ): Promise<PersistedSharingPost | null> {
   if (announce.id == null) return null;
@@ -594,9 +592,7 @@ export async function persistPollVote(
   >,
   object: Note,
   baseUrl: URL | string,
-  options: {
-    contextLoader?: DocumentLoader;
-    documentLoader?: DocumentLoader;
+  options: PersistAccountOptions & {
     account?: Account;
   } = {},
 ): Promise<PollVote | null> {
@@ -707,12 +703,17 @@ export async function updatePostStats(
     .select({ cnt: count() })
     .from(likes)
     .where(eq(likes.postId, id));
+  const quotesCount = db
+    .select({ cnt: count() })
+    .from(posts)
+    .where(eq(posts.quoteTargetId, id));
   await db
     .update(posts)
     .set({
       repliesCount: sql`${repliesCount}`,
       sharesCount: sql`${sharesCount}`,
       likesCount: sql`${likesCount}`,
+      quotesCount: sql`${quotesCount}`,
     })
     .where(
       and(

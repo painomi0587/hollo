@@ -1,5 +1,6 @@
 import { getLogger } from "@logtape/logtape";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+
 import db, { type Transaction } from "../db";
 import federation from "../federation/federation";
 import * as schema from "../schema";
@@ -125,24 +126,29 @@ async function processJobItems(
     return;
   }
 
-  // Get pending items for this job with lock
-  const pendingItems = await tx
+  // Get unfinished items for this job with lock
+  const unfinishedItems = await tx
     .select()
     .from(schema.importJobItems)
     .where(
       and(
         eq(schema.importJobItems.jobId, job.id),
-        eq(schema.importJobItems.status, "pending"),
+        or(
+          eq(schema.importJobItems.status, "pending"),
+          eq(schema.importJobItems.status, "processing"),
+        ),
       ),
     )
     .limit(BATCH_SIZE)
     .for("update", { skipLocked: true });
 
-  if (pendingItems.length === 0) {
+  if (unfinishedItems.length === 0) {
     // No more items - mark job as completed
     await finalizeJob(tx, job, "completed");
     return;
   }
+
+  const pendingItems = unfinishedItems.filter((i) => i.status == "pending");
 
   // Get account owner for this job
   const accountOwner = await tx.query.accountOwners.findFirst({

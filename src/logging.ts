@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Writable } from "node:stream";
+
 import { getFileSink } from "@logtape/file";
 import {
   configure,
@@ -7,14 +8,17 @@ import {
   getStreamSink,
   jsonLinesFormatter,
   type LogLevel,
+  type LogRecord,
   parseLogLevel,
 } from "@logtape/logtape";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+import { federation } from "./federation/federation";
+
+// oxlint-disable-next-line typescript/dot-notation
 const LOG_LEVEL: LogLevel = parseLogLevel(process.env["LOG_LEVEL"] ?? "info");
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const LOG_QUERY: boolean = process.env["LOG_QUERY"] === "true";
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const LOG_FILE: string | undefined = process.env["LOG_FILE"];
 
 await configure({
@@ -31,9 +35,11 @@ await configure({
         : getFileSink(LOG_FILE, {
             formatter: jsonLinesFormatter,
           }),
+    debugger: federation.sink ?? ((_: LogRecord) => {}),
   },
   filters: {},
   loggers: [
+    { category: [], sinks: ["debugger"] },
     {
       category: "fedify",
       lowestLevel: LOG_LEVEL,
