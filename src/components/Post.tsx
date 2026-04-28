@@ -1,3 +1,4 @@
+import { renderCustomEmojis } from "../custom-emoji";
 import type {
   Account,
   Medium as DbMedium,
@@ -6,7 +7,6 @@ import type {
   PollOption,
   Reaction,
 } from "../schema";
-import { renderCustomEmojis } from "../text";
 
 export interface PostProps {
   readonly post: DbPost & {
@@ -307,13 +307,17 @@ interface MediumProps {
 function Medium({ medium }: MediumProps) {
   return (
     <a href={medium.url}>
-      <img
-        key={medium.id}
-        src={medium.thumbnailUrl}
-        alt={medium.description ?? ""}
-        width={medium.thumbnailWidth}
-        height={medium.thumbnailHeight}
-      />
+      {medium.thumbnailCleaned ? (
+        "Thumbnail not available"
+      ) : (
+        <img
+          key={medium.id}
+          src={medium.thumbnailUrl}
+          alt={medium.description ?? ""}
+          width={medium.thumbnailWidth}
+          height={medium.thumbnailHeight}
+        />
+      )}
     </a>
   );
 }

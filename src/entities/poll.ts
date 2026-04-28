@@ -6,7 +6,7 @@ export function serializePoll(
     votes: PollVote[];
   },
   currentAccountOwner: { id: string } | undefined | null,
-  // biome-ignore lint/suspicious/noExplicitAny: JSON
+  // oxlint-disable-next-line typescript/no-explicit-any
 ): Record<string, any> {
   return {
     id: poll.id,
@@ -34,7 +34,7 @@ export function serializePoll(
   };
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: JSON
+// oxlint-disable-next-line typescript/no-explicit-any
 export function serializePollOption(option: PollOption): Record<string, any> {
   return {
     title: option.title,

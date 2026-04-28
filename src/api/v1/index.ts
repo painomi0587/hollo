@@ -3,6 +3,7 @@ import { Temporal } from "@js-temporal/polyfill";
 import { and, desc, eq, gte, inArray, lt, lte } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { db } from "../../db";
 import { serializeAccount } from "../../entities/account";
 import { getPostRelations, serializePost } from "../../entities/status";
@@ -57,13 +58,19 @@ app.get(
   tokenRequired,
   scopeRequired(["read:accounts"]),
   (c) => {
+    const owner = c.get("token").accountOwner;
+    if (owner == null) {
+      return c.json(
+        { error: "This method requires an authenticated user" },
+        422,
+      );
+    }
     return c.json({
-      // TODO
-      "posting:default:visibility": "public",
-      "posting:default:sensitive": false,
-      "posting:default:language": null,
+      "posting:default:visibility": owner.visibility,
+      "posting:default:sensitive": owner.account.sensitive,
+      "posting:default:language": owner.language,
       "reading:expand:media": "default",
-      "reading:expand:spoilers": false,
+      "reading:expand:spoilers": owner.expandSpoilers,
     });
   },
 );
@@ -84,6 +91,33 @@ app.get("/custom_emojis", async (c) => {
 app.get("/announcements", (c) => {
   return c.json([]);
 });
+
+app.get("/trends/tags", (c) => {
+  return c.json([]);
+});
+
+app.get("/trends/statuses", (c) => {
+  return c.json([]);
+});
+
+app.get("/trends/links", (c) => {
+  return c.json([]);
+});
+
+// Mastodon clients also request /trends without a subpath,
+// which is equivalent to /trends/tags:
+app.get("/trends", (c) => {
+  return c.json([]);
+});
+
+app.get(
+  "/suggestions",
+  tokenRequired,
+  scopeRequired(["read:accounts"]),
+  (c) => {
+    return c.json([]);
+  },
+);
 
 app.get(
   "/favourites",

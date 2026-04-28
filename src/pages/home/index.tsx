@@ -1,8 +1,9 @@
 import { escape } from "es-toolkit";
 import { Hono } from "hono";
+
 import { Layout } from "../../components/Layout.tsx";
+import { renderCustomEmojis } from "../../custom-emoji.ts";
 import db from "../../db.ts";
-import { renderCustomEmojis } from "../../text.ts";
 
 const homePage = new Hono().basePath("/");
 
@@ -15,12 +16,12 @@ homePage.get("/", async (c) => {
   if (owners.length < 1) return c.redirect("/accounts");
   if (
     "HOME_URL" in process.env &&
-    // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+    // oxlint-disable-next-line typescript/dot-notation
     process.env["HOME_URL"] != null &&
-    // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+    // oxlint-disable-next-line typescript/dot-notation
     process.env["HOME_URL"].trim() !== ""
   ) {
-    // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+    // oxlint-disable-next-line typescript/dot-notation
     return c.redirect(process.env["HOME_URL"]);
   }
   const host = new URL(c.req.url).host;

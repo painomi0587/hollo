@@ -1,93 +1,32 @@
 import { access, constants, lstatSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, isAbsolute, join } from "node:path";
-import { fromEnv } from "@aws-sdk/credential-providers";
-import { getLogger } from "@logtape/logtape";
+
 import { DriveManager } from "flydrive";
 import { FSDriver } from "flydrive/drivers/fs";
-import { S3Driver } from "flydrive/drivers/s3";
 
-const logger = getLogger(["hollo", "storage"]);
+import {
+  DRIVE_DISK,
+  FS_STORAGE_PATH,
+  STORAGE_URL_BASE,
+} from "./storage-config";
 
-export type DriveDisk = "fs" | "s3";
+const require = createRequire(import.meta.url);
 
-if (
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["FS_ASSET_PATH"] !== undefined &&
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["FS_STORAGE_PATH"] === undefined
-) {
-  logger.warn("FS_ASSET_PATH is deprecated; use FS_STORAGE_PATH instead.");
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["FS_STORAGE_PATH"] = process.env["FS_ASSET_PATH"];
-}
-
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-export const FS_STORAGE_PATH = process.env["FS_STORAGE_PATH"];
-
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const region = process.env["S3_REGION"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const bucket = process.env["S3_BUCKET"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const endpointUrl = process.env["S3_ENDPOINT_URL"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const accessKeyId = process.env["AWS_ACCESS_KEY_ID"];
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const secretAccessKey = process.env["AWS_SECRET_ACCESS_KEY"];
-
-let driveDisk: DriveDisk;
-
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-const driveDiskEnv = process.env["DRIVE_DISK"];
-if (driveDiskEnv === undefined) {
-  logger.warn(
-    "DRIVE_DISK is not configured; defaults to 's3'.  " +
-      "The DRIVE_DISK environment variable will be mandatory in the future versions.",
-  );
-  driveDisk = "s3";
-} else if (driveDiskEnv.toLowerCase() === "s3") {
-  driveDisk = "s3";
-} else if (driveDiskEnv.toLowerCase() === "fs") {
-  driveDisk = "fs";
-} else {
-  throw new Error(`Unknown DRIVE_DISK value: '${driveDiskEnv}'`);
-}
-
-export const DRIVE_DISK: DriveDisk = driveDisk;
-
-if (
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["ASSET_URL_BASE"] !== undefined &&
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["STORAGE_URL_BASE"] === undefined
-) {
-  logger.warn("ASSET_URL_BASE is deprecated; use STORAGE_URL_BASE instead.");
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["STORAGE_URL_BASE"] = process.env["ASSET_URL_BASE"];
-}
-
-if (
-  driveDisk === "s3" &&
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["S3_URL_BASE"] !== undefined &&
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["STORAGE_URL_BASE"] === undefined
-) {
-  logger.warn("S3_URL_BASE is deprecated; use STORAGE_URL_BASE instead.");
-  // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-  process.env["STORAGE_URL_BASE"] = process.env["S3_URL_BASE"];
-}
-
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
-const storageUrlBase = process.env["STORAGE_URL_BASE"];
-
-if (!storageUrlBase) {
-  throw new Error("STORAGE_URL_BASE is required");
-}
 
 export const drive = new DriveManager({
   /**
@@ -100,10 +39,10 @@ export const drive = new DriveManager({
     location: new URL("../tmp/fakes", import.meta.url),
     urlBuilder: {
       async generateURL(key) {
-        return new URL(`/assets/${key}`, storageUrlBase).href;
+        return new URL(`/assets/${key}`, STORAGE_URL_BASE).href;
       },
       async generateSignedURL(key) {
-        const url = new URL(`/assets/${key}`, storageUrlBase);
+        const url = new URL(`/assets/${key}`, STORAGE_URL_BASE);
         url.searchParams.set("signature", "true");
 
         return url.href;
@@ -146,7 +85,7 @@ export const drive = new DriveManager({
         visibility: "public",
         urlBuilder: {
           async generateURL(key: string) {
-            return new URL(`/assets/${key}`, storageUrlBase).href;
+            return new URL(`/assets/${key}`, STORAGE_URL_BASE).href;
           },
         },
       });
@@ -159,15 +98,20 @@ export const drive = new DriveManager({
         throw new Error("AWS_SECRET_ACCESS_KEY is required");
       }
 
+      const { fromEnv } =
+        require("@aws-sdk/credential-providers") as typeof import("@aws-sdk/credential-providers");
+      const { S3Driver } =
+        require("flydrive/drivers/s3") as typeof import("flydrive/drivers/s3");
+
       return new S3Driver({
         credentials: fromEnv(),
         region,
         endpoint: endpointUrl,
         bucket,
-        // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+        // oxlint-disable-next-line typescript/dot-notation
         forcePathStyle: process.env["S3_FORCE_PATH_STYLE"] === "true",
         visibility: "public",
-        cdnUrl: storageUrlBase,
+        cdnUrl: STORAGE_URL_BASE,
       });
     },
   },

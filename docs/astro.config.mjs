@@ -4,6 +4,7 @@ import { defineConfig } from "astro/config";
 
 // https://astro.build/config
 export default defineConfig({
+  site: "https://docs.hollo.social",
   integrations: [
     starlight({
       components: {
@@ -17,11 +18,6 @@ export default defineConfig({
       },
       customCss: ["./src/styles/custom.css"],
       social: [
-        {
-          icon: "discord",
-          label: "Discord",
-          href: "https://discord.gg/hGXXxUq2jK",
-        },
         {
           icon: "matrix",
           label: "Matrix",
@@ -102,6 +98,15 @@ export default defineConfig({
                 "zh-CN": "环境变量",
               },
               slug: "install/env",
+            },
+            {
+              label: "Separating worker nodes",
+              translations: {
+                ko: "워커 노드 분리",
+                ja: "ワーカーノードの分離",
+                "zh-CN": "分离工作节点",
+              },
+              slug: "install/workers",
             },
             {
               label: "Setting up",

@@ -1,4 +1,5 @@
 import { serializeSigned } from "hono/utils/cookie";
+
 import { SECRET_KEY } from "../../src/env";
 
 export async function getLoginCookie() {

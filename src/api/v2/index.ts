@@ -4,7 +4,7 @@ import {
   lookupObject,
   Note,
   type Object,
-} from "@fedify/fedify";
+} from "@fedify/vocab";
 import { zValidator } from "@hono/zod-validator";
 import { getLogger } from "@logtape/logtape";
 import {
@@ -20,6 +20,7 @@ import {
 } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { db } from "../../db";
 import { serializeAccount } from "../../entities/account";
 import { getPostRelations, serializePost } from "../../entities/status";
@@ -45,6 +46,15 @@ app.route("/instance", instance);
 app.route("/notifications", notificationsRoutes);
 
 app.post("/media", tokenRequired, scopeRequired(["write:media"]), postMedia);
+
+app.get(
+  "/suggestions",
+  tokenRequired,
+  scopeRequired(["read:accounts"]),
+  (c) => {
+    return c.json([]);
+  },
+);
 
 app.get(
   "/search",
@@ -181,7 +191,7 @@ app.get(
             : await db.query.posts.findMany({
                 where: inArray(
                   posts.id,
-                  // biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+                  // oxlint-disable-next-line typescript/dot-notation
                   hits.map((hit) => hit["id"]),
                 ),
                 with: getPostRelations(owner.id),

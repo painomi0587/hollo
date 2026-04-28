@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { getLogger } from "@logtape/logtape";
 import type { Sharp } from "sharp";
-import { drive } from "./storage";
 
 const logger = getLogger(["hollo", "media"]);
 const DEFAULT_THUMBNAIL_AREA = 230_400;
@@ -25,6 +25,7 @@ export async function uploadThumbnail(
   original: Sharp,
   thumbnailArea = DEFAULT_THUMBNAIL_AREA,
 ): Promise<Thumbnail> {
+  const { drive } = await import("./storage");
   const disk = drive.use();
   const originalMetadata = await original.metadata();
   let width = originalMetadata.width!;

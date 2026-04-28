@@ -1,6 +1,6 @@
 import type { Config } from "drizzle-kit";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const databaseUrl = process.env["DATABASE_URL"];
 if (databaseUrl == null) throw new Error("DATABASE_URL must be defined");
 

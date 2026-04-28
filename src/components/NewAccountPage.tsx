@@ -9,6 +9,7 @@ export interface NewAccountPageProps {
     bio?: string;
     protected?: boolean;
     discoverable?: boolean;
+    expandSpoilers?: boolean;
     language?: string;
     visibility?: PostVisibility;
     themeColor?: ThemeColor;

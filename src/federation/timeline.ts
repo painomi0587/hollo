@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+
 import type {
   Account,
   AccountOwner,
@@ -25,12 +26,16 @@ import * as schema from "../schema";
 import type { Uuid } from "../uuid";
 
 export const TIMELINE_INBOXES =
-  // biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+  // oxlint-disable-next-line typescript/dot-notation
   process.env["TIMELINE_INBOXES"]?.trim()?.toLowerCase() === "true";
 
 export const TIMELINE_INBOX_LIMIT = 1000;
 
 const logger = getLogger(["hollo", "federation", "timeline"]);
+
+function isApprovedFollow(follow: Follow): boolean {
+  return follow.approved != null;
+}
 
 export function isPostVisibleToAccount(
   post: Post & { mentions: Mention[] },
@@ -48,7 +53,9 @@ export function isPostVisibleToAccount(
   }
   if (post.visibility === "private") {
     for (const follow of account.following) {
-      if (follow.followingId === post.accountId) return true;
+      if (isApprovedFollow(follow) && follow.followingId === post.accountId) {
+        return true;
+      }
     }
   }
   return false;
@@ -127,13 +134,13 @@ export function shouldIncludePostInTimeline(
     if (mention.accountId === owner.id) return true;
   }
   for (const follow of owner.account.following) {
-    if (follow.followingId === post.accountId) {
+    if (isApprovedFollow(follow) && follow.followingId === post.accountId) {
       const replyTarget = post.replyTarget;
       return (
         replyTarget == null ||
         replyTarget.accountId === owner.id ||
         (owner.account.following.some(
-          (f) => f.followingId === replyTarget.accountId,
+          (f) => isApprovedFollow(f) && f.followingId === replyTarget.accountId,
         ) &&
           !owner.account.blocks.some(
             (b) => b.blockedAccountId === replyTarget.accountId,
@@ -182,7 +189,7 @@ export function shouldIncludePostInList(
     const originalAuthorId = post.replyTarget.accountId;
     if (list.repliesPolicy === "followed") {
       return list.accountOwner.account.following.some(
-        (f) => f.followingId === originalAuthorId,
+        (f) => isApprovedFollow(f) && f.followingId === originalAuthorId,
       );
     }
     if (list.repliesPolicy === "list") {

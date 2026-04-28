@@ -1,4 +1,5 @@
 {
+  "oxc.fmt.configPath": ".oxfmtrc.json",
   "editor.detectIndentation": false,
   "editor.indentSize": 2,
   "editor.insertSpaces": true,
@@ -6,43 +7,43 @@
   "files.insertFinalNewline": true,
   "files.trimFinalNewlines": true,
   "[css]": {
-    "editor.defaultFormatter": "biomejs.biome",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true
   },
   "[javascript]": {
-    "editor.defaultFormatter": "biomejs.biome",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.organizeImports.biome": "always"
+      "source.fixAll.oxc": "always"
     }
   },
   "[javascriptreact]": {
-    "editor.defaultFormatter": "biomejs.biome",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.organizeImports.biome": "always"
+      "source.fixAll.oxc": "always"
     }
   },
   "[json]": {
-    "editor.defaultFormatter": "biomejs.biome",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true
   },
   "[jsonc]": {
-    "editor.defaultFormatter": "biomejs.biome",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true
   },
   "[typescript]": {
-    "editor.defaultFormatter": "biomejs.biome",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.organizeImports.biome": "always"
+      "source.fixAll.oxc": "always"
     }
   },
   "[typescriptreact]": {
-    "editor.defaultFormatter": "biomejs.biome",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.organizeImports.biome": "always"
+      "source.fixAll.oxc": "always"
     }
   }
 }

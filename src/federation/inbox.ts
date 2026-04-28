@@ -1,3 +1,4 @@
+import type { InboxContext } from "@fedify/fedify";
 import {
   Accept,
   type Add,
@@ -11,7 +12,6 @@ import {
   EmojiReact,
   Follow,
   Image,
-  type InboxContext,
   isActor,
   Like,
   Link,
@@ -22,9 +22,10 @@ import {
   type Remove,
   type Undo,
   type Update,
-} from "@fedify/fedify";
+} from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { and, eq, inArray } from "drizzle-orm";
+
 import { db } from "../db";
 import {
   createEmojiReactionNotification,
@@ -35,7 +36,7 @@ import {
   createQuotedUpdateNotifications,
   createQuoteNotification,
   createReblogNotification,
-  createStatusNotification,
+  createReplyMentionNotification,
 } from "../notification";
 import {
   type Account,
@@ -56,6 +57,8 @@ import {
 import { isUuid } from "../uuid";
 import {
   persistAccount,
+  REFRESH_ACTORS_ON_INTERACTION,
+  refreshActorIfStale,
   removeFollower,
   unfollowAccount,
   updateAccountStats,
@@ -76,6 +79,10 @@ type ResolvedReactionTarget = {
   localRecipientHandle: string | null;
 };
 
+function getPersistOptions(ctx: InboxContext<void>) {
+  return { ...ctx, handleConflictPolicy: "skip" as const };
+}
+
 async function resolveReactionTarget(
   ctx: InboxContext<void>,
   objectId: URL,
@@ -88,7 +95,7 @@ async function resolveReactionTarget(
       parsed.class === Question ||
       parsed.class === ChatMessage)
   ) {
-    // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+    // oxlint-disable-next-line typescript/dot-notation
     const postId = parsed.values["id"];
     if (isUuid(postId)) {
       const post = await db.query.posts.findFirst({
@@ -96,7 +103,7 @@ async function resolveReactionTarget(
         with: { account: { with: { owner: true } } },
       });
       if (post != null) {
-        // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+        // oxlint-disable-next-line typescript/dot-notation
         const handle = parsed.values["username"];
         return {
           post,
@@ -131,7 +138,7 @@ export async function onAccountUpdated(
 ): Promise<void> {
   const object = await update.getObject();
   if (!isActor(object)) return;
-  await persistAccount(db, object, ctx.origin, ctx);
+  await persistAccount(db, object, ctx.origin, getPersistOptions(ctx));
 }
 
 export async function onAccountDeleted(
@@ -168,7 +175,12 @@ export async function onFollowed(
     inboxLogger.debug("Invalid following: {following}", { following });
     return;
   }
-  const follower = await persistAccount(db, actor, ctx.origin, ctx);
+  const follower = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (follower == null) return;
   let approves = !following.protected;
   if (approves) {
@@ -190,6 +202,7 @@ export async function onFollowed(
     })
     .onConflictDoNothing();
   if (approves) {
+    const orderingKey = `follow:${follower.iri}:${following.iri}`;
     await ctx.sendActivity(
       { username: following.owner.handle },
       actor,
@@ -201,7 +214,10 @@ export async function onFollowed(
         actor: object.id,
         object: follow,
       }),
-      { excludeBaseUris: [new URL(ctx.origin)] },
+      {
+        orderingKey,
+        excludeBaseUris: [new URL(ctx.origin)],
+      },
     );
     await updateAccountStats(db, { id: following.id });
     // Create follow notification
@@ -224,7 +240,12 @@ export async function onUnfollowed(
     inboxLogger.debug("Invalid actor: {actor}", { actor });
     return;
   }
-  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  const account = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (account == null) return;
   const deleted = await db
     .delete(follows)
@@ -246,7 +267,12 @@ export async function onFollowAccepted(
     inboxLogger.debug("Invalid actor: {actor}", { actor });
     return;
   }
-  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  const account = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (account == null) return;
   const approveFollowByFollowerIri = async (
     followerIri: string,
@@ -302,7 +328,12 @@ export async function onFollowRejected(
     inboxLogger.debug("Invalid actor: {actor}", { actor });
     return;
   }
-  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  const account = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (account == null) return;
   const deleteFollowByFollowerIri = async (
     followerIri: string,
@@ -360,7 +391,12 @@ export async function onBlocked(
     where: eq(accountOwners.handle, object.identifier),
   });
   if (blocked == null) return;
-  const blockerAccount = await persistAccount(db, blocker, ctx.origin, ctx);
+  const blockerAccount = await persistAccount(
+    db,
+    blocker,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (blockerAccount == null) return;
   const result = await db
     .insert(blocks)
@@ -398,7 +434,12 @@ export async function onUnblocked(
   }
   const actor = await undo.getActor();
   if (actor == null) return;
-  const blocker = await persistAccount(db, actor, ctx.origin, ctx);
+  const blocker = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (blocker == null) return;
   const target = ctx.parseUri(object.objectId);
   if (target?.type !== "actor") return;
@@ -426,17 +467,32 @@ export async function onPostCreated(
   if (!isPost(object)) return;
   // Avoid wrapping persistPost() in an explicit transaction.
   // It may fetch remote ActivityPub objects, preview cards, and media files.
-  const post = await persistPost(db, object, ctx.origin, ctx);
+  const post = await persistPost(
+    db,
+    object,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (post?.replyTargetId != null) {
     await updatePostStats(db, { id: post.replyTargetId });
   }
+  if (post?.quoteTargetId != null) {
+    await updatePostStats(db, { id: post.quoteTargetId });
+  }
 
-  // Create status notification for reply target author (if this is a reply)
+  // Refresh actor if stale (fire-and-forget)
+  if (post?.account != null) {
+    refreshActorIfStale(db, post.account, ctx.origin, ctx);
+  }
+
+  // Create mention notification for reply target author (if this is a reply)
   // and mention notifications for other mentioned local users
   if (post != null) {
     let replyTargetAuthorId: typeof post.accountId | null = null;
 
-    // If this is a reply, create a "status" notification for the original post author
+    // If this is a reply, create a "mention" notification for the original
+    // post author. Mastodon clients render this as a reply based on the
+    // attached status's in_reply_to_account_id.
     if (post.replyTargetId != null) {
       const replyTarget = await db.query.posts.findFirst({
         where: eq(posts.id, post.replyTargetId),
@@ -448,13 +504,12 @@ export async function onPostCreated(
       if (replyTarget != null) {
         replyTargetAuthorId = replyTarget.accountId;
 
-        // Create status notification for the reply target author
-        await createStatusNotification(post.account, post, replyTarget);
+        await createReplyMentionNotification(post.account, post, replyTarget);
       }
     }
 
     // Create mention notifications for mentioned local users
-    // Skip the reply target author since they already got a "status" notification
+    // Skip the reply target author since they already got a reply mention.
     if (post.mentions.length > 0) {
       const mentionedAccountsWithOwners = await db.query.accounts.findMany({
         where: inArray(
@@ -503,6 +558,7 @@ export async function onPostCreated(
       },
     });
     if (replyTarget?.account.owner != null) {
+      const orderingKey = `post:${replyTarget.iri}`;
       await ctx.forwardActivity(
         { username: replyTarget.account.owner.handle },
         "followers",
@@ -516,7 +572,11 @@ export async function onPostCreated(
         { username: replyTarget.account.owner.handle },
         "followers",
         toUpdate(replyTarget, ctx),
-        { preferSharedInbox: true, excludeBaseUris: [new URL(ctx.origin)] },
+        {
+          orderingKey,
+          preferSharedInbox: true,
+          excludeBaseUris: [new URL(ctx.origin)],
+        },
       );
     }
   }
@@ -537,7 +597,7 @@ export async function onPostUpdated(
     : null;
 
   // Persist the updated post
-  await persistPost(db, object, ctx.origin, ctx);
+  await persistPost(db, object, ctx.origin, getPersistOptions(ctx));
 
   // Create quoted_update notifications for users who quoted this post
   if (existingPost != null) {
@@ -575,6 +635,9 @@ export async function onPostDeleted(
       if (deletedPost.sharingId != null) {
         await updatePostStats(tx, { id: deletedPost.sharingId });
       }
+      if (deletedPost.quoteTargetId != null) {
+        await updatePostStats(tx, { id: deletedPost.quoteTargetId });
+      }
     }
   });
 }
@@ -585,10 +648,20 @@ export async function onPostShared(
 ): Promise<void> {
   const object = await announce.getObject();
   if (!isPost(object)) return;
-  const post = await persistSharingPost(db, announce, object, ctx.origin, ctx);
+  const post = await persistSharingPost(
+    db,
+    announce,
+    object,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (post == null || !post.isNew) return;
   if (post?.sharingId != null) {
     await updatePostStats(db, { id: post.sharingId });
+  }
+  // Refresh actor if stale (fire-and-forget)
+  if (post?.account != null) {
+    refreshActorIfStale(db, post.account, ctx.origin, ctx);
   }
   if (post?.sharing?.account?.owner != null) {
     await ctx.forwardActivity(
@@ -660,7 +733,12 @@ export async function onPostPinned(
   const accountList = await db.query.accounts.findMany({
     where: eq(accounts.featuredUrl, add.targetId.href),
   });
-  const post = await persistPost(db, object, ctx.origin, ctx);
+  const post = await persistPost(
+    db,
+    object,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (post == null) return;
   for (const account of accountList) {
     await db.insert(pinnedPosts).values({
@@ -680,7 +758,12 @@ export async function onPostUnpinned(
   const accountList = await db.query.accounts.findMany({
     where: eq(accounts.featuredUrl, remove.targetId.href),
   });
-  const post = await persistPost(db, object, ctx.origin, ctx);
+  const post = await persistPost(
+    db,
+    object,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (post == null) return;
   for (const account of accountList) {
     await db
@@ -707,8 +790,17 @@ export async function onLiked(
   if (target == null) return;
   const actor = await like.getActor();
   if (actor == null) return;
-  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  const account = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (account == null) return;
+  // Refresh actor if stale (fire-and-forget) when interaction refresh is enabled
+  if (REFRESH_ACTORS_ON_INTERACTION) {
+    refreshActorIfStale(db, account, ctx.origin, ctx);
+  }
   await db.transaction(async (tx) => {
     await tx
       .insert(likes)
@@ -757,7 +849,12 @@ export async function onUnliked(
   if (target == null) return;
   const actor = await like.getActor();
   if (actor == null) return;
-  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  const account = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (account == null) return;
   await db.transaction(async (tx) => {
     await tx
@@ -792,8 +889,17 @@ export async function onEmojiReactionAdded(
   if (emoji === "") return;
   const actor = await react.getActor();
   if (actor == null) return;
-  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  const account = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (account == null) return;
+  // Refresh actor if stale (fire-and-forget) when interaction refresh is enabled
+  if (REFRESH_ACTORS_ON_INTERACTION) {
+    refreshActorIfStale(db, account, ctx.origin, ctx);
+  }
   let emojiIri: URL | null = null;
   let customEmoji: URL | null = null;
   if (emoji.startsWith(":") && emoji.endsWith(":")) {
@@ -857,7 +963,12 @@ export async function onEmojiReactionRemoved(
   }
   const actor = await undo.getActor();
   if (actor == null) return;
-  const account = await persistAccount(db, actor, ctx.origin, ctx);
+  const account = await persistAccount(
+    db,
+    actor,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (account == null) return;
   const target = await resolveReactionTarget(ctx, object.objectId);
   if (target == null) return;
@@ -900,7 +1011,7 @@ export async function onVoted(
     return;
   }
   const vote = await db.transaction((tx) =>
-    persistPollVote(tx, object, ctx.origin, ctx),
+    persistPollVote(tx, object, ctx.origin, getPersistOptions(ctx)),
   );
   if (vote == null) return;
   const post = await db.query.posts.findFirst({
@@ -921,6 +1032,7 @@ export async function onVoted(
     where: eq(posts.pollId, vote.pollId),
   });
   if (post?.account.owner == null || post.poll == null) return;
+  const orderingKey = `post:${post.iri}`;
   await ctx.sendActivity(
     { username: post.account.owner.handle },
     post.poll.votes.map((v) => ({
@@ -934,7 +1046,11 @@ export async function onVoted(
             },
     })),
     toUpdate(post, ctx),
-    { preferSharedInbox: true, excludeBaseUris: [new URL(ctx.origin)] },
+    {
+      orderingKey,
+      preferSharedInbox: true,
+      excludeBaseUris: [new URL(ctx.origin)],
+    },
   );
 }
 
@@ -951,7 +1067,12 @@ export async function onAccountMoved(
   }
   const object = await move.getObject();
   if (!isActor(object)) return;
-  const obj = await persistAccount(db, object, ctx.origin, ctx);
+  const obj = await persistAccount(
+    db,
+    object,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (obj == null) return;
   const target = await move.getTarget();
   if (
@@ -960,7 +1081,12 @@ export async function onAccountMoved(
   ) {
     return;
   }
-  const tgt = await persistAccount(db, target, ctx.origin, ctx);
+  const tgt = await persistAccount(
+    db,
+    target,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
   if (tgt == null) return;
   const followers = await db.query.follows.findMany({
     with: { follower: { with: { owner: true } } },

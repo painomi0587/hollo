@@ -5,7 +5,7 @@ export function serializeReport(
   report: Report,
   targetAccount: Account & { successor: Account | null },
   baseUrl: URL | string,
-  // biome-ignore lint/suspicious/noExplicitAny: JSON
+  // oxlint-disable-next-line typescript/no-explicit-any
 ): Record<string, any> {
   return {
     id: report.id,
