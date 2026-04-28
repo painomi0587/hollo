@@ -1,7 +1,6 @@
 {
-  "language_servers": ["biome", "..."],
+  "language_servers": ["oxc", "..."],
   "code_actions_on_format": {
-    "source.fixAll.biome": true,
-    "source.organizeImports.biome": true
+    "source.fixAll.oxc": true
   }
 }

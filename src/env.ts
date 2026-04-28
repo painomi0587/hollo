@@ -1,6 +1,6 @@
 const SECRET_KEY_MINIMUM_LENGTH = 44;
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const secretKey = process.env["SECRET_KEY"];
 
 if (typeof secretKey !== "string") {

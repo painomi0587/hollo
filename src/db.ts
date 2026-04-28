@@ -6,13 +6,18 @@ import {
   type PostgresJsQueryResultHKT,
 } from "drizzle-orm/postgres-js";
 import createPostgres from "postgres";
+
 import * as schema from "./schema";
 
-// biome-ignore lint/complexity/useLiteralKeys: tsc rants about this (TS4111)
+// oxlint-disable-next-line typescript/dot-notation
 const databaseUrl = process.env["DATABASE_URL"];
 if (databaseUrl == null) throw new Error("DATABASE_URL must be defined");
 
 export const postgres = createPostgres(databaseUrl, {
+  // The pool size needs to exceed the ParallelMessageQueue concurrency (10)
+  // to leave headroom for HTTP handlers and KV store queries.  The default
+  // of 10 can cause connection starvation under federation load.
+  max: 20,
   connect_timeout: 5,
   connection: { IntervalStyle: "iso_8601" },
 });

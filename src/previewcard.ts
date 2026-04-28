@@ -1,5 +1,3 @@
-import ogs from "open-graph-scraper";
-
 export interface PreviewCard {
   url: string;
   title: string;
@@ -15,6 +13,7 @@ export interface PreviewCard {
 export async function fetchPreviewCard(
   url: string | URL,
 ): Promise<PreviewCard | null> {
+  const { default: ogs } = await import("open-graph-scraper");
   let response: Awaited<ReturnType<typeof ogs>>;
   try {
     response = await ogs({ url: url.toString() });

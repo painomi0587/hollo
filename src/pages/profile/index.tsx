@@ -1,6 +1,7 @@
-import { and, count, desc, eq, or } from "drizzle-orm";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import xss from "xss";
+
 import { Layout } from "../../components/Layout.tsx";
 import { Post as PostView } from "../../components/Post.tsx";
 import { Profile } from "../../components/Profile.tsx";
@@ -178,8 +179,109 @@ profile.get<"/:handle">(async (c) => {
   );
 });
 
+profile.get("/tagged/:tag", async (c) => {
+  let handle = c.req.param("handle");
+  const tag = c.req.param("tag");
+  if (handle == null || tag == null) return c.notFound();
+  if (handle.startsWith("@")) handle = handle.substring(1);
+  const owner = await db.query.accountOwners.findFirst({
+    where: eq(accountOwners.handle, handle),
+    with: { account: true },
+  });
+  if (owner == null) return c.notFound();
+  const hashtag = `${tag.startsWith("#") ? tag : `#${tag}`}`.toLowerCase();
+  const pageStr = c.req.query("page");
+  if (
+    pageStr !== undefined &&
+    (Number.isNaN(Number.parseInt(pageStr, 10)) ||
+      Number.parseInt(pageStr, 10) < 1)
+  ) {
+    return c.notFound();
+  }
+  const page =
+    pageStr !== undefined && !Number.isNaN(Number.parseInt(pageStr, 10))
+      ? Number.parseInt(pageStr, 10)
+      : 1;
+  const [{ totalPosts }] = await db
+    .select({ totalPosts: count() })
+    .from(posts)
+    .where(
+      and(
+        eq(posts.accountId, owner.id),
+        or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+        sql`${posts.tags} ? ${hashtag}`,
+      ),
+    );
+  const maxPage = Math.ceil(totalPosts / PAGE_SIZE);
+  if (page > maxPage && !(page <= 1 && totalPosts < 1)) {
+    return c.notFound();
+  }
+  const postList = await db.query.posts.findMany({
+    where: and(
+      eq(posts.accountId, owner.id),
+      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+      sql`${posts.tags} ? ${hashtag}`,
+    ),
+    orderBy: desc(posts.id),
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+    with: {
+      account: true,
+      media: true,
+      poll: { with: { options: true } },
+      sharing: {
+        with: {
+          account: true,
+          media: true,
+          poll: { with: { options: true } },
+          replyTarget: { with: { account: true } },
+          quoteTarget: {
+            with: {
+              account: true,
+              media: true,
+              poll: { with: { options: true } },
+              replyTarget: { with: { account: true } },
+              reactions: true,
+            },
+          },
+          reactions: true,
+        },
+      },
+      replyTarget: { with: { account: true } },
+      quoteTarget: {
+        with: {
+          account: true,
+          media: true,
+          poll: { with: { options: true } },
+          replyTarget: { with: { account: true } },
+          reactions: true,
+        },
+      },
+      reactions: true,
+    },
+  });
+  const featuredTagList = await db.query.featuredTags.findMany({
+    where: eq(featuredTags.accountOwnerId, owner.id),
+  });
+  const newerUrl = page > 1 ? `?page=${page - 1}` : undefined;
+  const olderUrl =
+    postList.length === PAGE_SIZE ? `?page=${page + 1}` : undefined;
+  return c.html(
+    <ProfilePage
+      accountOwner={owner}
+      tag={tag}
+      posts={postList.slice(0, PAGE_SIZE)}
+      pinnedPosts={[]}
+      featuredTags={featuredTagList}
+      olderUrl={olderUrl}
+      newerUrl={newerUrl}
+    />,
+  );
+});
+
 interface ProfilePageProps {
   readonly accountOwner: AccountOwner & { account: Account };
+  readonly tag?: string;
   readonly posts: (Post & {
     account: Account;
     media: Medium[];
@@ -249,13 +351,14 @@ interface ProfilePageProps {
     reactions: Reaction[];
   })[];
   readonly featuredTags: FeaturedTag[];
-  readonly atomUrl: string;
+  readonly atomUrl?: string;
   readonly olderUrl?: string;
   readonly newerUrl?: string;
 }
 
 function ProfilePage({
   accountOwner,
+  tag,
   posts,
   pinnedPosts,
   featuredTags,
@@ -265,12 +368,24 @@ function ProfilePage({
 }: ProfilePageProps) {
   return (
     <Layout
-      title={accountOwner.account.name}
-      url={accountOwner.account.url ?? accountOwner.account.iri}
+      title={
+        tag == null
+          ? accountOwner.account.name
+          : `#${tag} - ${accountOwner.account.name}`
+      }
+      url={
+        tag == null
+          ? (accountOwner.account.url ?? accountOwner.account.iri)
+          : undefined
+      }
       description={accountOwner.bio}
       imageUrl={accountOwner.account.avatarUrl}
       links={[
-        { rel: "alternate", type: "application/atom+xml", href: atomUrl },
+        ...(atomUrl == null
+          ? []
+          : [
+              { rel: "alternate", type: "application/atom+xml", href: atomUrl },
+            ]),
         {
           rel: "alternate",
           type: "application/activity+json",
@@ -280,15 +395,14 @@ function ProfilePage({
       themeColor={accountOwner.themeColor}
     >
       <Profile accountOwner={accountOwner} />
+      {tag != null && <h2>Posts tagged #{tag}</h2>}
       {featuredTags.length > 0 && (
         <p>
           Featured tags:{" "}
           {featuredTags.map((tag) => (
             <>
               <a
-                href={`/tags/${encodeURIComponent(tag.name)}?handle=${
-                  accountOwner.handle
-                }`}
+                href={`/@${accountOwner.handle}/tagged/${encodeURIComponent(tag.name)}`}
               >
                 #{tag.name}
               </a>{" "}
@@ -296,9 +410,8 @@ function ProfilePage({
           ))}
         </p>
       )}
-      {pinnedPosts.map((post) => (
-        <PostView post={post} pinned={true} />
-      ))}
+      {tag == null &&
+        pinnedPosts.map((post) => <PostView post={post} pinned={true} />)}
       {posts.map((post) => (
         <PostView post={post} />
       ))}

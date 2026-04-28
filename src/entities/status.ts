@@ -1,4 +1,5 @@
 import { eq, sql } from "drizzle-orm";
+
 import type { PreviewCard } from "../previewcard";
 import {
   type Account,
@@ -256,7 +257,7 @@ export function serializePost(
   },
   currentAccountOwner: { id: string } | undefined | null,
   baseUrl: URL | string,
-  // biome-ignore lint/suspicious/noExplicitAny: JSON
+  // oxlint-disable-next-line typescript/no-explicit-any
 ): Record<string, any> {
   return {
     id: post.id,
@@ -272,6 +273,7 @@ export function serializePost(
     replies_count: post.repliesCount ?? 0,
     reblogs_count: post.sharesCount ?? 0,
     favourites_count: post.likesCount ?? 0,
+    quotes_count: post.quotesCount ?? 0,
     favourited:
       currentAccountOwner == null
         ? false
@@ -304,13 +306,32 @@ export function serializePost(
           ),
     quote_id: post.quoteTargetId,
     quote:
-      post.quoteTarget == null
-        ? null
-        : serializePost(
-            { ...post.quoteTarget, quoteTarget: null, sharing: null },
-            currentAccountOwner,
-            baseUrl,
-          ),
+      post.quoteTarget != null
+        ? {
+            state: "accepted",
+            quoted_status: serializePost(
+              { ...post.quoteTarget, quoteTarget: null, sharing: null },
+              currentAccountOwner,
+              baseUrl,
+            ),
+          }
+        : post.quoteTargetId != null
+          ? { state: "deleted", quoted_status: null }
+          : null,
+    quote_approval:
+      post.visibility === "public" || post.visibility === "unlisted"
+        ? {
+            automatic: ["public"],
+            manual: [],
+            ...(currentAccountOwner != null
+              ? { current_user: "automatic" }
+              : {}),
+          }
+        : {
+            automatic: [],
+            manual: [],
+            ...(currentAccountOwner != null ? { current_user: "denied" } : {}),
+          },
     application:
       post.application == null
         ? null

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+
 import { scopeRequired, tokenRequired, type Variables } from "../middleware";
 
 const app = new Hono<{ Variables: Variables }>();

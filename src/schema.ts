@@ -21,6 +21,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+
 import type { PreviewCard } from "./previewcard";
 import type { Uuid } from "./uuid";
 
@@ -89,7 +90,10 @@ export const accounts = pgTable("accounts", {
   successorId: uuid("successor_id")
     .$type<Uuid>()
     .references((): AnyPgColumn => accounts.id, { onDelete: "cascade" }),
-  aliases: text("aliases").array().notNull().default(sql`(ARRAY[]::text[])`),
+  aliases: text("aliases")
+    .array()
+    .notNull()
+    .default(sql`(ARRAY[]::text[])`),
   instanceHost: text("instance_host")
     .notNull()
     .references(() => instances.host),
@@ -97,6 +101,7 @@ export const accounts = pgTable("accounts", {
   updated: timestamp("updated", { withTimezone: true })
     .notNull()
     .default(currentTimestamp),
+  fetched: timestamp("fetched", { withTimezone: true }),
 });
 
 export const accountRelations = relations(accounts, ({ one, many }) => ({
@@ -182,6 +187,7 @@ export const accountOwners = pgTable("account_owners", {
   visibility: postVisibilityEnum("visibility").notNull().default("public"),
   language: text("language").notNull().default("en"),
   discoverable: boolean().notNull().default(false),
+  expandSpoilers: boolean("expand_spoilers").notNull().default(false),
   themeColor: themeColorEnum("theme_color").notNull(),
 });
 
@@ -245,6 +251,9 @@ export const follows = pgTable(
     check("ck_follows_self", sql`${table.followingId} != ${table.followerId}`),
     index()
       .on(table.followingId, table.approved)
+      .where(isNotNull(table.approved)),
+    index("follows_follower_id_following_id_approved_index")
+      .on(table.followerId, table.followingId)
       .where(isNotNull(table.approved)),
     index().on(table.followingId, table.created),
   ],
@@ -449,6 +458,7 @@ export const posts = pgTable(
     repliesCount: bigint("replies_count", { mode: "number" }).default(0),
     sharesCount: bigint("shares_count", { mode: "number" }).default(0),
     likesCount: bigint("likes_count", { mode: "number" }).default(0),
+    quotesCount: bigint("quotes_count", { mode: "number" }).default(0),
     idempotenceKey: text("idempotence_key"),
     published: timestamp("published", { withTimezone: true }),
     updated: timestamp("updated", { withTimezone: true })
@@ -539,6 +549,7 @@ export const media = pgTable(
     created: timestamp("created", { withTimezone: true })
       .notNull()
       .default(currentTimestamp),
+    thumbnailCleaned: boolean("thumbnail_cleaned").notNull().default(false),
   },
   (table) => [index().on(table.postId)],
 );
@@ -1374,3 +1385,180 @@ export const importJobItemRelations = relations(importJobItems, ({ one }) => ({
     references: [importJobs.id],
   }),
 }));
+
+// Cleanup Job Status Enum
+export const cleanupJobStatusEnum = pgEnum("cleanup_job_status", [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export type CleanupJobStatus = (typeof cleanupJobStatusEnum.enumValues)[number];
+
+// Cleanup Job Category Enum
+export const cleanupJobCategoryEnum = pgEnum("cleanup_job_category", [
+  "cleanup_thumbnails",
+]);
+
+export type CleanupJobCategory =
+  (typeof cleanupJobCategoryEnum.enumValues)[number];
+
+// Cleanup Jobs Table
+export const cleanupJobs = pgTable(
+  "cleanup_jobs",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    category: cleanupJobCategoryEnum("category").notNull(),
+    status: cleanupJobStatusEnum("status").notNull().default("pending"),
+    totalItems: integer("total_items").notNull().default(0),
+    processedItems: integer("processed_items").notNull().default(0),
+    successfulItems: integer("successful_items").notNull().default(0),
+    failedItems: integer("failed_items").notNull().default(0),
+    errorMessage: text("error_message"),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [index().on(table.status, table.created)],
+);
+
+export type CleanupJob = typeof cleanupJobs.$inferSelect;
+export type NewCleanupJob = typeof cleanupJobs.$inferInsert;
+
+// Cleanup Job Items Table
+export const cleanupJobItems = pgTable(
+  "cleanup_job_items",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    jobId: uuid("job_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => cleanupJobs.id, { onDelete: "cascade" }),
+    status: cleanupJobStatusEnum("status").notNull().default("pending"),
+    data: jsonb("data").notNull().$type<Record<string, unknown>>(),
+    errorMessage: text("error_message"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [index().on(table.jobId, table.status)],
+);
+
+export type CleanupJobItem = typeof cleanupJobItems.$inferSelect;
+export type NewCleanupJobItem = typeof cleanupJobItems.$inferInsert;
+
+// Cleanup Job Relations
+export const cleanupJobRelations = relations(cleanupJobs, ({ many }) => ({
+  items: many(cleanupJobItems),
+}));
+
+export const cleanupJobItemRelations = relations(
+  cleanupJobItems,
+  ({ one }) => ({
+    job: one(cleanupJobs, {
+      fields: [cleanupJobItems.jobId],
+      references: [cleanupJobs.id],
+    }),
+  }),
+);
+
+export const remoteReplyScrapeJobStatusEnum = pgEnum(
+  "remote_reply_scrape_job_status",
+  ["pending", "processing", "completed", "failed"],
+);
+
+export type RemoteReplyScrapeJobStatus =
+  (typeof remoteReplyScrapeJobStatusEnum.enumValues)[number];
+
+export const remoteReplyScrapeJobs = pgTable(
+  "remote_reply_scrape_jobs",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    postId: uuid("post_id")
+      .$type<Uuid>()
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    postIri: text("post_iri").notNull(),
+    repliesIri: text("replies_iri").notNull().unique(),
+    baseUrl: text("base_url").notNull(),
+    originHost: text("origin_host").notNull(),
+    depth: integer("depth").notNull().default(0),
+    status: remoteReplyScrapeJobStatusEnum("status")
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    fetchedItems: integer("fetched_items").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    errorMessage: text("error_message"),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    updated: timestamp("updated", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [
+    index("remote_reply_scrape_jobs_claim_index").on(
+      table.status,
+      table.nextAttemptAt,
+      table.created,
+    ),
+    index("remote_reply_scrape_jobs_origin_claim_index").on(
+      table.originHost,
+      table.status,
+      table.nextAttemptAt,
+      table.created,
+    ),
+    index("remote_reply_scrape_jobs_stale_processing_index").on(
+      table.status,
+      table.updated,
+    ),
+  ],
+);
+
+export type RemoteReplyScrapeJob = typeof remoteReplyScrapeJobs.$inferSelect;
+export type NewRemoteReplyScrapeJob = typeof remoteReplyScrapeJobs.$inferInsert;
+
+export const remoteReplyScrapeOrigins = pgTable(
+  "remote_reply_scrape_origins",
+  {
+    originHost: text("origin_host").primaryKey(),
+    nextRequestAt: timestamp("next_request_at", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    lastRequestAt: timestamp("last_request_at", { withTimezone: true }),
+    processingJobId: uuid("processing_job_id").$type<Uuid>(),
+    processingStartedAt: timestamp("processing_started_at", {
+      withTimezone: true,
+    }),
+    updated: timestamp("updated", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [
+    index().on(table.nextRequestAt),
+    index().on(table.processingJobId),
+  ],
+);
+
+export type RemoteReplyScrapeOrigin =
+  typeof remoteReplyScrapeOrigins.$inferSelect;
+
+export const remoteReplyScrapeJobRelations = relations(
+  remoteReplyScrapeJobs,
+  ({ one }) => ({
+    post: one(posts, {
+      fields: [remoteReplyScrapeJobs.postId],
+      references: [posts.id],
+    }),
+  }),
+);

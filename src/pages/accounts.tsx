@@ -1,7 +1,6 @@
+import { exportJwk, generateCryptoKeyPair } from "@fedify/fedify";
 import {
   Delete,
-  exportJwk,
-  generateCryptoKeyPair,
   getActorHandle,
   isActor,
   Move,
@@ -9,7 +8,7 @@ import {
   PUBLIC_COLLECTION,
   type Recipient,
   Update,
-} from "@fedify/fedify";
+} from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { createObjectCsvStringifier } from "csv-writer-portable";
 import { and, count, eq, inArray } from "drizzle-orm";
@@ -17,6 +16,7 @@ import { uniq } from "es-toolkit";
 import { Hono } from "hono";
 import { streamText } from "hono/streaming";
 import neatCsv from "neat-csv";
+
 import { AccountForm } from "../components/AccountForm.tsx";
 import { AccountList } from "../components/AccountList.tsx";
 import { DashboardLayout } from "../components/DashboardLayout.tsx";
@@ -52,7 +52,6 @@ import {
   type PostVisibility,
   type ThemeColor,
 } from "../schema.ts";
-import { extractCustomEmojis, formatText } from "../text.ts";
 import { isUuid, uuidv7 } from "../uuid.ts";
 
 const HOLLO_OFFICIAL_ACCOUNT = "@hollo@hollo.social";
@@ -77,6 +76,7 @@ accounts.post("/", async (c) => {
   const bio = form.get("bio")?.toString()?.trim();
   const protected_ = form.get("protected") != null;
   const discoverable = form.get("discoverable") != null;
+  const expandSpoilers = form.get("expandSpoilers") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -93,6 +93,7 @@ accounts.post("/", async (c) => {
           bio,
           protected: protected_,
           discoverable,
+          expandSpoilers,
           language,
           visibility,
           themeColor,
@@ -113,6 +114,7 @@ accounts.post("/", async (c) => {
       400,
     );
   }
+  const { extractCustomEmojis, formatText } = await import("../text.ts");
   const fedCtx = federation.createContext(c.req.raw, undefined);
   const bioResult = await formatText(db, bio ?? "", fedCtx);
   const nameEmojis = await extractCustomEmojis(db, name);
@@ -162,6 +164,7 @@ accounts.post("/", async (c) => {
         visibility: visibility ?? "public",
         themeColor,
         discoverable,
+        expandSpoilers,
       })
       .returning();
     return [account[0], owner[0]];
@@ -218,7 +221,12 @@ function AccountListPage({ accountOwners }: AccountListPageProps) {
 accounts.get("/new", (c) => {
   return c.html(
     <NewAccountPage
-      values={{ language: "en", themeColor: "azure", news: true }}
+      values={{
+        language: "en",
+        themeColor: "azure",
+        news: true,
+        expandSpoilers: false,
+      }}
       officialAccount={HOLLO_OFFICIAL_ACCOUNT}
     />,
   );
@@ -281,6 +289,8 @@ function AccountPage(props: AccountPageProps) {
             props.values?.protected ?? props.accountOwner.account.protected,
           discoverable:
             props.values?.discoverable ?? props.accountOwner.discoverable,
+          expandSpoilers:
+            props.values?.expandSpoilers ?? props.accountOwner.expandSpoilers,
           language: props.values?.language ?? props.accountOwner.language,
           visibility: props.values?.visibility ?? props.accountOwner.visibility,
           themeColor: props.values?.themeColor ?? props.accountOwner.themeColor,
@@ -307,6 +317,7 @@ accounts.post("/:id", async (c) => {
   const bio = form.get("bio")?.toString()?.trim();
   const protected_ = form.get("protected") != null;
   const discoverable = form.get("discoverable") != null;
+  const expandSpoilers = form.get("expandSpoilers") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -323,6 +334,8 @@ accounts.post("/:id", async (c) => {
           name,
           bio,
           protected: protected_,
+          discoverable,
+          expandSpoilers,
           language,
           visibility,
           themeColor,
@@ -344,6 +357,7 @@ accounts.post("/:id", async (c) => {
       username: accountOwner.handle,
     }),
   };
+  const { extractCustomEmojis, formatText } = await import("../text.ts");
   const bioResult = await formatText(db, bio ?? "", fmtOpts);
   const nameEmojis = await extractCustomEmojis(db, name);
   const emojis = { ...nameEmojis, ...bioResult.emojis };
@@ -359,7 +373,14 @@ accounts.post("/:id", async (c) => {
       .where(eq(accountsTable.id, accountId));
     await tx
       .update(accountOwners)
-      .set({ bio, language, visibility, themeColor, discoverable })
+      .set({
+        bio,
+        language,
+        visibility,
+        themeColor,
+        discoverable,
+        expandSpoilers,
+      })
       .where(eq(accountOwners.id, accountId));
   });
   await fedCtx.sendActivity(

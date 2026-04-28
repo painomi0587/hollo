@@ -89,9 +89,10 @@ Hollo가 설치되었다면, 설정을 해야 합니다.
 서버 시작하기
 -------------
 
-서버를 시작하려면 다음 명령을 실행하세요:
+JavaScript 파일을 빌드한 뒤 서버를 시작합니다:
 
 ~~~~ sh frame="none"
+pnpm run build
 pnpm run prod
 ~~~~
 
@@ -115,7 +116,13 @@ GitHub 저장소에서 최신 코드를 받고 의존성을 다시 설치하면 
     pnpm install
     ~~~~
 
- 3. 서버를 다시 시작합니다:
+ 3. JavaScript 파일을 다시 빌드합니다:
+
+    ~~~~ sh frame="none"
+    pnpm run build
+    ~~~~
+
+ 4. 서버를 다시 시작합니다:
 
     ~~~~ sh frame="none"
     pnpm run prod

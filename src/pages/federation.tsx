@@ -1,11 +1,15 @@
-import { isActor } from "@fedify/fedify";
+import { isActor } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { count, sql } from "drizzle-orm";
 import { Hono } from "hono";
+
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import federation from "../federation";
-import { persistAccount } from "../federation/account";
+import {
+  AccountHandleConflictError,
+  persistAccount,
+} from "../federation/account";
 import { isPost, persistPost } from "../federation/post";
 import { loginRequired } from "../login";
 
@@ -51,6 +55,8 @@ data.get("/", async (c) => {
               <p>Account has been refreshed.</p>
             ) : done === "refresh:post" ? (
               <p>Post has been refreshed.</p>
+            ) : error === "refresh:account-conflict" ? (
+              <p>Account refresh was blocked by a canonical handle conflict.</p>
             ) : (
               <p>Use this when you see outdated remote account/post data.</p>
             )}
@@ -67,7 +73,11 @@ data.get("/", async (c) => {
               name="uri"
               placeholder="@hollo@hollo.social"
               required
-              aria-invalid={error === "refresh" ? "true" : undefined}
+              aria-invalid={
+                error === "refresh" || error === "refresh:account-conflict"
+                  ? "true"
+                  : undefined
+              }
             />
             <button name="submit" type="submit">
               Refresh
@@ -76,6 +86,12 @@ data.get("/", async (c) => {
           {error === "refresh" ? (
             <small>
               The given handle or URI is invalid or not found. Please try again.
+            </small>
+          ) : error === "refresh:account-conflict" ? (
+            <small>
+              Hollo could not verify that this actor canonically owns the handle
+              already cached in the database, so the stale account was not
+              deleted automatically.
             </small>
           ) : (
             <small>
@@ -159,6 +175,17 @@ data.post("/refresh", async (c) => {
         return c.redirect("/federation?done=refresh:post");
       }
     } catch (error) {
+      if (error instanceof AccountHandleConflictError) {
+        logger.warning(
+          "Canonical handle conflict while force-refreshing actor {actorIri}: handle {handle} is still occupied by {conflictingIri}.",
+          {
+            actorIri: error.actorIri,
+            handle: error.handle,
+            conflictingIri: error.conflictingAccount.iri,
+          },
+        );
+        return c.redirect("/federation?error=refresh:account-conflict");
+      }
       logger.error("Failed to refresh: {error}", { error });
     }
   }

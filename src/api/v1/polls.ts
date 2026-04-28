@@ -1,9 +1,10 @@
-import { Create, Note } from "@fedify/fedify";
+import { Create, Note } from "@fedify/vocab";
 import { zValidator } from "@hono/zod-validator";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { maxBy } from "es-toolkit";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { db } from "../../db";
 import { serializePoll } from "../../entities/poll";
 import { federation } from "../../federation";
@@ -186,6 +187,7 @@ app.post(
         );
       }
     } else {
+      const orderingKey = `post:${post.iri}`;
       await fedCtx.sendActivity(
         { username: post.account.owner.handle },
         poll.votes.map((v) => ({
@@ -199,7 +201,10 @@ app.post(
                 },
         })),
         toUpdate({ ...post, poll }, fedCtx),
-        { excludeBaseUris: [new URL(c.req.url)] },
+        {
+          orderingKey,
+          excludeBaseUris: [new URL(c.req.url)],
+        },
       );
     }
     return c.json(serializePoll(poll, owner));

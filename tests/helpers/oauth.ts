@@ -1,6 +1,7 @@
 import { exportJwk, generateCryptoKeyPair } from "@fedify/fedify";
 import { base64 } from "@hexagon/base64";
 import { count, desc, eq } from "drizzle-orm";
+
 import db from "../../src/db";
 import { randomBytes } from "../../src/helpers";
 import { OOB_REDIRECT_URI } from "../../src/oauth/constants";
@@ -28,6 +29,7 @@ export function bearerAuthorization(token: Token) {
 
 type createAccountOptions = {
   generateKeyPair?: boolean;
+  expandSpoilers?: boolean;
   username?: string;
 };
 
@@ -104,6 +106,7 @@ export async function createAccount(
         visibility: "public",
         themeColor: "amber",
         discoverable: false,
+        expandSpoilers: options.expandSpoilers ?? false,
       });
 
       return { id: accountId };

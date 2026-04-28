@@ -1,6 +1,206 @@
 Hollo changelog
 ===============
 
+Version 0.8.1
+-------------
+
+Released on April 27, 2026.
+
+ -  Fixed thumbnail cleanup preview counts over 999 being truncated after the
+    localized count was passed through the redirect URL.  The preview now keeps
+    the raw count in the URL and formats it only when rendering.  [[#451]]
+
+[#451]: https://github.com/fedify-dev/hollo/issues/451
+
+
+Version 0.8.0
+-------------
+
+Released on April 27, 2026.
+
+ -  Added support for separating worker nodes from the web server for better
+    scalability in high-traffic scenarios.  This allows running web server and
+    background workers (Fedify message queue and import worker) in separate
+    processes, preventing heavy federation workloads from slowing down web
+    server responsiveness.  This is particularly beneficial for instances with
+    thousands of followers where a single post can generate thousands of
+    outbox messages.  [[#350]]
+
+     -  Added `NODE_TYPE` environment variable to control which components run
+        in each process: `all` (default, current behavior), `web` (web server
+        only), or `worker` (workers only).
+     -  All nodes share the same PostgreSQL database, which acts as the message
+        queue backend using `LISTEN`/`NOTIFY` for real-time message delivery.
+     -  Added comprehensive documentation for Docker Compose, systemd, and
+        manual deployment setups with worker separation.
+     -  Added `pnpm worker` script for running worker-only nodes.
+
+ -  Reduced idle memory usage by lazy-loading several heavy dependencies and
+    startup-only code paths based on actual memory measurements.  This lowers
+    the baseline footprint of `NODE_TYPE=all`, `web`, and `worker`
+    deployments, especially on single-user instances with filesystem storage.
+    [[#435]]
+
+     -  Markdown formatting now loads Shiki only when rich text formatting is
+        actually needed, instead of at server startup.
+     -  Filesystem deployments no longer pull S3-specific storage code into the
+        initial web server startup path.
+     -  The web server and worker process now import each other's code paths
+        only when the selected `NODE_TYPE` needs them.
+     -  Preview card scraping, media processing, and authentication helpers now
+        load on demand instead of eagerly during route registration.
+
+ -  Added a production build step powered by `tsdown`, and changed
+    `pnpm prod` and `pnpm worker` to run the compiled JavaScript output with
+    Node.js instead of running TypeScript through `tsx`.  Docker images now
+    build these JavaScript files in a builder stage and include them in the
+    runtime image.  [[#357]]
+
+ -  Moved remote replies scraping from synchronous post ingestion to a
+    rate-limited background worker.  Remote posts now enqueue reply collection
+    scraping jobs instead of fetching nested replies inline, which prevents
+    slow or very large remote reply collections from delaying federation
+    processing.  [[#445], [#447]]
+
+     -  Added per-origin throttling and `429 Too Many Requests` backoff for
+        remote replies scraping.
+     -  Added bounded scraping controls:
+        `REMOTE_REPLIES_SCRAPE_DEPTH`, `REMOTE_REPLIES_SCRAPE_MAX_ITEMS`,
+        `REMOTE_REPLIES_SCRAPE_INTERVAL_SECONDS`,
+        `REMOTE_REPLIES_SCRAPE_BACKOFF_SECONDS`, and
+        `REMOTE_REPLIES_SCRAPE_COOLDOWN_SECONDS`.
+
+ -  Added automatic refresh of stale remote actor profiles.  When receiving
+    activities like `Announce` or `Create(Note)`, Hollo now checks if the
+    actor's cached data is stale and asynchronously refreshes their profile
+    in the background.  This helps keep remote actor information (avatars,
+    display names, etc.) up to date without relying solely on `Update`
+    activities from remote servers.  [[#348]]
+
+     -  Added `REMOTE_ACTOR_STALENESS_DAYS` environment variable to configure
+        how many days before a remote actor's data is considered stale.
+        Defaults to `7` days.
+     -  Added `REFRESH_ACTORS_ON_INTERACTION` environment variable.  When set
+        to `true`, checks for stale actors on all activity types (likes, emoji
+        reactions, follows, etc.).  When `false` (default), only checks on
+        activities that appear in timelines (`Announce`, `Create`).
+
+ -  Added Mastodon 4.5-compatible quote post APIs.  The `quote` field on
+    Status entities now uses the Mastodon `Quote` entity format
+    (`{ state, quoted_status }`) instead of the previous Fedibird-style flat
+    status format.  The `quote_id` field is kept for backward compatibility.
+
+     -  Added `quoted_status_id` parameter to `POST /api/v1/statuses` as the
+        Mastodon 4.5 way to create quote posts (alongside existing `quote_id`).
+     -  Added `quotes_count` field to Status entities.
+     -  Added `quote_approval` field to Status entities indicating whether
+        a post can be quoted.
+     -  Added `GET /api/v1/statuses/:id/quotes` endpoint to list quotes
+        of a post with cursor-based pagination.
+     -  Added `POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke`
+        endpoint to let users revoke quotes of their posts.
+     -  The `quote_approval_policy` parameter is accepted but ignored
+        (all public/unlisted posts are freely quotable).
+
+ -  Added automatic cleanup of unreachable remote actors on permanent
+    delivery failures.  When sending activities to followers' inboxes fails
+    permanently, Hollo now cleans up the associated records to avoid
+    retrying delivery to dead servers.
+
+     -  On `404 Not Found`: removes follower relationships for the failed
+        actor so that future activities are no longer delivered to them.
+        The account record itself is preserved.
+     -  On `410 Gone`: deletes the remote account entirely (along with
+        associated follows, mentions, likes, etc. via cascade) since the
+        actor is explicitly marked as permanently gone.
+
+ -  Improved inbox handling for deleted remote actors using Fedify 2.1.0's
+    unverified activity hooks.  Hollo now acknowledges unverifiable `Delete`
+    activities with `202 Accepted` when the signing key fetch fails with
+    `410 Gone`, preventing repeated delivery retries for actors that have
+    already been permanently deleted.
+
+ -  Optimized follower-only status visibility checks by preloading approved
+    follow relationships and reusing simple `WHERE IN` conditions for status,
+    conversation context, quote, and timeline queries.  [[#173], [#448]]
+
+ -  Added `FEDIFY_DEBUG` environment variable to enable the [Fedify debugger],
+    an embedded real-time dashboard for inspecting ActivityPub traces and
+    activities.  When enabled, the debug dashboard is accessible at
+    `/__debug__/`.  Intended for development use only.
+
+ -  Added outbound activity ordering keys for stateful federation actions,
+    using Fedify 2.0's ordered message delivery support.  This ensures
+    remote servers process related actions in order, including post
+    create/update/delete, reblog/unreblog, like/unlike,
+    emoji reaction/unreaction, follow request lifecycle messages,
+    block/unblock, and post updates triggered by replies and poll votes.
+
+ -  Fixed remote account force refresh and actor refresh getting stuck when a
+    canonical fediverse handle had moved to a new actor IRI while a stale
+    remote account row still claimed the old handle.  Hollo now verifies the
+    canonical handle owner via WebFinger, deletes the stale remote account and
+    its dependent data, and then updates or inserts the current actor.  When
+    the conflict cannot be verified safely, force refresh now shows an explicit
+    canonical handle conflict error instead of failing with a raw database
+    unique-constraint error.  [[#424]]
+
+ -  Added profile-specific tagged post pages at `/:handle/tagged/:tag`, so
+    users can browse only posts from a given profile that use a particular
+    hashtag.  The Mastodon-compatible `GET /api/v1/accounts/:id/statuses`
+    endpoint now also applies its existing `tagged` query parameter to filter
+    account timelines by hashtag.  [[#420]]
+
+ -  Added an account-level preference for whether content warnings should be
+    expanded by default.  The setting is available in the dashboard account
+    editor and is now returned from `GET /api/v1/preferences`, which helps
+    clients like Phanpy honor each account's preferred CW behavior.  [[#425]]
+
+ -  Fixed Mastodon API compatibility for clients such as the official Mastodon
+    iOS app by returning empty arrays for unimplemented trends and suggestions
+    endpoints instead of `404 Not Found` responses.  The suggestions endpoints
+    still require an authenticated user token.  [[#421], [#427] by Vignesh]
+
+ -  Added a new dashboard page for thumbnail cleanup at `/thumbnail_cleanup`.
+    Thumbnails from remote posts that have not been bookmarked, liked, reacted
+    to, shared nor quoted by a local account before a given cut-off data can
+    be mass-deleted in order to lower storage demand. The original posts are
+    not deleted, neither is the relationship to the original media nor the `alt`
+    text.  [[#409], [#436] by aliceif]
+
+ -  Upgraded Fedify to 2.1.10.
+
+[#173]: https://github.com/fedify-dev/hollo/issues/173
+[#348]: https://github.com/fedify-dev/hollo/issues/348
+[#350]: https://github.com/fedify-dev/hollo/issues/350
+[#357]: https://github.com/fedify-dev/hollo/issues/357
+[#409]: https://github.com/fedify-dev/hollo/issues/409
+[#420]: https://github.com/fedify-dev/hollo/issues/420
+[#421]: https://github.com/fedify-dev/hollo/issues/421
+[#424]: https://github.com/fedify-dev/hollo/issues/424
+[#425]: https://github.com/fedify-dev/hollo/issues/425
+[#427]: https://github.com/fedify-dev/hollo/pull/427
+[#435]: https://github.com/fedify-dev/hollo/issues/435
+[#436]: https://github.com/fedify-dev/hollo/pull/436
+[#445]: https://github.com/fedify-dev/hollo/issues/445
+[#447]: https://github.com/fedify-dev/hollo/pull/447
+[#448]: https://github.com/fedify-dev/hollo/pull/448
+[Fedify debugger]: https://fedify.dev/manual/debug
+
+
+Version 0.7.13
+--------------
+
+Released on April 26, 2026.
+
+ -  Fixed a Mastodon API compatibility regression where replies to local posts
+    were stored as `status` notifications, causing clients to show generic
+    “posted” titles instead of reply notifications.  Replies are now stored as
+    `mention` notifications.  [[#380]]
+
+[#380]: https://github.com/fedify-dev/hollo/issues/380
+
+
 Version 0.7.12
 --------------
 
