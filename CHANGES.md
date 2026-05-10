@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.15
 --------------
 
-To be released.
+Released on May 10, 2026.
 
  -  Upgraded Fedify to 1.10.9 to fix a critical SSRF (Server-Side Request
     Forgery) vulnerability where private IPv4 addresses encoded as IPv6 literals
