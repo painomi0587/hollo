@@ -109,7 +109,7 @@ To be released.
     before the Unix epoch (January 1, 1970), which caused `uuidv7()` to
     receive a negative timestamp.  [[#67], [#466]]
 
- -  Upgraded Fedify to 2.2.0.
+ -  Upgraded Fedify to 2.2.1.
 
 [FEP-044f]: https://w3id.org/fep/044f
 [#67]: https://github.com/fedify-dev/hollo/issues/67
@@ -120,6 +120,16 @@ To be released.
 [#460]: https://github.com/fedify-dev/hollo/pull/460
 [#466]: https://github.com/fedify-dev/hollo/pull/466
 [#467]: https://github.com/fedify-dev/hollo/pull/467
+
+
+Version 0.8.3
+-------------
+
+Released on May 10, 2026.
+
+ -  Upgraded Fedify to 2.1.12 to fix a critical SSRF (Server-Side Request
+    Forgery) vulnerability where private IPv4 addresses encoded as IPv6 literals
+    could bypass security checks during remote ActivityPub object fetching.
 
 
 Version 0.8.2
@@ -318,6 +328,16 @@ Released on April 27, 2026.
 [#445]: https://github.com/fedify-dev/hollo/issues/445
 [#447]: https://github.com/fedify-dev/hollo/pull/447
 [#448]: https://github.com/fedify-dev/hollo/pull/448
+
+
+Version 0.7.15
+--------------
+
+Released on May 10, 2026.
+
+ -  Upgraded Fedify to 1.10.9 to fix a critical SSRF (Server-Side Request
+    Forgery) vulnerability where private IPv4 addresses encoded as IPv6 literals
+    could bypass security checks during remote ActivityPub object fetching.
 
 
 Version 0.7.14
