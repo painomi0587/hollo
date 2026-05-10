@@ -6,6 +6,10 @@ Version 0.7.15
 
 To be released.
 
+ -  Upgraded Fedify to 1.10.9 to fix a critical SSRF (Server-Side Request
+    Forgery) vulnerability where private IPv4 addresses encoded as IPv6 literals
+    could bypass security checks during remote ActivityPub object fetching.
+
 
 Version 0.7.14
 --------------
