@@ -28,7 +28,7 @@ importers:
         version: 0.3.0
       '@fedify/postgres':
         specifier: ^2.2.1
-        version: 2.2.1(@fedify/fedify@2.2.1)(postgres@3.4.8)
+        version: 2.2.1(@fedify/fedify@2.2.1)(postgres@3.4.9)
       '@fedify/vocab':
         specifier: ^2.2.1
         version: 2.2.1
@@ -100,7 +100,7 @@ importers:
         version: 0.31.10
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(bun-types@1.1.37)(postgres@3.4.8)
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(bun-types@1.1.37)(postgres@3.4.9)
       es-toolkit:
         specifier: ^1.46.0
         version: 1.46.0
@@ -132,8 +132,8 @@ importers:
         specifier: ^9.5.1
         version: 9.5.1
       postgres:
-        specifier: ^3.4.8
-        version: 3.4.8
+        specifier: ^3.4.9
+        version: 3.4.9
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -5317,8 +5317,8 @@ packages:
     resolution: {integrity: sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==}
     engines: {node: '>=0.10.0'}
 
-  postgres@3.4.8:
-    resolution: {integrity: sha512-d+JFcLM17njZaOLkv6SCev7uoLaBtfK86vMUXhW1Z4glPWh4jozno9APvW/XKFJ3CCxVoC7OL38BqRydtu5nGg==}
+  postgres@3.4.9:
+    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
     engines: {node: '>=12'}
 
   prelude-ls@1.2.1:
@@ -6607,14 +6607,14 @@ snapshots:
   '@aws-crypto/crc32@5.2.0':
     dependencies:
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.713.0
+      '@aws-sdk/types': 3.973.8
       tslib: 2.8.1
     optional: true
 
   '@aws-crypto/crc32c@5.2.0':
     dependencies:
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.713.0
+      '@aws-sdk/types': 3.973.8
       tslib: 2.8.1
     optional: true
 
@@ -6622,7 +6622,7 @@ snapshots:
     dependencies:
       '@aws-crypto/supports-web-crypto': 5.2.0
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.713.0
+      '@aws-sdk/types': 3.973.8
       '@aws-sdk/util-locate-window': 3.965.5
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
@@ -8110,12 +8110,12 @@ snapshots:
     dependencies:
       markdown-it: 14.1.1
 
-  '@fedify/postgres@2.2.1(@fedify/fedify@2.2.1)(postgres@3.4.8)':
+  '@fedify/postgres@2.2.1(@fedify/fedify@2.2.1)(postgres@3.4.9)':
     dependencies:
       '@fedify/fedify': 2.2.1
       '@js-temporal/polyfill': 0.5.1
       '@logtape/logtape': 2.0.7
-      postgres: 3.4.8
+      postgres: 3.4.9
 
   '@fedify/vocab-runtime@2.2.1':
     dependencies:
@@ -10878,12 +10878,12 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.21.0
 
-  drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(bun-types@1.1.37)(postgres@3.4.8):
+  drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(bun-types@1.1.37)(postgres@3.4.9):
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/pg': 8.15.6
       bun-types: 1.1.37
-      postgres: 3.4.8
+      postgres: 3.4.9
 
   dset@3.1.4: {}
 
@@ -12656,7 +12656,7 @@ snapshots:
     dependencies:
       xtend: 4.0.2
 
-  postgres@3.4.8: {}
+  postgres@3.4.9: {}
 
   prelude-ls@1.2.1: {}
 
