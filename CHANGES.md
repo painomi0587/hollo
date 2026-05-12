@@ -94,6 +94,11 @@ To be released.
         are removed; UnoCSS emits a single _src/public/uno.css_ whose
         URL is cache-busted by file mtime.
 
+ -  Fixed a performance bug on the account edit page where saving an account
+    always triggered a network lookup of [@hollo@hollo.social] regardless of
+    whether the “Receive Hollo news” setting had actually changed.  The lookup
+    now only happens when the news-following state genuinely changes.
+
  -  Improved the performance of authenticated API requests by replacing the
     complex multi-table JOIN query in the `tokenRequired` middleware with a
     lightweight single-table lookup.  Account owner data is now fetched on
@@ -112,6 +117,7 @@ To be released.
  -  Upgraded Fedify to 2.2.1.
 
 [FEP-044f]: https://w3id.org/fep/044f
+[@hollo@hollo.social]: https://hollo.social/@hollo
 [#67]: https://github.com/fedify-dev/hollo/issues/67
 [#127]: https://github.com/fedify-dev/hollo/issues/127
 [#457]: https://github.com/fedify-dev/hollo/pull/457

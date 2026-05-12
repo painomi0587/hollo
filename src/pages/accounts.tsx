@@ -421,23 +421,45 @@ accounts.post("/:id", async (c) => {
     { preferSharedInbox: true, excludeBaseUris: [fedCtx.url] },
   );
   const account = { ...accountOwner.account, owner: accountOwner };
-  const newsActor = await fedCtx.lookupObject(HOLLO_OFFICIAL_ACCOUNT);
-  if (isActor(newsActor)) {
-    const newsAccount = await persistAccount(db, newsActor, c.req.url, fedCtx);
-    if (newsAccount != null) {
-      if (news) {
-        await followAccount(db, fedCtx, account, newsAccount);
-        await persistAccountPosts(
-          db,
-          newsAccount,
-          REMOTE_ACTOR_FETCH_POSTS,
-          c.req.url,
-          {
-            ...fedCtx,
-            suppressError: true,
-          },
-        );
-      } else await unfollowAccount(db, fedCtx, account, newsAccount);
+  const currentNews = await db.query.follows.findFirst({
+    where: and(
+      eq(
+        follows.followingId,
+        db
+          .select({ id: accountsTable.id })
+          .from(accountsTable)
+          .where(eq(accountsTable.handle, HOLLO_OFFICIAL_ACCOUNT)),
+      ),
+      eq(follows.followerId, accountId),
+    ),
+  });
+  const isFollowingNews = currentNews != null;
+  if (news !== isFollowingNews) {
+    const newsActor = await fedCtx.lookupObject(HOLLO_OFFICIAL_ACCOUNT);
+    if (isActor(newsActor)) {
+      const newsAccount = await persistAccount(
+        db,
+        newsActor,
+        c.req.url,
+        fedCtx,
+      );
+      if (newsAccount != null) {
+        if (news) {
+          await followAccount(db, fedCtx, account, newsAccount);
+          await persistAccountPosts(
+            db,
+            newsAccount,
+            REMOTE_ACTOR_FETCH_POSTS,
+            c.req.url,
+            {
+              ...fedCtx,
+              suppressError: true,
+            },
+          );
+        } else {
+          await unfollowAccount(db, fedCtx, account, newsAccount);
+        }
+      }
     }
   }
   return c.redirect("/accounts");
