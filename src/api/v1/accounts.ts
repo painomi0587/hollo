@@ -179,24 +179,30 @@ app.patch(
         username: account.handle,
       }),
     };
-    const fields = Object.entries(owner.fields);
-    let anyFieldSubmitted = false;
+    const fields: ([string, string] | undefined)[] = Object.entries(
+      owner.fields,
+    );
+    let anyFieldAttributeSubmitted = false;
     for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {
       const name = form[`fields_attributes[${i}][name]`];
       const value = form[`fields_attributes[${i}][value]`];
+      if (name == null && value == null) {
+        continue;
+      }
+      anyFieldAttributeSubmitted = true;
       if (
         name == null ||
         name.trim() === "" ||
         value == null ||
         value.trim() === ""
       ) {
+        fields[i] = undefined;
         continue;
       }
       fields[i] = [name, value];
-      anyFieldSubmitted = true;
     }
     const denseFields = fields.filter((f): f is [string, string] => f != null);
-    const fieldHtmlsRecord: Record<string, string> = anyFieldSubmitted
+    const fieldHtmlsRecord: Record<string, string> = anyFieldAttributeSubmitted
       ? Object.fromEntries(
           await Promise.all(
             denseFields.map(
@@ -245,7 +251,7 @@ app.patch(
       .update(accountOwners)
       .set({
         bio: form.note ?? owner.bio,
-        fields: anyFieldSubmitted
+        fields: anyFieldAttributeSubmitted
           ? Object.fromEntries(denseFields)
           : owner.fields,
         visibility: form["source[privacy]"] ?? owner.visibility,

@@ -1,3 +1,6 @@
+import { mkdir } from "node:fs/promises";
+
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { cleanDatabase } from "../../../tests/helpers";
@@ -9,7 +12,7 @@ import {
 } from "../../../tests/helpers/oauth";
 import db from "../../db";
 import app from "../../index";
-import { posts } from "../../schema";
+import { accountOwners, accounts, posts } from "../../schema";
 import { uuidv7 } from "../../uuid";
 
 describe.sequential("/api/v1/accounts/verify_credentials", () => {
@@ -114,6 +117,72 @@ describe.sequential("/api/v1/accounts/verify_credentials", () => {
     expect(error).toMatchObject({
       error: "unauthorized",
     });
+  });
+});
+
+describe.sequential("/api/v1/accounts/update_credentials", () => {
+  let client: Awaited<ReturnType<typeof createOAuthApplication>>;
+  let account: Awaited<ReturnType<typeof createAccount>>;
+
+  beforeEach(async () => {
+    await cleanDatabase();
+    await mkdir("tmp/fakes", { recursive: true });
+
+    account = await createAccount({ generateKeyPair: true });
+    client = await createOAuthApplication({
+      scopes: ["write:accounts"],
+    });
+  });
+
+  it("clears existing profile fields when blank field slots are submitted", async () => {
+    expect.assertions(7);
+
+    await db
+      .update(accounts)
+      .set({
+        fieldHtmls: {
+          Website: '<a href="https://example.com">https://example.com</a>',
+        },
+      })
+      .where(eq(accounts.id, account.id));
+    await db
+      .update(accountOwners)
+      .set({
+        fields: {
+          Website: "https://example.com",
+        },
+      })
+      .where(eq(accountOwners.id, account.id));
+
+    const accessToken = await getAccessToken(client, account, [
+      "write:accounts",
+    ]);
+    const form = new FormData();
+    form.set("fields_attributes[0][name]", "");
+    form.set("fields_attributes[0][value]", "");
+
+    const response = await app.request("/api/v1/accounts/update_credentials", {
+      method: "PATCH",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+      },
+      body: form,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+
+    const credentialAccount = await response.json();
+    expect(credentialAccount.fields).toEqual([]);
+    expect(credentialAccount.source.fields).toEqual([]);
+
+    const updatedAccount = await db.query.accountOwners.findFirst({
+      where: eq(accountOwners.id, account.id),
+      with: { account: true },
+    });
+    expect(updatedAccount?.fields).toEqual({});
+    expect(updatedAccount?.account.fieldHtmls).toEqual({});
   });
 });
 
