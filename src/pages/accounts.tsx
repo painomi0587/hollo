@@ -13,8 +13,10 @@ import { getLogger } from "@logtape/logtape";
 import { createObjectCsvStringifier } from "csv-writer-portable";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { uniq } from "es-toolkit";
+import type { Disk } from "flydrive";
 import { Hono } from "hono";
 import { streamText } from "hono/streaming";
+import mime from "mime";
 import neatCsv from "neat-csv";
 
 import { AccountForm } from "../components/AccountForm.tsx";
@@ -52,11 +54,58 @@ import {
   type PostVisibility,
   type ThemeColor,
 } from "../schema.ts";
+import { STORAGE_URL_BASE } from "../storage-config.ts";
 import { isUuid, uuidv7 } from "../uuid.ts";
 
 const HOLLO_OFFICIAL_ACCOUNT = "@hollo@hollo.social";
 
 const logger = getLogger(["hollo", "pages", "accounts"]);
+
+const allowedImageMimeTypes = ["image/gif", "image/jpeg", "image/png"];
+
+function parseFields(form: FormData): Array<{ name: string; value: string }> {
+  const result: Array<{ name: string; value: string }> = [];
+  for (let i = 0; i < 10; i++) {
+    const name = (
+      form.get(`fields[${i}][name]`)?.toString()?.trim() ?? ""
+    ).slice(0, 255);
+    const value = (
+      form.get(`fields[${i}][value]`)?.toString()?.trim() ?? ""
+    ).slice(0, 255);
+    if (name !== "" && value !== "") result.push({ name, value });
+  }
+  return result;
+}
+
+async function uploadProfileImage(
+  disk: Disk,
+  prefix: "avatars" | "covers",
+  accountId: string,
+  file: File,
+): Promise<{ url: string; path: string } | undefined> {
+  if (!allowedImageMimeTypes.includes(file.type)) return undefined;
+  const ext = mime.getExtension(file.type)?.replace(/[/\\]/g, "");
+  if (ext == null) return undefined;
+  const path = `${prefix}/${accountId}/${crypto.randomUUID()}.${ext}`;
+  const content = new Uint8Array(await file.arrayBuffer());
+  await disk.put(path, content, {
+    contentType: file.type,
+    contentLength: content.byteLength,
+    visibility: "public",
+  });
+  return { url: await disk.getUrl(path), path };
+}
+
+function storageKeyFromUrl(url: string): string | undefined {
+  if (STORAGE_URL_BASE == null) return undefined;
+  // FS driver: new URL('/assets/' + key, STORAGE_URL_BASE)
+  const fsPrefix = new URL("/assets/", STORAGE_URL_BASE).href;
+  if (url.startsWith(fsPrefix)) return url.slice(fsPrefix.length);
+  // S3 CDN driver: STORAGE_URL_BASE + '/' + key
+  const s3Prefix = STORAGE_URL_BASE.replace(/\/?$/, "/");
+  if (url.startsWith(s3Prefix)) return url.slice(s3Prefix.length);
+  return undefined;
+}
 
 const accounts = new Hono();
 
@@ -84,6 +133,9 @@ accounts.post("/", async (c) => {
     ?.trim() as PostVisibility;
   const themeColor = form.get("themeColor")?.toString()?.trim() as ThemeColor;
   const news = form.get("news") != null;
+  const avatarFile = form.get("avatar");
+  const headerFile = form.get("header");
+  const parsedFields = parseFields(form);
   if (username == null || username === "" || name == null || name === "") {
     return c.html(
       <NewAccountPage
@@ -98,6 +150,7 @@ accounts.post("/", async (c) => {
           visibility,
           themeColor,
           news,
+          fields: parsedFields,
         }}
         errors={{
           username:
@@ -115,61 +168,169 @@ accounts.post("/", async (c) => {
       400,
     );
   }
+  if (
+    avatarFile instanceof File &&
+    avatarFile.size > 0 &&
+    !allowedImageMimeTypes.includes(avatarFile.type)
+  ) {
+    return c.html(
+      <NewAccountPage
+        values={{
+          username,
+          name,
+          bio,
+          protected: protected_,
+          discoverable,
+          expandSpoilers,
+          language,
+          visibility,
+          themeColor,
+          news,
+          fields: parsedFields,
+        }}
+        errors={{ avatar: "Avatar must be a JPEG, PNG, or GIF." }}
+        officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={new URL(c.req.url).host}
+      />,
+      400,
+    );
+  }
+  if (
+    headerFile instanceof File &&
+    headerFile.size > 0 &&
+    !allowedImageMimeTypes.includes(headerFile.type)
+  ) {
+    return c.html(
+      <NewAccountPage
+        values={{
+          username,
+          name,
+          bio,
+          protected: protected_,
+          discoverable,
+          expandSpoilers,
+          language,
+          visibility,
+          themeColor,
+          news,
+          fields: parsedFields,
+        }}
+        errors={{ header: "Header image must be a JPEG, PNG, or GIF." }}
+        officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={new URL(c.req.url).host}
+      />,
+      400,
+    );
+  }
+  const accountId = crypto.randomUUID();
   const { extractCustomEmojis, formatText } = await import("../text.ts");
   const fedCtx = federation.createContext(c.req.raw, undefined);
   const bioResult = await formatText(db, bio ?? "", fedCtx);
   const nameEmojis = await extractCustomEmojis(db, name);
   const emojis = { ...nameEmojis, ...bioResult.emojis };
-  const [account, owner] = await db.transaction(async (tx) => {
-    await tx
-      .insert(instances)
-      .values({
-        host: fedCtx.host,
-        software: "hollo",
-        softwareVersion: null,
-      })
-      .onConflictDoNothing();
-    const account = await tx
-      .insert(accountsTable)
-      .values({
-        id: crypto.randomUUID(),
-        iri: fedCtx.getActorUri(username).href,
-        instanceHost: fedCtx.host,
-        type: "Person",
-        name,
-        emojis,
-        handle: `@${username}@${fedCtx.host}`,
-        bioHtml: bioResult.html,
-        url: fedCtx.getActorUri(username).href,
-        protected: protected_,
-        inboxUrl: fedCtx.getInboxUri(username).href,
-        followersUrl: fedCtx.getFollowersUri(username).href,
-        sharedInboxUrl: fedCtx.getInboxUri().href,
-        featuredUrl: fedCtx.getFeaturedUri(username).href,
-        published: new Date(),
-      })
-      .returning();
-    const rsaKeyPair = await generateCryptoKeyPair("RSASSA-PKCS1-v1_5");
-    const ed25519KeyPair = await generateCryptoKeyPair("Ed25519");
-    const owner = await tx
-      .insert(accountOwners)
-      .values({
-        id: account[0].id,
-        handle: username,
-        rsaPrivateKeyJwk: await exportJwk(rsaKeyPair.privateKey),
-        rsaPublicKeyJwk: await exportJwk(rsaKeyPair.publicKey),
-        ed25519PrivateKeyJwk: await exportJwk(ed25519KeyPair.privateKey),
-        ed25519PublicKeyJwk: await exportJwk(ed25519KeyPair.publicKey),
-        bio: bio ?? "",
-        language: language ?? "en",
-        visibility: visibility ?? "public",
-        themeColor,
-        discoverable,
-        expandSpoilers,
-      })
-      .returning();
-    return [account[0], owner[0]];
-  });
+  const fieldHtmlsObj: Record<string, string> = {};
+  for (const { name: fieldName, value: fieldValue } of parsedFields) {
+    fieldHtmlsObj[fieldName] = (await formatText(db, fieldValue, fedCtx)).html;
+  }
+  const rawFieldsRecord = globalThis.Object.fromEntries(
+    parsedFields.map(({ name: n, value: v }) => [n, v]),
+  );
+  const { drive } = await import("../storage.ts");
+  const disk = drive.use();
+  const uploadedPaths: string[] = [];
+  let avatarUrl: string | undefined;
+  let coverUrl: string | undefined;
+  let dbResult: [
+    typeof accountsTable.$inferSelect,
+    typeof accountOwners.$inferSelect,
+  ];
+  try {
+    if (avatarFile instanceof File && avatarFile.size > 0) {
+      const result = await uploadProfileImage(
+        disk,
+        "avatars",
+        accountId,
+        avatarFile,
+      );
+      if (result != null) {
+        avatarUrl = result.url;
+        uploadedPaths.push(result.path);
+      }
+    }
+    if (headerFile instanceof File && headerFile.size > 0) {
+      const result = await uploadProfileImage(
+        disk,
+        "covers",
+        accountId,
+        headerFile,
+      );
+      if (result != null) {
+        coverUrl = result.url;
+        uploadedPaths.push(result.path);
+      }
+    }
+    dbResult = await db.transaction(async (tx) => {
+      await tx
+        .insert(instances)
+        .values({
+          host: fedCtx.host,
+          software: "hollo",
+          softwareVersion: null,
+        })
+        .onConflictDoNothing();
+      const account = await tx
+        .insert(accountsTable)
+        .values({
+          id: accountId,
+          iri: fedCtx.getActorUri(username).href,
+          instanceHost: fedCtx.host,
+          type: "Person",
+          name,
+          emojis,
+          handle: `@${username}@${fedCtx.host}`,
+          bioHtml: bioResult.html,
+          url: fedCtx.getActorUri(username).href,
+          protected: protected_,
+          inboxUrl: fedCtx.getInboxUri(username).href,
+          followersUrl: fedCtx.getFollowersUri(username).href,
+          sharedInboxUrl: fedCtx.getInboxUri().href,
+          featuredUrl: fedCtx.getFeaturedUri(username).href,
+          published: new Date(),
+          avatarUrl,
+          coverUrl,
+          fieldHtmls: fieldHtmlsObj,
+        })
+        .returning();
+      const rsaKeyPair = await generateCryptoKeyPair("RSASSA-PKCS1-v1_5");
+      const ed25519KeyPair = await generateCryptoKeyPair("Ed25519");
+      const owner = await tx
+        .insert(accountOwners)
+        .values({
+          id: account[0].id,
+          handle: username,
+          rsaPrivateKeyJwk: await exportJwk(rsaKeyPair.privateKey),
+          rsaPublicKeyJwk: await exportJwk(rsaKeyPair.publicKey),
+          ed25519PrivateKeyJwk: await exportJwk(ed25519KeyPair.privateKey),
+          ed25519PublicKeyJwk: await exportJwk(ed25519KeyPair.publicKey),
+          bio: bio ?? "",
+          language: language ?? "en",
+          visibility: visibility ?? "public",
+          themeColor,
+          discoverable,
+          expandSpoilers,
+          fields: rawFieldsRecord,
+        })
+        .returning();
+      return [account[0], owner[0]] as [
+        typeof accountsTable.$inferSelect,
+        typeof accountOwners.$inferSelect,
+      ];
+    });
+  } catch (err) {
+    await Promise.allSettled(uploadedPaths.map((p) => disk.delete(p)));
+    throw err;
+  }
+  const [account, owner] = dbResult;
   const owners = await db.query.accountOwners.findMany({
     with: { account: true },
   });
@@ -321,6 +482,15 @@ function AccountPage(props: AccountPageProps) {
           visibility: props.values?.visibility ?? props.accountOwner.visibility,
           themeColor: props.values?.themeColor ?? props.accountOwner.themeColor,
           news: props.values?.news ?? props.news,
+          avatarUrl:
+            props.values?.avatarUrl ?? props.accountOwner.account.avatarUrl,
+          coverUrl:
+            props.values?.coverUrl ?? props.accountOwner.account.coverUrl,
+          fields:
+            props.values?.fields ??
+            globalThis.Object.entries(props.accountOwner.fields).map(
+              ([n, v]) => ({ name: n, value: v }),
+            ),
         }}
         errors={props.errors}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
@@ -352,6 +522,9 @@ accounts.post("/:id", async (c) => {
     ?.trim() as PostVisibility;
   const themeColor = form.get("themeColor")?.toString()?.trim() as ThemeColor;
   const news = form.get("news") != null;
+  const avatarFile = form.get("avatar");
+  const headerFile = form.get("header");
+  const parsedFields = parseFields(form);
   if (name == null || name === "") {
     return c.html(
       <AccountPage
@@ -367,10 +540,73 @@ accounts.post("/:id", async (c) => {
           visibility,
           themeColor,
           news,
+          avatarUrl: accountOwner.account.avatarUrl,
+          coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
         }}
         errors={{
           name: name == null || name === "" ? "Display name is required." : "",
         }}
+        officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={new URL(c.req.url).host}
+      />,
+      400,
+    );
+  }
+  if (
+    avatarFile instanceof File &&
+    avatarFile.size > 0 &&
+    !allowedImageMimeTypes.includes(avatarFile.type)
+  ) {
+    return c.html(
+      <AccountPage
+        accountOwner={accountOwner}
+        news={news}
+        values={{
+          name,
+          bio,
+          protected: protected_,
+          discoverable,
+          expandSpoilers,
+          language,
+          visibility,
+          themeColor,
+          news,
+          avatarUrl: accountOwner.account.avatarUrl,
+          coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
+        }}
+        errors={{ avatar: "Avatar must be a JPEG, PNG, or GIF." }}
+        officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={new URL(c.req.url).host}
+      />,
+      400,
+    );
+  }
+  if (
+    headerFile instanceof File &&
+    headerFile.size > 0 &&
+    !allowedImageMimeTypes.includes(headerFile.type)
+  ) {
+    return c.html(
+      <AccountPage
+        accountOwner={accountOwner}
+        news={news}
+        values={{
+          name,
+          bio,
+          protected: protected_,
+          discoverable,
+          expandSpoilers,
+          language,
+          visibility,
+          themeColor,
+          news,
+          avatarUrl: accountOwner.account.avatarUrl,
+          coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
+        }}
+        errors={{ header: "Header image must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
         host={new URL(c.req.url).host}
       />,
@@ -389,28 +625,92 @@ accounts.post("/:id", async (c) => {
   const bioResult = await formatText(db, bio ?? "", fmtOpts);
   const nameEmojis = await extractCustomEmojis(db, name);
   const emojis = { ...nameEmojis, ...bioResult.emojis };
-  await db.transaction(async (tx) => {
-    await tx
-      .update(accountsTable)
-      .set({
-        name,
-        emojis,
-        bioHtml: bioResult.html,
-        protected: protected_,
-      })
-      .where(eq(accountsTable.id, accountId));
-    await tx
-      .update(accountOwners)
-      .set({
-        bio,
-        language,
-        visibility,
-        themeColor,
-        discoverable,
-        expandSpoilers,
-      })
-      .where(eq(accountOwners.id, accountId));
-  });
+  const updateFieldHtmlsObj: Record<string, string> = {};
+  for (const { name: fieldName, value: fieldValue } of parsedFields) {
+    updateFieldHtmlsObj[fieldName] = (
+      await formatText(db, fieldValue, fmtOpts)
+    ).html;
+  }
+  const updateRawFieldsRecord = globalThis.Object.fromEntries(
+    parsedFields.map(({ name: n, value: v }) => [n, v]),
+  );
+  const { drive } = await import("../storage.ts");
+  const disk = drive.use();
+  const uploadedPaths: string[] = [];
+  let avatarUrl: string | undefined;
+  let coverUrl: string | undefined;
+  const oldAvatarKey =
+    avatarFile instanceof File && avatarFile.size > 0
+      ? accountOwner.account.avatarUrl != null
+        ? storageKeyFromUrl(accountOwner.account.avatarUrl)
+        : undefined
+      : undefined;
+  const oldCoverKey =
+    headerFile instanceof File && headerFile.size > 0
+      ? accountOwner.account.coverUrl != null
+        ? storageKeyFromUrl(accountOwner.account.coverUrl)
+        : undefined
+      : undefined;
+  try {
+    if (avatarFile instanceof File && avatarFile.size > 0) {
+      const result = await uploadProfileImage(
+        disk,
+        "avatars",
+        accountId,
+        avatarFile,
+      );
+      if (result != null) {
+        avatarUrl = result.url;
+        uploadedPaths.push(result.path);
+      }
+    }
+    if (headerFile instanceof File && headerFile.size > 0) {
+      const result = await uploadProfileImage(
+        disk,
+        "covers",
+        accountId,
+        headerFile,
+      );
+      if (result != null) {
+        coverUrl = result.url;
+        uploadedPaths.push(result.path);
+      }
+    }
+    await db.transaction(async (tx) => {
+      await tx
+        .update(accountsTable)
+        .set({
+          name,
+          emojis,
+          bioHtml: bioResult.html,
+          protected: protected_,
+          fieldHtmls: updateFieldHtmlsObj,
+          ...(avatarUrl != null ? { avatarUrl } : {}),
+          ...(coverUrl != null ? { coverUrl } : {}),
+        })
+        .where(eq(accountsTable.id, accountId));
+      await tx
+        .update(accountOwners)
+        .set({
+          bio,
+          language,
+          visibility,
+          themeColor,
+          discoverable,
+          expandSpoilers,
+          fields: updateRawFieldsRecord,
+        })
+        .where(eq(accountOwners.id, accountId));
+    });
+  } catch (err) {
+    await Promise.allSettled(uploadedPaths.map((p) => disk.delete(p)));
+    throw err;
+  }
+  await Promise.allSettled(
+    [oldAvatarKey, oldCoverKey]
+      .filter((k): k is string => k != null)
+      .map((k) => disk.delete(k)),
+  );
   await fedCtx.sendActivity(
     { username: accountOwner.handle },
     "followers",
@@ -421,23 +721,45 @@ accounts.post("/:id", async (c) => {
     { preferSharedInbox: true, excludeBaseUris: [fedCtx.url] },
   );
   const account = { ...accountOwner.account, owner: accountOwner };
-  const newsActor = await fedCtx.lookupObject(HOLLO_OFFICIAL_ACCOUNT);
-  if (isActor(newsActor)) {
-    const newsAccount = await persistAccount(db, newsActor, c.req.url, fedCtx);
-    if (newsAccount != null) {
-      if (news) {
-        await followAccount(db, fedCtx, account, newsAccount);
-        await persistAccountPosts(
-          db,
-          newsAccount,
-          REMOTE_ACTOR_FETCH_POSTS,
-          c.req.url,
-          {
-            ...fedCtx,
-            suppressError: true,
-          },
-        );
-      } else await unfollowAccount(db, fedCtx, account, newsAccount);
+  const currentNews = await db.query.follows.findFirst({
+    where: and(
+      eq(
+        follows.followingId,
+        db
+          .select({ id: accountsTable.id })
+          .from(accountsTable)
+          .where(eq(accountsTable.handle, HOLLO_OFFICIAL_ACCOUNT)),
+      ),
+      eq(follows.followerId, accountId),
+    ),
+  });
+  const isFollowingNews = currentNews != null;
+  if (news !== isFollowingNews) {
+    const newsActor = await fedCtx.lookupObject(HOLLO_OFFICIAL_ACCOUNT);
+    if (isActor(newsActor)) {
+      const newsAccount = await persistAccount(
+        db,
+        newsActor,
+        c.req.url,
+        fedCtx,
+      );
+      if (newsAccount != null) {
+        if (news) {
+          await followAccount(db, fedCtx, account, newsAccount);
+          await persistAccountPosts(
+            db,
+            newsAccount,
+            REMOTE_ACTOR_FETCH_POSTS,
+            c.req.url,
+            {
+              ...fedCtx,
+              suppressError: true,
+            },
+          );
+        } else {
+          await unfollowAccount(db, fedCtx, account, newsAccount);
+        }
+      }
     }
   }
   return c.redirect("/accounts");

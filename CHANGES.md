@@ -41,6 +41,18 @@ To be released.
      -  Added dereferenceable local `QuoteAuthorization` ActivityPub objects
         for accepted quotes.
 
+ -  Added custom field editing to the admin account creation and editing
+    forms, allowing up to 10 label–value pairs per profile (beyond
+    Mastodon's limit of 4).  Field values support Markdown and mention
+    syntax.  The Mastodon-compatible `PATCH /api/v1/accounts/
+    update_credentials` endpoint now also accepts up to 10 custom fields
+    via `fields_attributes[0]` through `fields_attributes[9]`.
+
+ -  Fixed a bug in `PATCH /api/v1/accounts/update_credentials` where
+    submitting any credential update (e.g. `display_name`) without
+    `fields_attributes` would silently wipe all existing custom profile
+    fields from the public profile, API responses, and federation output.
+
  -  Added an ActivityPub `quote-inline` fallback to the `content` of explicit
     quote posts created through the Mastodon API.  Software that does not
     support quote posts can now still show the quoted post permalink, while
@@ -94,6 +106,16 @@ To be released.
         are removed; UnoCSS emits a single _src/public/uno.css_ whose
         URL is cache-busted by file mtime.
 
+ -  Added avatar and header image upload to the admin account creation and
+    editing forms, with drag-and-drop support and in-page image preview.
+    Files are stored using the same storage backend as the Mastodon-compatible
+    API (`PATCH /api/v1/accounts/update_credentials`).
+
+ -  Fixed a performance bug on the account edit page where saving an account
+    always triggered a network lookup of [@hollo@hollo.social] regardless of
+    whether the “Receive Hollo news” setting had actually changed.  The lookup
+    now only happens when the news-following state genuinely changes.
+
  -  Improved the performance of authenticated API requests by replacing the
     complex multi-table JOIN query in the `tokenRequired` middleware with a
     lightweight single-table lookup.  Account owner data is now fetched on
@@ -112,6 +134,7 @@ To be released.
  -  Upgraded Fedify to 2.2.1.
 
 [FEP-044f]: https://w3id.org/fep/044f
+[@hollo@hollo.social]: https://hollo.social/@hollo
 [#67]: https://github.com/fedify-dev/hollo/issues/67
 [#127]: https://github.com/fedify-dev/hollo/issues/127
 [#457]: https://github.com/fedify-dev/hollo/pull/457
