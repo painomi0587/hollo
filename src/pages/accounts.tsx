@@ -63,6 +63,20 @@ const logger = getLogger(["hollo", "pages", "accounts"]);
 
 const allowedImageMimeTypes = ["image/gif", "image/jpeg", "image/png"];
 
+function parseFields(form: FormData): Array<{ name: string; value: string }> {
+  const result: Array<{ name: string; value: string }> = [];
+  for (let i = 0; i < 10; i++) {
+    const name = (
+      form.get(`fields[${i}][name]`)?.toString()?.trim() ?? ""
+    ).slice(0, 255);
+    const value = (
+      form.get(`fields[${i}][value]`)?.toString()?.trim() ?? ""
+    ).slice(0, 255);
+    if (name !== "" && value !== "") result.push({ name, value });
+  }
+  return result;
+}
+
 async function uploadProfileImage(
   disk: Disk,
   prefix: "avatars" | "covers",
@@ -121,6 +135,7 @@ accounts.post("/", async (c) => {
   const news = form.get("news") != null;
   const avatarFile = form.get("avatar");
   const headerFile = form.get("header");
+  const parsedFields = parseFields(form);
   if (username == null || username === "" || name == null || name === "") {
     return c.html(
       <NewAccountPage
@@ -135,6 +150,7 @@ accounts.post("/", async (c) => {
           visibility,
           themeColor,
           news,
+          fields: parsedFields,
         }}
         errors={{
           username:
@@ -170,6 +186,7 @@ accounts.post("/", async (c) => {
           visibility,
           themeColor,
           news,
+          fields: parsedFields,
         }}
         errors={{ avatar: "Avatar must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
@@ -196,6 +213,7 @@ accounts.post("/", async (c) => {
           visibility,
           themeColor,
           news,
+          fields: parsedFields,
         }}
         errors={{ header: "Header image must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
@@ -210,6 +228,13 @@ accounts.post("/", async (c) => {
   const bioResult = await formatText(db, bio ?? "", fedCtx);
   const nameEmojis = await extractCustomEmojis(db, name);
   const emojis = { ...nameEmojis, ...bioResult.emojis };
+  const fieldHtmlsObj: Record<string, string> = {};
+  for (const { name: fieldName, value: fieldValue } of parsedFields) {
+    fieldHtmlsObj[fieldName] = (await formatText(db, fieldValue, fedCtx)).html;
+  }
+  const rawFieldsRecord = globalThis.Object.fromEntries(
+    parsedFields.map(({ name: n, value: v }) => [n, v]),
+  );
   const { drive } = await import("../storage.ts");
   const disk = drive.use();
   const uploadedPaths: string[] = [];
@@ -273,6 +298,7 @@ accounts.post("/", async (c) => {
           published: new Date(),
           avatarUrl,
           coverUrl,
+          fieldHtmls: fieldHtmlsObj,
         })
         .returning();
       const rsaKeyPair = await generateCryptoKeyPair("RSASSA-PKCS1-v1_5");
@@ -292,6 +318,7 @@ accounts.post("/", async (c) => {
           themeColor,
           discoverable,
           expandSpoilers,
+          fields: rawFieldsRecord,
         })
         .returning();
       return [account[0], owner[0]] as [
@@ -459,6 +486,11 @@ function AccountPage(props: AccountPageProps) {
             props.values?.avatarUrl ?? props.accountOwner.account.avatarUrl,
           coverUrl:
             props.values?.coverUrl ?? props.accountOwner.account.coverUrl,
+          fields:
+            props.values?.fields ??
+            globalThis.Object.entries(props.accountOwner.fields).map(
+              ([n, v]) => ({ name: n, value: v }),
+            ),
         }}
         errors={props.errors}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
@@ -492,6 +524,7 @@ accounts.post("/:id", async (c) => {
   const news = form.get("news") != null;
   const avatarFile = form.get("avatar");
   const headerFile = form.get("header");
+  const parsedFields = parseFields(form);
   if (name == null || name === "") {
     return c.html(
       <AccountPage
@@ -509,6 +542,7 @@ accounts.post("/:id", async (c) => {
           news,
           avatarUrl: accountOwner.account.avatarUrl,
           coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
         }}
         errors={{
           name: name == null || name === "" ? "Display name is required." : "",
@@ -540,6 +574,7 @@ accounts.post("/:id", async (c) => {
           news,
           avatarUrl: accountOwner.account.avatarUrl,
           coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
         }}
         errors={{ avatar: "Avatar must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
@@ -569,6 +604,7 @@ accounts.post("/:id", async (c) => {
           news,
           avatarUrl: accountOwner.account.avatarUrl,
           coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
         }}
         errors={{ header: "Header image must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
@@ -589,6 +625,15 @@ accounts.post("/:id", async (c) => {
   const bioResult = await formatText(db, bio ?? "", fmtOpts);
   const nameEmojis = await extractCustomEmojis(db, name);
   const emojis = { ...nameEmojis, ...bioResult.emojis };
+  const updateFieldHtmlsObj: Record<string, string> = {};
+  for (const { name: fieldName, value: fieldValue } of parsedFields) {
+    updateFieldHtmlsObj[fieldName] = (
+      await formatText(db, fieldValue, fmtOpts)
+    ).html;
+  }
+  const updateRawFieldsRecord = globalThis.Object.fromEntries(
+    parsedFields.map(({ name: n, value: v }) => [n, v]),
+  );
   const { drive } = await import("../storage.ts");
   const disk = drive.use();
   const uploadedPaths: string[] = [];
@@ -639,6 +684,7 @@ accounts.post("/:id", async (c) => {
           emojis,
           bioHtml: bioResult.html,
           protected: protected_,
+          fieldHtmls: updateFieldHtmlsObj,
           ...(avatarUrl != null ? { avatarUrl } : {}),
           ...(coverUrl != null ? { coverUrl } : {}),
         })
@@ -652,6 +698,7 @@ accounts.post("/:id", async (c) => {
           themeColor,
           discoverable,
           expandSpoilers,
+          fields: updateRawFieldsRecord,
         })
         .where(eq(accountOwners.id, accountId));
     });

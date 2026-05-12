@@ -98,14 +98,26 @@ app.patch(
       "source[privacy]": z.enum(["public", "unlisted", "private"]).optional(),
       "source[sensitive]": z.enum(["true", "false"]).optional(),
       "source[language]": z.string().optional(),
-      "fields_attributes[0][name]": z.string().optional(),
-      "fields_attributes[0][value]": z.string().optional(),
-      "fields_attributes[1][name]": z.string().optional(),
-      "fields_attributes[1][value]": z.string().optional(),
-      "fields_attributes[2][name]": z.string().optional(),
-      "fields_attributes[2][value]": z.string().optional(),
-      "fields_attributes[3][name]": z.string().optional(),
-      "fields_attributes[3][value]": z.string().optional(),
+      "fields_attributes[0][name]": z.string().max(255).optional(),
+      "fields_attributes[0][value]": z.string().max(255).optional(),
+      "fields_attributes[1][name]": z.string().max(255).optional(),
+      "fields_attributes[1][value]": z.string().max(255).optional(),
+      "fields_attributes[2][name]": z.string().max(255).optional(),
+      "fields_attributes[2][value]": z.string().max(255).optional(),
+      "fields_attributes[3][name]": z.string().max(255).optional(),
+      "fields_attributes[3][value]": z.string().max(255).optional(),
+      "fields_attributes[4][name]": z.string().max(255).optional(),
+      "fields_attributes[4][value]": z.string().max(255).optional(),
+      "fields_attributes[5][name]": z.string().max(255).optional(),
+      "fields_attributes[5][value]": z.string().max(255).optional(),
+      "fields_attributes[6][name]": z.string().max(255).optional(),
+      "fields_attributes[6][value]": z.string().max(255).optional(),
+      "fields_attributes[7][name]": z.string().max(255).optional(),
+      "fields_attributes[7][value]": z.string().max(255).optional(),
+      "fields_attributes[8][name]": z.string().max(255).optional(),
+      "fields_attributes[8][value]": z.string().max(255).optional(),
+      "fields_attributes[9][name]": z.string().max(255).optional(),
+      "fields_attributes[9][value]": z.string().max(255).optional(),
     }),
   ),
   async (c) => {
@@ -168,8 +180,8 @@ app.patch(
       }),
     };
     const fields = Object.entries(owner.fields);
-    const fieldHtmls: [string, string][] = [];
-    for (const i of [0, 1, 2, 3] as const) {
+    let anyFieldSubmitted = false;
+    for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {
       const name = form[`fields_attributes[${i}][name]`];
       const value = form[`fields_attributes[${i}][value]`];
       if (
@@ -181,9 +193,22 @@ app.patch(
         continue;
       }
       fields[i] = [name, value];
-      const contentHtml = (await formatText(db, fields[i][1], fmtOpts)).html;
-      fieldHtmls.push([fields[i][0], contentHtml]);
+      anyFieldSubmitted = true;
     }
+    const denseFields = fields.filter((f): f is [string, string] => f != null);
+    const fieldHtmlsRecord: Record<string, string> = anyFieldSubmitted
+      ? Object.fromEntries(
+          await Promise.all(
+            denseFields.map(
+              async ([fieldName, fieldValue]) =>
+                [
+                  fieldName,
+                  (await formatText(db, fieldValue, fmtOpts)).html,
+                ] as [string, string],
+            ),
+          ),
+        )
+      : account.fieldHtmls;
     const bioResult =
       form.note == null ? null : await formatText(db, form.note, fmtOpts);
     const name = form.display_name ?? account.name;
@@ -200,7 +225,7 @@ app.patch(
         bioHtml: bioResult == null ? account.bioHtml : bioResult.html,
         avatarUrl,
         coverUrl,
-        fieldHtmls: Object.fromEntries(fieldHtmls),
+        fieldHtmls: fieldHtmlsRecord,
         protected:
           form.locked == null ? account.protected : form.locked === "true",
         sensitive:
@@ -220,7 +245,9 @@ app.patch(
       .update(accountOwners)
       .set({
         bio: form.note ?? owner.bio,
-        fields: Object.fromEntries(fields),
+        fields: anyFieldSubmitted
+          ? Object.fromEntries(denseFields)
+          : owner.fields,
         visibility: form["source[privacy]"] ?? owner.visibility,
         language: form["source[language]"] ?? owner.language,
       })

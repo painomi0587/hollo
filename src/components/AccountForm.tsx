@@ -18,6 +18,10 @@ import {
 // border-brand-500 bg-brand-50 dark:border-brand-500 dark:bg-brand-950
 // opacity-0 group-hover:opacity-100 group-focus-within:opacity-100
 
+const fieldBase =
+  "w-full rounded-md bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm transition-colors placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-60 read-only:bg-neutral-50 read-only:text-neutral-500 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900 dark:read-only:bg-neutral-900 dark:read-only:text-neutral-400";
+const fieldValid = "border border-neutral-300 dark:border-neutral-700";
+
 export interface AccountFormProps {
   method?: "get" | "post" | "dialog";
   action: string;
@@ -37,6 +41,7 @@ export interface AccountFormProps {
     news?: boolean;
     avatarUrl?: string | null;
     coverUrl?: string | null;
+    fields?: Array<{ name: string; value: string }>;
   };
   errors?: {
     username?: string;
@@ -51,6 +56,7 @@ export interface AccountFormProps {
 }
 
 export function AccountForm(props: AccountFormProps) {
+  const existingFields = props.values?.fields ?? [];
   return (
     <form
       method={props.method ?? "post"}
@@ -105,6 +111,42 @@ export function AccountForm(props: AccountFormProps) {
           hint="A short description of yourself.  Markdown is supported."
           error={props.errors?.bio}
         />
+      </FieldSection>
+
+      <FieldSection
+        legend="Custom fields"
+        description="Up to 10 label–value pairs shown on your profile. Leave empty rows blank to omit."
+      >
+        <div>
+          <div class="mb-1 grid grid-cols-2 gap-3">
+            <span class="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              Label
+            </span>
+            <span class="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              Value
+            </span>
+          </div>
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div class="mt-2 grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                name={`fields[${i}][name]`}
+                value={existingFields[i]?.name ?? ""}
+                aria-label={`Field ${i + 1} label`}
+                maxlength={255}
+                class={`${fieldBase} ${fieldValid}`}
+              />
+              <input
+                type="text"
+                name={`fields[${i}][value]`}
+                value={existingFields[i]?.value ?? ""}
+                aria-label={`Field ${i + 1} value`}
+                maxlength={255}
+                class={`${fieldBase} ${fieldValid}`}
+              />
+            </div>
+          ))}
+        </div>
       </FieldSection>
 
       <FieldSection legend="Privacy">

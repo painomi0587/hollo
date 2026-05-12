@@ -16,6 +16,7 @@ export interface NewAccountPageProps {
     news?: boolean;
     avatarUrl?: string | null;
     coverUrl?: string | null;
+    fields?: Array<{ name: string; value: string }>;
   };
   errors?: {
     username?: string;

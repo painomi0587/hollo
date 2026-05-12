@@ -41,6 +41,18 @@ To be released.
      -  Added dereferenceable local `QuoteAuthorization` ActivityPub objects
         for accepted quotes.
 
+ -  Added custom field editing to the admin account creation and editing
+    forms, allowing up to 10 label–value pairs per profile (beyond
+    Mastodon's limit of 4).  Field values support Markdown and mention
+    syntax.  The Mastodon-compatible `PATCH /api/v1/accounts/
+    update_credentials` endpoint now also accepts up to 10 custom fields
+    via `fields_attributes[0]` through `fields_attributes[9]`.
+
+ -  Fixed a bug in `PATCH /api/v1/accounts/update_credentials` where
+    submitting any credential update (e.g. `display_name`) without
+    `fields_attributes` would silently wipe all existing custom profile
+    fields from the public profile, API responses, and federation output.
+
  -  Added an ActivityPub `quote-inline` fallback to the `content` of explicit
     quote posts created through the Mastodon API.  Software that does not
     support quote posts can now still show the quoted post permalink, while
