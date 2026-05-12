@@ -94,6 +94,11 @@ To be released.
         are removed; UnoCSS emits a single _src/public/uno.css_ whose
         URL is cache-busted by file mtime.
 
+ -  Added avatar and header image upload to the admin account creation and
+    editing forms, with drag-and-drop support and in-page image preview.
+    Files are stored using the same storage backend as the Mastodon-compatible
+    API (`PATCH /api/v1/accounts/update_credentials`).
+
  -  Fixed a performance bug on the account edit page where saving an account
     always triggered a network lookup of [@hollo@hollo.social] regardless of
     whether the “Receive Hollo news” setting had actually changed.  The lookup

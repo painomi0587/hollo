@@ -14,11 +14,15 @@ export interface NewAccountPageProps {
     visibility?: PostVisibility;
     themeColor?: ThemeColor;
     news?: boolean;
+    avatarUrl?: string | null;
+    coverUrl?: string | null;
   };
   errors?: {
     username?: string;
     name?: string;
     bio?: string;
+    avatar?: string;
+    header?: string;
   };
   officialAccount: string;
   host: string;
