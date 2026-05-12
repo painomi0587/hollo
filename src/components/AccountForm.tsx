@@ -17,6 +17,8 @@ import {
 // size-24 rounded-full aspect-[3/1] rounded-xl overflow-hidden
 // border-brand-500 bg-brand-50 dark:border-brand-500 dark:bg-brand-950
 // opacity-0 group-hover:opacity-100 group-focus-within:opacity-100
+// UnoCSS safelist for CustomFieldsSection dynamic states:
+// hidden
 
 const fieldBase =
   "w-full rounded-md bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm transition-colors placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-60 read-only:bg-neutral-50 read-only:text-neutral-500 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900 dark:read-only:bg-neutral-900 dark:read-only:text-neutral-400";
@@ -57,6 +59,7 @@ export interface AccountFormProps {
 
 export function AccountForm(props: AccountFormProps) {
   const existingFields = props.values?.fields ?? [];
+  const initialVisible = Math.min(Math.max(existingFields.length + 1, 2), 10);
   return (
     <form
       method={props.method ?? "post"}
@@ -126,26 +129,52 @@ export function AccountForm(props: AccountFormProps) {
               Value
             </span>
           </div>
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div class="mt-2 grid grid-cols-2 gap-3">
-              <input
-                type="text"
-                name={`fields[${i}][name]`}
-                value={existingFields[i]?.name ?? ""}
-                aria-label={`Field ${i + 1} label`}
-                maxlength={255}
-                class={`${fieldBase} ${fieldValid}`}
-              />
-              <input
-                type="text"
-                name={`fields[${i}][value]`}
-                value={existingFields[i]?.value ?? ""}
-                aria-label={`Field ${i + 1} value`}
-                maxlength={255}
-                class={`${fieldBase} ${fieldValid}`}
-              />
-            </div>
-          ))}
+          <div id="custom-fields-rows">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div class="mt-2 grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  name={`fields[${i}][name]`}
+                  value={existingFields[i]?.name ?? ""}
+                  aria-label={`Field ${i + 1} label`}
+                  maxlength={255}
+                  class={`${fieldBase} ${fieldValid}`}
+                />
+                <input
+                  type="text"
+                  name={`fields[${i}][value]`}
+                  value={existingFields[i]?.value ?? ""}
+                  aria-label={`Field ${i + 1} value`}
+                  maxlength={255}
+                  class={`${fieldBase} ${fieldValid}`}
+                />
+              </div>
+            ))}
+          </div>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function(){
+var initial=${initialVisible};
+var c=document.getElementById('custom-fields-rows');
+var rows=c.querySelectorAll(':scope>div');
+for(var i=initial;i<rows.length;i++){rows[i].classList.add('hidden');}
+function reveal(){
+  var last=0;
+  for(var i=0;i<rows.length;i++){if(!rows[i].classList.contains('hidden'))last=i;}
+  var inputs=rows[last].querySelectorAll('input');
+  var hasContent=false;
+  for(var j=0;j<inputs.length;j++){if(inputs[j].value.trim()!==''){hasContent=true;break;}}
+  if(hasContent&&last+1<rows.length){rows[last+1].classList.remove('hidden');}
+}
+for(var i=0;i<rows.length;i++){
+  (function(row){
+    var inp=row.querySelectorAll('input');
+    for(var j=0;j<inp.length;j++){inp[j].addEventListener('input',reveal);}
+  })(rows[i]);
+}
+})();`,
+            }}
+          />
         </div>
       </FieldSection>
 
