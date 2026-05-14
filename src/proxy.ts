@@ -113,6 +113,7 @@ async function readBoundedBody(
 async function fetchWithSSRFAwareRedirects(
   initialUrl: string,
   signal: AbortSignal,
+  requestHeaders: Record<string, string> = {},
 ): Promise<Response | null> {
   let url = initialUrl;
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
@@ -126,7 +127,11 @@ async function fetchWithSSRFAwareRedirects(
       return null;
     }
     if (!isSSRFSafeURL(url)) return null;
-    const response = await fetch(url, { signal, redirect: "manual" });
+    const response = await fetch(url, {
+      signal,
+      redirect: "manual",
+      headers: requestHeaders,
+    });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       await discardBody(response);
@@ -194,7 +199,13 @@ export function createProxyApp(mode: MediaProxyMode = MEDIA_PROXY): Hono {
     const url = verifyProxySignature(sig, b64url);
     if (url == null) return c.notFound();
 
-    if (mode === "cache") {
+    // Forward Range so audio/video clients can seek through the proxy.
+    // Range requests bypass the disk cache on both read and write paths
+    // because a single cache entry holds the full body, not partial slices.
+    const rangeHeader = c.req.header("Range");
+    const isRangeRequest = rangeHeader != null && rangeHeader.length > 0;
+
+    if (mode === "cache" && !isRangeRequest) {
       const cached = await readCached(cacheKeyForUrl(url));
       if (cached != null) {
         return c.body(
@@ -210,15 +221,34 @@ export function createProxyApp(mode: MediaProxyMode = MEDIA_PROXY): Hono {
     // the body read so a stalled upstream can't tie the request up.
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
+      const forwardedHeaders: Record<string, string> = {};
+      if (isRangeRequest) forwardedHeaders.Range = rangeHeader;
       const upstream = await fetchWithSSRFAwareRedirects(
         url,
         controller.signal,
+        forwardedHeaders,
       );
       if (upstream == null) return c.notFound();
+      // 416 Range Not Satisfiable: pass the status through with Content-Range
+      // if the upstream supplied one, but discard the body to avoid forwarding
+      // an arbitrary error page under our origin.
+      if (upstream.status === 416) {
+        await discardBody(upstream);
+        const upstreamContentRange = upstream.headers.get("Content-Range");
+        const headers: Record<string, string> = {
+          "Cache-Control": CACHE_CONTROL,
+          "X-Content-Type-Options": "nosniff",
+        };
+        if (upstreamContentRange != null) {
+          headers["Content-Range"] = upstreamContentRange;
+        }
+        return c.body(null, 416, headers);
+      }
       if (!upstream.ok) {
         await discardBody(upstream);
         return c.notFound();
       }
+      const isPartial = upstream.status === 206;
       const contentType =
         upstream.headers.get("Content-Type") ?? "application/octet-stream";
       if (!isAllowedContentType(contentType)) {
@@ -229,7 +259,10 @@ export function createProxyApp(mode: MediaProxyMode = MEDIA_PROXY): Hono {
       const body = await readBoundedBody(upstream, MAX_BYTES);
       if (body == null) return c.notFound();
 
-      if (mode === "cache") {
+      // Only cache full (200) responses.  Partial responses and any request
+      // that carried a Range header skip the write so the on-disk entry
+      // always represents the complete resource.
+      if (mode === "cache" && !isPartial && !isRangeRequest) {
         try {
           await writeCached(cacheKeyForUrl(url), body, contentType);
         } catch (error) {
@@ -240,10 +273,18 @@ export function createProxyApp(mode: MediaProxyMode = MEDIA_PROXY): Hono {
         }
       }
 
+      const responseHeaders: Record<string, string> = {
+        ...RESPONSE_HEADERS(contentType),
+      };
+      const contentRange = upstream.headers.get("Content-Range");
+      if (contentRange != null) responseHeaders["Content-Range"] = contentRange;
+      const acceptRanges = upstream.headers.get("Accept-Ranges");
+      if (acceptRanges != null) responseHeaders["Accept-Ranges"] = acceptRanges;
+
       return c.body(
         toExactArrayBuffer(body),
-        200,
-        RESPONSE_HEADERS(contentType),
+        isPartial ? 206 : 200,
+        responseHeaders,
       );
     } catch (error) {
       logger.warn("Failed to fetch remote media {url}: {error}", {

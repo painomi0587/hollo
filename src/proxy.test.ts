@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   afterEach,
   beforeEach,
@@ -209,5 +211,103 @@ describe.sequential("proxy route", () => {
     expect(second.status).toBe(200);
     expect(new Uint8Array(await second.arrayBuffer())).toEqual(png);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards the Range header to upstream and passes 206 through", async () => {
+    expect.assertions(5);
+
+    const slice = new Uint8Array([3, 4, 5, 6]);
+    fetchMock.mockResolvedValue(
+      new Response(slice.buffer as ArrayBuffer, {
+        status: 206,
+        headers: {
+          "Content-Type": "video/mp4",
+          "Content-Range": "bytes 3-6/100",
+          "Accept-Ranges": "bytes",
+        },
+      }),
+    );
+
+    const app = createProxyApp("proxy");
+    const url = "https://remote.example/clip.mp4";
+    const { sig, b64url } = signProxyUrl(url);
+
+    const response = await app.request(`/${sig}/${b64url}`, {
+      headers: { Range: "bytes=3-6" },
+    });
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("Content-Range")).toBe("bytes 3-6/100");
+    expect(response.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(slice);
+    const init = fetchMock.mock.calls[0][1] as RequestInit & {
+      headers: Record<string, string>;
+    };
+    expect(init.headers.Range).toBe("bytes=3-6");
+  });
+
+  it("passes 416 Range Not Satisfiable through with Content-Range", async () => {
+    expect.assertions(3);
+
+    fetchMock.mockResolvedValue(
+      new Response("range error", {
+        status: 416,
+        headers: {
+          "Content-Type": "text/plain",
+          "Content-Range": "bytes */100",
+        },
+      }),
+    );
+
+    const app = createProxyApp("proxy");
+    const { sig, b64url } = signProxyUrl("https://remote.example/clip.mp4");
+
+    const response = await app.request(`/${sig}/${b64url}`, {
+      headers: { Range: "bytes=9999-" },
+    });
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get("Content-Range")).toBe("bytes */100");
+    // The upstream's text/plain body is dropped, not forwarded under our origin.
+    expect((await response.arrayBuffer()).byteLength).toBe(0);
+  });
+
+  it("bypasses the disk cache for range requests in cache mode", async () => {
+    expect.assertions(4);
+
+    const slice = new Uint8Array([1, 2, 3]);
+    // Each fetch needs its own Response; a single Response's body can only be
+    // consumed once, so a shared mockResolvedValue would 404 on the second
+    // hit even though we're explicitly testing two upstream fetches.
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(slice.buffer as ArrayBuffer, {
+          status: 206,
+          headers: {
+            "Content-Type": "video/mp4",
+            "Content-Range": "bytes 0-2/100",
+          },
+        }),
+    );
+
+    const app = createProxyApp("cache");
+    const url = "https://remote.example/clip-range.mp4";
+    const { sig, b64url } = signProxyUrl(url);
+
+    const first = await app.request(`/${sig}/${b64url}`, {
+      headers: { Range: "bytes=0-2" },
+    });
+    const second = await app.request(`/${sig}/${b64url}`, {
+      headers: { Range: "bytes=0-2" },
+    });
+
+    expect(first.status).toBe(206);
+    expect(second.status).toBe(206);
+    // Both went upstream — no partial body got cached, no cache served.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // And there's no proxy/<sha256>.bin in storage either.
+    const disk = drive.use();
+    const cacheHash = createHash("sha256").update(url).digest("hex");
+    expect(await disk.exists(`proxy/${cacheHash}.bin`)).toBe(false);
   });
 });
