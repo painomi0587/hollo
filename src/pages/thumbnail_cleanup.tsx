@@ -2,7 +2,10 @@ import { getLogger } from "@logtape/logtape";
 import { and, count, eq, ilike, inArray, not, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 
-import { listProxyCacheBinKeys } from "../cleanup/processors";
+import {
+  countProxyCacheBinKeys,
+  iterateProxyCacheBinKeys,
+} from "../cleanup/processors";
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import { getMediaWithDeletableThumbnails } from "../entities/medium";
@@ -107,8 +110,7 @@ data.get("/", async (c) => {
   let proxyCacheCount = 0;
   let proxyCacheListFailed = false;
   try {
-    const keys = await listProxyCacheBinKeys();
-    proxyCacheCount = keys.length;
+    proxyCacheCount = await countProxyCacheBinKeys();
   } catch (error) {
     proxyCacheListFailed = true;
     logger.warn("Failed to inspect proxy cache: {error}", { error });
@@ -458,41 +460,66 @@ data.get("/", async (c) => {
 });
 
 data.post("/proxy_cache/clear", async (c) => {
-  let keys: string[];
+  // Stream keys from the storage backend straight into batched DB inserts so
+  // a multi-million-entry cache can't OOM the process here.  The job is
+  // created upfront with totalItems = 0 and updated at the end.
+  const BATCH_SIZE = 1000;
+  const jobId = uuidv7();
+  let totalItems = 0;
+  let batch: Array<{
+    id: ReturnType<typeof uuidv7>;
+    jobId: ReturnType<typeof uuidv7>;
+    data: { kind: "proxy_cache"; key: string };
+  }> = [];
+  const flush = async () => {
+    if (batch.length === 0) return;
+    await db.insert(cleanupJobItems).values(batch);
+    batch = [];
+  };
   try {
-    keys = await listProxyCacheBinKeys();
+    await db.insert(cleanupJobs).values({
+      id: jobId,
+      category: "cleanup_thumbnails",
+      totalItems: 0,
+    });
+    for await (const key of iterateProxyCacheBinKeys()) {
+      batch.push({
+        id: uuidv7(),
+        jobId,
+        data: { kind: "proxy_cache", key },
+      });
+      totalItems++;
+      if (batch.length >= BATCH_SIZE) await flush();
+    }
+    await flush();
   } catch (error) {
-    logger.error("Failed to list proxy cache for cleanup: {error}", { error });
+    logger.error("Failed to enumerate proxy cache for cleanup: {error}", {
+      error,
+    });
+    // Roll the placeholder job back so the dashboard doesn't see a stuck
+    // pending job for work we never finished planning.
+    await db.delete(cleanupJobs).where(eq(cleanupJobs.id, jobId));
     return c.redirect(
       `/thumbnail_cleanup?proxy-cache-result=${encodeURIComponent(
         "Failed to inspect the proxy cache",
       )}#cleanup-proxy-cache`,
     );
   }
-  if (keys.length === 0) {
+  if (totalItems === 0) {
+    await db.delete(cleanupJobs).where(eq(cleanupJobs.id, jobId));
     return c.redirect(
       `/thumbnail_cleanup?proxy-cache-result=${encodeURIComponent(
         "No proxy cache entries to clear",
       )}#cleanup-proxy-cache`,
     );
   }
-  const jobId = uuidv7();
-  await db.insert(cleanupJobs).values({
-    id: jobId,
-    category: "cleanup_thumbnails",
-    totalItems: keys.length,
-  });
-  const itemValues = keys.map((key) => ({
-    id: uuidv7(),
-    jobId,
-    data: { kind: "proxy_cache" as const, key },
-  }));
-  for (let i = 0; i < itemValues.length; i += 1000) {
-    await db.insert(cleanupJobItems).values(itemValues.slice(i, i + 1000));
-  }
+  await db
+    .update(cleanupJobs)
+    .set({ totalItems })
+    .where(eq(cleanupJobs.id, jobId));
   logger.info("Created proxy cache cleanup job {jobId} with {count} items", {
     jobId,
-    count: keys.length,
+    count: totalItems,
   });
   return c.redirect(
     `/thumbnail_cleanup?cleanup-job=${jobId}#cleanup-proxy-cache`,

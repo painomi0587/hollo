@@ -106,13 +106,17 @@ async function processProxyCacheDeletion(
   }
 }
 
-// Lists every .bin entry currently in the proxy cache.  Used by the admin
-// dashboard to show how many cache entries exist and to enqueue cleanup
-// items per file.  Pages through every result so S3 buckets with more than
-// one listing page are fully enumerated.
-export async function listProxyCacheBinKeys(): Promise<string[]> {
+// Streams every .bin entry currently in the proxy cache, one key at a time.
+// Pages through every listing page so S3 buckets with more than one page are
+// fully enumerated.  Yielding (instead of collecting into an array) keeps the
+// dashboard count and the cleanup-job enqueue path constant-memory regardless
+// of how large the cache has grown.
+export async function* iterateProxyCacheBinKeys(): AsyncGenerator<
+  string,
+  void,
+  void
+> {
   const disk = drive.use();
-  const keys: string[] = [];
   let paginationToken: string | undefined;
   do {
     const result = await disk.listAll("proxy/", {
@@ -121,10 +125,15 @@ export async function listProxyCacheBinKeys(): Promise<string[]> {
     });
     for (const obj of result.objects) {
       if (obj.isFile && PROXY_CACHE_BIN_KEY.test(obj.key)) {
-        keys.push(obj.key);
+        yield obj.key;
       }
     }
     paginationToken = result.paginationToken;
   } while (paginationToken != null);
-  return keys;
+}
+
+export async function countProxyCacheBinKeys(): Promise<number> {
+  let count = 0;
+  for await (const _key of iterateProxyCacheBinKeys()) count++;
+  return count;
 }
