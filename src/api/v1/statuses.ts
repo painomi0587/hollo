@@ -45,7 +45,7 @@ import {
 } from "../../federation/post";
 import { appendPostToTimelines } from "../../federation/timeline";
 import { requestBody } from "../../helpers";
-import { getInstanceHost } from "../../instance-host";
+import { isLocalHost } from "../../instance-host";
 import { getAccessToken } from "../../oauth/helpers";
 import {
   scopeRequired,
@@ -1382,8 +1382,9 @@ async function addEmojiReaction(
   if (!isUuid(postId)) return c.json({ error: "Record not found" }, 404);
   let emoji = c.req.param("emoji");
   const url = new URL(c.req.url);
-  if (emoji.endsWith(`@${getInstanceHost(url)}`)) {
-    emoji = emoji.replace(/@[^@]+$/, "");
+  const emojiAt = emoji.lastIndexOf("@");
+  if (emojiAt >= 0 && isLocalHost(emoji.slice(emojiAt + 1), url)) {
+    emoji = emoji.slice(0, emojiAt);
   }
   let emojiCode = "";
   let tag: Emoji | null = null;
@@ -1530,8 +1531,9 @@ async function removeEmojiReaction(
   if (!isUuid(postId)) return c.json({ error: "Record not found" }, 404);
   let emoji = c.req.param("emoji");
   const url = new URL(c.req.url);
-  if (emoji.endsWith(`@${getInstanceHost(url)}`)) {
-    emoji = emoji.replace(/@[^@]+$/, "");
+  const emojiAt = emoji.lastIndexOf("@");
+  if (emojiAt >= 0 && isLocalHost(emoji.slice(emojiAt + 1), url)) {
+    emoji = emoji.slice(0, emojiAt);
   }
   const unicode = /^[\p{Emoji}]+$/u.test(emoji);
   const deleted = await db

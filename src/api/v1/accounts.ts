@@ -39,7 +39,7 @@ import {
   REMOTE_ACTOR_FETCH_POSTS,
   unfollowAccount,
 } from "../../federation/account";
-import { getInstanceHost } from "../../instance-host";
+import { getInstanceHost, isLocalHost } from "../../instance-host";
 import {
   scopeRequired,
   tokenRequired,
@@ -337,6 +337,18 @@ app.get(
   async (c) => {
     const query = c.req.valid("query");
     const acct = query.acct;
+    const requestUrl = new URL(c.req.url);
+    const at = acct.lastIndexOf("@");
+    let handleLookup: string;
+    if (at < 0) {
+      handleLookup = `@${acct}@${getInstanceHost(requestUrl)}`;
+    } else if (isLocalHost(acct.slice(at + 1), requestUrl)) {
+      // Normalize WEB_ORIGIN-host aliases to the canonical HANDLE_HOST form
+      // that local accounts are stored under.
+      handleLookup = `@${acct.slice(0, at)}@${getInstanceHost(requestUrl)}`;
+    } else {
+      handleLookup = `@${acct}`;
+    }
     let account:
       | (Account & {
           owner: AccountOwner | null;
@@ -344,12 +356,7 @@ app.get(
         })
       | null =
       (await db.query.accounts.findFirst({
-        where: eq(
-          accounts.handle,
-          acct.includes("@")
-            ? `@${acct}`
-            : `@${acct}@${getInstanceHost(new URL(c.req.url))}`,
-        ),
+        where: eq(accounts.handle, handleLookup),
         with: { owner: true, successor: true },
       })) ?? null;
     if (account == null) {
