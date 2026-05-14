@@ -13,6 +13,7 @@ import image from "./image";
 import oauth from "./oauth";
 import oauthMetadataEndpoint from "./oauth/endpoints/metadata";
 import pages from "./pages";
+import proxy from "./proxy";
 import { DRIVE_DISK, FS_STORAGE_PATH } from "./storage-config";
 
 const app = new Hono();
@@ -62,6 +63,7 @@ app.route("/", pages);
 app.route("/oauth", oauth);
 app.route("/api", api);
 app.route("/image", image);
+app.route("/proxy", proxy);
 
 app.get("/nodeinfo/2.0", (c) => c.redirect("/nodeinfo/2.1"));
 
