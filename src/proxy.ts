@@ -110,6 +110,14 @@ async function readBoundedBody(
 // Follow up to MAX_REDIRECTS redirects manually so we can re-run the SSRF
 // check on each hop.  `fetch(..., { redirect: "follow" })` would silently
 // chase a 302 from a public hostname to a private one.
+//
+// Caveat for future maintainers: `isSSRFSafeURL` only inspects the URL
+// string (scheme, host literal, port).  It does not resolve DNS, so a
+// hostname that looks public but resolves to a private address at fetch
+// time can still slip through.  Fixing this in the proxy alone would
+// leave the same gap on every other server-side fetch in the codebase
+// (e.g. src/federation/post.ts, preview-card scraping); the proper fix
+// is a shared SSRF-aware fetch connector that pins the resolved IP.
 async function fetchWithSSRFAwareRedirects(
   initialUrl: string,
   signal: AbortSignal,
