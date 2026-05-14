@@ -555,10 +555,24 @@ export async function persistPost(
         };
       }
     } else {
-      // REMOTE_MEDIA_THUMBNAILS=off: skip the upstream fetch and sharp
+      // REMOTE_MEDIA_THUMBNAILS=off: skip the body download and the sharp
       // pipeline.  Operators rely on the media proxy (or the remote server
       // directly) to serve the preview.
       mediaType = attachment.mediaType ?? null;
+      if (mediaType == null) {
+        // The ActivityPub object didn't carry mediaType.  Ask the upstream
+        // for just the Content-Type via HEAD so we don't drop the
+        // attachment outright (the prefetch path used to recover this from
+        // the response headers of the body GET).
+        try {
+          const head = await fetch(url, { method: "HEAD" });
+          if (head.ok) {
+            mediaType = head.headers.get("Content-Type");
+          }
+        } catch {
+          // ignore — fall through to the skip path below
+        }
+      }
       if (mediaType == null) continue;
       metadata = {
         width: attachment.width ?? 512,
