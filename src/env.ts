@@ -29,6 +29,19 @@ if (handleHostSet !== webOriginSet) {
   );
 }
 
+// Syntax-level check only; we don't resolve DNS or contact the host.
+// HANDLE_HOST is the bare hostname used in fediverse handles (the part
+// after the second `@`), so it must not carry a scheme, port, or path.
+if (
+  rawHandleHost != null &&
+  rawHandleHost !== "" &&
+  (rawHandleHost.includes("/") || rawHandleHost.includes(":"))
+) {
+  throw new Error(
+    "HANDLE_HOST must be a bare hostname (e.g. example.com) with no scheme, port, or path.",
+  );
+}
+
 // Syntax-level checks only; we don't resolve DNS or contact the host.
 // Fedify enforces the same shape when the origin is wired into
 // createFederation, but checking up front gives the operator a clear
