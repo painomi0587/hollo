@@ -2,10 +2,7 @@ import { getLogger } from "@logtape/logtape";
 import { and, count, eq, ilike, inArray, not, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 
-import {
-  countProxyCacheBinKeys,
-  iterateProxyCacheBinKeys,
-} from "../cleanup/processors";
+import { countProxyCacheBinKeys } from "../cleanup/processors";
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import { getMediaWithDeletableThumbnails } from "../entities/medium";
@@ -460,67 +457,41 @@ data.get("/", async (c) => {
 });
 
 data.post("/proxy_cache/clear", async (c) => {
-  // Stream keys from the storage backend straight into batched DB inserts so
-  // a multi-million-entry cache can't OOM the process here.  The job is
-  // created upfront with totalItems = 0 and updated at the end.
-  const BATCH_SIZE = 1000;
+  // Defer enumeration to the cleanup worker so the dashboard request
+  // returns immediately even on a huge cache.  The worker is also the sole
+  // owner of the job lifecycle from this point on, which is what
+  // eliminates the previous race where pollAndProcess could finalize an
+  // empty pending job while this handler was still inserting items.
   const jobId = uuidv7();
-  let totalItems = 0;
-  let batch: Array<{
-    id: ReturnType<typeof uuidv7>;
-    jobId: ReturnType<typeof uuidv7>;
-    data: { kind: "proxy_cache"; key: string };
-  }> = [];
-  const flush = async () => {
-    if (batch.length === 0) return;
-    await db.insert(cleanupJobItems).values(batch);
-    batch = [];
-  };
   try {
-    await db.insert(cleanupJobs).values({
-      id: jobId,
-      category: "cleanup_thumbnails",
-      totalItems: 0,
-    });
-    for await (const key of iterateProxyCacheBinKeys()) {
-      batch.push({
+    await db.transaction(async (tx) => {
+      await tx.insert(cleanupJobs).values({
+        id: jobId,
+        category: "cleanup_thumbnails",
+        // Counts only the enumeration item; the enumeration processor
+        // bumps this by the number of cache entries it queues.
+        totalItems: 1,
+      });
+      await tx.insert(cleanupJobItems).values({
         id: uuidv7(),
         jobId,
-        data: { kind: "proxy_cache", key },
+        data: { kind: "enumerate_proxy_cache" },
       });
-      totalItems++;
-      if (batch.length >= BATCH_SIZE) await flush();
-    }
-    await flush();
+    });
   } catch (error) {
-    logger.error("Failed to enumerate proxy cache for cleanup: {error}", {
+    logger.error("Failed to create proxy cache cleanup job: {error}", {
       error,
     });
-    // Roll the placeholder job back so the dashboard doesn't see a stuck
-    // pending job for work we never finished planning.
-    await db.delete(cleanupJobs).where(eq(cleanupJobs.id, jobId));
     return c.redirect(
       `/thumbnail_cleanup?proxy-cache-result=${encodeURIComponent(
-        "Failed to inspect the proxy cache",
+        "Failed to schedule the proxy cache cleanup",
       )}#cleanup-proxy-cache`,
     );
   }
-  if (totalItems === 0) {
-    await db.delete(cleanupJobs).where(eq(cleanupJobs.id, jobId));
-    return c.redirect(
-      `/thumbnail_cleanup?proxy-cache-result=${encodeURIComponent(
-        "No proxy cache entries to clear",
-      )}#cleanup-proxy-cache`,
-    );
-  }
-  await db
-    .update(cleanupJobs)
-    .set({ totalItems })
-    .where(eq(cleanupJobs.id, jobId));
-  logger.info("Created proxy cache cleanup job {jobId} with {count} items", {
-    jobId,
-    count: totalItems,
-  });
+  logger.info(
+    "Scheduled proxy cache cleanup job {jobId}; enumeration deferred to worker",
+    { jobId },
+  );
   return c.redirect(
     `/thumbnail_cleanup?cleanup-job=${jobId}#cleanup-proxy-cache`,
   );

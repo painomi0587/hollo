@@ -1,11 +1,11 @@
 import { getLogger } from "@logtape/logtape";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import db from "../db";
 import * as schema from "../schema";
 import { drive } from "../storage";
 import { STORAGE_URL_BASE } from "../storage-config";
-import type { Uuid } from "../uuid";
+import { type Uuid, uuidv7 } from "../uuid";
 
 const logger = getLogger(["hollo", "cleanup"]);
 
@@ -24,7 +24,14 @@ interface ProxyCacheCleanupItemData {
   key: string;
 }
 
-type CleanupItemData = ThumbnailCleanupItemData | ProxyCacheCleanupItemData;
+interface EnumerateProxyCacheItemData {
+  kind: "enumerate_proxy_cache";
+}
+
+type CleanupItemData =
+  | ThumbnailCleanupItemData
+  | ProxyCacheCleanupItemData
+  | EnumerateProxyCacheItemData;
 
 // Single entry point used by the worker.  The cleanup_thumbnails enum value
 // historically meant "delete a Hollo-derived sharp thumbnail"; we now also
@@ -36,6 +43,10 @@ export async function processCleanupItem(
   const data = item.data as unknown as CleanupItemData;
   if (data != null && data.kind === "proxy_cache") {
     await processProxyCacheDeletion(data);
+    return;
+  }
+  if (data != null && data.kind === "enumerate_proxy_cache") {
+    await processProxyCacheEnumeration(item);
     return;
   }
   await processThumbnailDeletion(item);
@@ -81,6 +92,55 @@ export async function processThumbnailDeletion(
     .update(schema.media)
     .set({ thumbnailCleaned: true })
     .where(eq(schema.media.id, medium.id));
+}
+
+// Walks the proxy cache and enqueues one per-key deletion item per .bin
+// entry under the same parent job.  Run by the worker (not by the admin
+// request handler) so the dashboard POST stays responsive even on a
+// multi-million-entry cache, and so the worker is the sole owner of the
+// job lifecycle — that's what stops the previous "worker picks up an
+// empty pending job and finalizes it mid-enqueue" race.
+async function processProxyCacheEnumeration(
+  item: schema.CleanupJobItem,
+): Promise<void> {
+  const BATCH_SIZE = 1000;
+  const jobId = item.jobId;
+  let batch: Array<{
+    id: Uuid;
+    jobId: Uuid;
+    data: { kind: "proxy_cache"; key: string };
+  }> = [];
+  let added = 0;
+  const flush = async () => {
+    if (batch.length === 0) return;
+    await db.insert(schema.cleanupJobItems).values(batch);
+    batch = [];
+  };
+  for await (const key of iterateProxyCacheBinKeys()) {
+    batch.push({
+      id: uuidv7(),
+      jobId,
+      data: { kind: "proxy_cache", key },
+    });
+    added++;
+    if (batch.length >= BATCH_SIZE) await flush();
+  }
+  await flush();
+  if (added > 0) {
+    // Bump totalItems on the parent job by exactly the number we just
+    // queued.  The enumeration item itself was already counted at job
+    // creation, so we don't include it here.
+    await db
+      .update(schema.cleanupJobs)
+      .set({
+        totalItems: sql`${schema.cleanupJobs.totalItems} + ${added}`,
+      })
+      .where(eq(schema.cleanupJobs.id, jobId));
+  }
+  logger.info(
+    "Enumerated proxy cache for cleanup job {jobId}: queued {count} items",
+    { jobId, count: added },
+  );
 }
 
 async function processProxyCacheDeletion(
