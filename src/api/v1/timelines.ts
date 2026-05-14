@@ -80,19 +80,17 @@ function buildTimelineLinkHeader(
   limit: number,
 ): { Link: string } | undefined {
   if (timeline.length === 0) return undefined;
+  const baseUrl = new URL(requestUrl);
+  baseUrl.searchParams.delete("max_id");
+  baseUrl.searchParams.delete("min_id");
+  baseUrl.searchParams.delete("since_id");
   const linkParts: string[] = [];
   if (timeline.length >= limit) {
-    const next = new URL(requestUrl);
-    next.searchParams.delete("max_id");
-    next.searchParams.delete("min_id");
-    next.searchParams.delete("since_id");
+    const next = new URL(baseUrl);
     next.searchParams.set("max_id", timeline[timeline.length - 1].id);
     linkParts.push(`<${next.href}>; rel="next"`);
   }
-  const prev = new URL(requestUrl);
-  prev.searchParams.delete("max_id");
-  prev.searchParams.delete("min_id");
-  prev.searchParams.delete("since_id");
+  const prev = new URL(baseUrl);
   prev.searchParams.set("min_id", timeline[0].id);
   linkParts.push(`<${prev.href}>; rel="prev"`);
   return { Link: linkParts.join(", ") };
