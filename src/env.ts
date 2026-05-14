@@ -32,14 +32,18 @@ if (handleHostSet !== webOriginSet) {
 // Syntax-level check only; we don't resolve DNS or contact the host.
 // HANDLE_HOST is the bare hostname used in fediverse handles (the part
 // after the second `@`), so it must not carry a scheme, port, or path.
-if (
-  rawHandleHost != null &&
-  rawHandleHost !== "" &&
-  (rawHandleHost.includes("/") || rawHandleHost.includes(":"))
-) {
-  throw new Error(
-    "HANDLE_HOST must be a bare hostname (e.g. example.com) with no scheme, port, or path.",
-  );
+if (rawHandleHost != null && rawHandleHost !== "") {
+  if (rawHandleHost.includes("/") || rawHandleHost.includes(":")) {
+    throw new Error(
+      "HANDLE_HOST must be a bare hostname (e.g. example.com) with no scheme, port, or path.",
+    );
+  }
+  // Use URL.canParse on a synthesized URL to catch other malformed
+  // hostnames (whitespace, control characters, empty labels, etc.).
+  // canParse is Unicode-aware, so IDN domains pass through.
+  if (!URL.canParse(`https://${rawHandleHost}/`)) {
+    throw new Error("HANDLE_HOST must be a valid hostname (e.g. example.com).");
+  }
 }
 
 // Syntax-level checks only; we don't resolve DNS or contact the host.
