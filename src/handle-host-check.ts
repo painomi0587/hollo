@@ -12,9 +12,13 @@ export async function checkHandleHostConsistency(): Promise<void> {
   });
   for (const owner of owners) {
     const handle = owner.account.handle;
+    // Local handles are stored in canonical "@user@host" form; ignore
+    // anything that doesn't have both the leading "@" and a host segment.
+    if (!handle.startsWith("@")) continue;
     const at = handle.lastIndexOf("@");
-    if (at < 0) continue;
+    if (at <= 0) continue;
     const existingHost = handle.slice(at + 1).toLowerCase();
+    if (existingHost === "") continue;
     if (existingHost === HANDLE_HOST) continue;
     logger.warn(
       "Configured HANDLE_HOST ({configured}) does not match existing " +
