@@ -6,6 +6,26 @@ Version 0.9.0
 
 To be released.
 
+ -  Added passkey (WebAuthn) authentication.  The admin *Auth* page now
+    has a "Passkeys" section for enrolling and managing passkeys, and
+    the public login page presents a "Sign in with passkey" button
+    (with the email/password form tucked behind a toggle) whenever at
+    least one passkey is enrolled.  Both device-bound and synced
+    (multi-device) passkeys are accepted.  A passkey on its own counts
+    as multi-factor authentication, so a successful passkey sign-in is
+    accepted in place of the TOTP step — the user is not asked for a
+    one-time code in the same session.
+
+    Hollo uses the *@simplewebauthn/server* library for verification
+    and ships the matching browser helper as a static asset linked
+    only from the auth and login pages.  Registration uses
+    `residentKey: required` and `userVerification: required`, so every
+    enrolled passkey is discoverable and tied to a biometric or PIN
+    gesture.  Registration challenges are bound to the current login
+    session with a server-enforced 5-minute TTL, and login challenges
+    are stored in a single-use `passkey_login_challenges` table so a
+    captured cookie + assertion pair can be redeemed at most once.
+
  -  Added optional split-domain WebFinger support.  When the new
     `HANDLE_HOST` and `WEB_ORIGIN` environment variables are set,
     Hollo uses Fedify's `origin` configuration so that fediverse
