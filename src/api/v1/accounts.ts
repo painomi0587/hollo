@@ -336,7 +336,7 @@ app.get(
   ),
   async (c) => {
     const query = c.req.valid("query");
-    const acct = query.acct;
+    const acct = normalizeHandle(query.acct);
     const requestUrl = new URL(c.req.url);
     const at = acct.lastIndexOf("@");
     let handleLookup: string;
@@ -391,7 +391,7 @@ app.get(
   },
 );
 
-import { HANDLE_PATTERN } from "../../patterns";
+import { HANDLE_PATTERN, normalizeHandle } from "../../patterns";
 
 app.get(
   "/search",
@@ -421,9 +421,10 @@ app.get(
   ),
   async (c) => {
     const query = c.req.valid("query");
+    const normalizedQ = normalizeHandle(query.q);
     if (query.resolve && HANDLE_PATTERN.test(query.q) && query.offset < 1) {
       const exactMatch = await db.query.accounts.findFirst({
-        where: ilike(accounts.handle, `@${query.q.replace(/^@/, "")}`),
+        where: ilike(accounts.handle, `@${normalizedQ}`),
       });
       if (exactMatch != null) {
         const fedCtx = federation.createContext(c.req.raw, undefined);
@@ -444,9 +445,9 @@ app.get(
       ),
       with: { owner: true, successor: true },
       orderBy: [
-        desc(ilike(accounts.handle, `@${query.q.replace(/^@/, "")}`)),
+        desc(ilike(accounts.handle, `@${normalizedQ}`)),
         desc(ilike(accounts.name, query.q)),
-        desc(ilike(accounts.handle, `@${query.q.replace(/^@/, "")}%`)),
+        desc(ilike(accounts.handle, `@${normalizedQ}%`)),
         desc(ilike(accounts.name, `${query.q}%`)),
       ],
       offset: query.offset,

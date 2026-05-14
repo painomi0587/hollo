@@ -53,6 +53,7 @@ import {
   withAccountOwner,
   type AccountOwnerVariables,
 } from "../../oauth/middleware";
+import { normalizeHandle } from "../../patterns";
 import { fetchPreviewCard, type PreviewCard } from "../../previewcard";
 import {
   accountOwners,
@@ -1380,7 +1381,7 @@ async function addEmojiReaction(
   const fedCtx = federation.createContext(c.req.raw, undefined);
   const postId = c.req.param("id");
   if (!isUuid(postId)) return c.json({ error: "Record not found" }, 404);
-  let emoji = c.req.param("emoji");
+  let emoji = normalizeHandle(c.req.param("emoji"));
   const url = new URL(c.req.url);
   const emojiAt = emoji.lastIndexOf("@");
   if (emojiAt >= 0 && isLocalHost(emoji.slice(emojiAt + 1), url)) {
@@ -1529,7 +1530,7 @@ async function removeEmojiReaction(
   const fedCtx = federation.createContext(c.req.raw, undefined);
   const postId = c.req.param("id");
   if (!isUuid(postId)) return c.json({ error: "Record not found" }, 404);
-  let emoji = c.req.param("emoji");
+  let emoji = normalizeHandle(c.req.param("emoji"));
   const url = new URL(c.req.url);
   const emojiAt = emoji.lastIndexOf("@");
   if (emojiAt >= 0 && isLocalHost(emoji.slice(emojiAt + 1), url)) {
