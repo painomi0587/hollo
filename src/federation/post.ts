@@ -48,6 +48,7 @@ import { isSSRFSafeURL } from "ssrfcheck";
 
 import { extractPreviewLink } from "../html";
 import { makeVideoScreenshot, type Thumbnail, uploadThumbnail } from "../media";
+import { REMOTE_MEDIA_THUMBNAILS } from "../media-proxy";
 import { fetchPreviewCard } from "../previewcard";
 import type * as schema from "../schema";
 import {
@@ -523,24 +524,42 @@ export async function persistPost(
         ? attachment.url.href?.href
         : attachment.url?.href;
     if (url == null || !isSSRFSafeURL(url)) continue;
-    const response = await fetch(url);
-    const mediaType =
-      response.headers.get("Content-Type") ?? attachment.mediaType;
-    if (mediaType == null) continue;
     const id = uuidv7();
+    let mediaType: string | null;
     let thumbnail: Thumbnail;
     let metadata: { width?: number; height?: number };
-    try {
-      const imageData = new Uint8Array(await response.arrayBuffer());
-      let imageBytes: Uint8Array = imageData;
-      if (mediaType.startsWith("video/")) {
-        imageBytes = await makeVideoScreenshot(imageData);
+    if (REMOTE_MEDIA_THUMBNAILS) {
+      const response = await fetch(url);
+      mediaType = response.headers.get("Content-Type") ?? attachment.mediaType;
+      if (mediaType == null) continue;
+      try {
+        const imageData = new Uint8Array(await response.arrayBuffer());
+        let imageBytes: Uint8Array = imageData;
+        if (mediaType.startsWith("video/")) {
+          imageBytes = await makeVideoScreenshot(imageData);
+        }
+        const { default: sharp } = await import("sharp");
+        const image = sharp(imageBytes);
+        metadata = await image.metadata();
+        thumbnail = await uploadThumbnail(id, image);
+      } catch {
+        metadata = {
+          width: attachment.width ?? 512,
+          height: attachment.height ?? 512,
+        };
+        thumbnail = {
+          thumbnailUrl: url,
+          thumbnailType: mediaType,
+          thumbnailWidth: metadata.width!,
+          thumbnailHeight: metadata.height!,
+        };
       }
-      const { default: sharp } = await import("sharp");
-      const image = sharp(imageBytes);
-      metadata = await image.metadata();
-      thumbnail = await uploadThumbnail(id, image);
-    } catch {
+    } else {
+      // REMOTE_MEDIA_THUMBNAILS=off: skip the upstream fetch and sharp
+      // pipeline.  Operators rely on the media proxy (or the remote server
+      // directly) to serve the preview.
+      mediaType = attachment.mediaType ?? null;
+      if (mediaType == null) continue;
       metadata = {
         width: attachment.width ?? 512,
         height: attachment.height ?? 512,
