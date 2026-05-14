@@ -2,6 +2,7 @@ import { getLogger } from "@logtape/logtape";
 import { and, count, eq, ilike, inArray, not, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 
+import { listProxyCacheBinKeys } from "../cleanup/processors";
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import { getMediaWithDeletableThumbnails } from "../entities/medium";
@@ -103,6 +104,17 @@ data.get("/", async (c) => {
   }
   const thumbnailsCount = thumbnailsCountResult[0].count;
 
+  let proxyCacheCount = 0;
+  let proxyCacheListFailed = false;
+  try {
+    const keys = await listProxyCacheBinKeys();
+    proxyCacheCount = keys.length;
+  } catch (error) {
+    proxyCacheListFailed = true;
+    logger.warn("Failed to inspect proxy cache: {error}", { error });
+  }
+  const proxyCacheResult = c.req.query("proxy-cache-result");
+
   const thumbnailsTable: { caption: string; count: number }[] = [
     {
       caption: "Total, thumbnail hosted locally",
@@ -113,6 +125,12 @@ data.get("/", async (c) => {
       count: thumbnailsRemoteCount,
     },
   ];
+  if (!proxyCacheListFailed) {
+    thumbnailsTable.push({
+      caption: "Media proxy cache entries",
+      count: proxyCacheCount,
+    });
+  }
 
   const dateInputClass =
     "rounded-md border bg-white px-3 py-2 text-sm shadow-sm transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900";
@@ -392,8 +410,92 @@ data.get("/", async (c) => {
             </p>
           </form>
         </section>
+
+        <section
+          id="cleanup-proxy-cache"
+          class="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <header class="mb-4">
+            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              Clear media proxy cache
+            </h2>
+            <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+              {proxyCacheResult ??
+                "Delete every entry the media proxy has cached on disk.  Hollo will re-fetch each item on demand the next time it is requested."}
+            </p>
+          </header>
+          <form
+            method="post"
+            action="/thumbnail_cleanup/proxy_cache/clear"
+            onsubmit="return confirm('Delete every cached proxy file?')"
+          >
+            <button
+              name="submit"
+              type="submit"
+              disabled={
+                shouldAutoRefresh ||
+                proxyCacheListFailed ||
+                proxyCacheCount === 0
+              }
+              class={primaryButtonClass}
+            >
+              {proxyCacheListFailed
+                ? "Cache size unavailable"
+                : `Clear ${proxyCacheCount.toLocaleString("en")} entries`}
+            </button>
+            <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+              {proxyCacheListFailed
+                ? "Failed to inspect the proxy cache.  Check the server logs."
+                : proxyCacheCount === 0
+                  ? "The proxy cache is empty."
+                  : "Each cached body and its metadata sidecar will be removed."}
+            </p>
+          </form>
+        </section>
       </div>
     </DashboardLayout>,
+  );
+});
+
+data.post("/proxy_cache/clear", async (c) => {
+  let keys: string[];
+  try {
+    keys = await listProxyCacheBinKeys();
+  } catch (error) {
+    logger.error("Failed to list proxy cache for cleanup: {error}", { error });
+    return c.redirect(
+      `/thumbnail_cleanup?proxy-cache-result=${encodeURIComponent(
+        "Failed to inspect the proxy cache",
+      )}#cleanup-proxy-cache`,
+    );
+  }
+  if (keys.length === 0) {
+    return c.redirect(
+      `/thumbnail_cleanup?proxy-cache-result=${encodeURIComponent(
+        "No proxy cache entries to clear",
+      )}#cleanup-proxy-cache`,
+    );
+  }
+  const jobId = uuidv7();
+  await db.insert(cleanupJobs).values({
+    id: jobId,
+    category: "cleanup_thumbnails",
+    totalItems: keys.length,
+  });
+  const itemValues = keys.map((key) => ({
+    id: uuidv7(),
+    jobId,
+    data: { kind: "proxy_cache" as const, key },
+  }));
+  for (let i = 0; i < itemValues.length; i += 1000) {
+    await db.insert(cleanupJobItems).values(itemValues.slice(i, i + 1000));
+  }
+  logger.info("Created proxy cache cleanup job {jobId} with {count} items", {
+    jobId,
+    count: keys.length,
+  });
+  return c.redirect(
+    `/thumbnail_cleanup?cleanup-job=${jobId}#cleanup-proxy-cache`,
   );
 });
 
