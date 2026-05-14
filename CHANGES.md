@@ -11,7 +11,7 @@ To be released.
     origin.  This sidesteps CORS configurations on remote object stores
     and prevents the visitor's browser from talking directly to the
     source server.  Controlled by a new `MEDIA_PROXY` environment
-    variable with three levels:  [[#481]]
+    variable with three levels:  [[#481], [#483]]
 
      -  `off` (default): the Mastodon API and web UI hand the original
         remote URL to clients, matching the historical behaviour.
@@ -45,7 +45,7 @@ To be released.
     thumbnail URL—useful in combination with `MEDIA_PROXY=proxy` or
     `cache` to free up the disk space the local thumbnails would
     otherwise occupy.  Defaults to `on` (the historical behavior).
-    [[#481]]
+    [[#481], [#483]]
 
  -  Added [FEP-044f] quote authorization and policy support on top of the
     Mastodon-compatible quote APIs.  [[#457], [#459], [#460]]
@@ -199,6 +199,7 @@ To be released.
 [#479]: https://github.com/fedify-dev/hollo/issues/479
 [#481]: https://github.com/fedify-dev/hollo/issues/481
 [#482]: https://github.com/fedify-dev/hollo/pull/482
+[#483]: https://github.com/fedify-dev/hollo/pull/483
 
 
 Version 0.8.4
