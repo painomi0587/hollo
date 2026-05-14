@@ -435,6 +435,7 @@ app.get(
     const accountList = await db.query.accounts.findMany({
       where: or(
         ilike(accounts.handle, `%${query.q}%`),
+        ilike(accounts.handle, `%${handleLookup}%`),
         ilike(accounts.name, `%${query.q}%`),
       ),
       with: { owner: true, successor: true },
