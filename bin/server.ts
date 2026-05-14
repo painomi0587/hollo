@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { serve } from "@hono/node-server";
 import { behindProxy } from "x-forwarded-fetch";
 
+import "../src/logging";
 import { configureSentry } from "../src/sentry";
 
 // oxlint-disable-next-line typescript/dot-notation

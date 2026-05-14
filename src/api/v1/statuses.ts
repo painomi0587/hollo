@@ -1075,6 +1075,7 @@ app.post(
           accountId: owner.id,
           applicationId: token.applicationId,
           replyTargetId: null,
+          quoteTargetId: null,
           sharingId: originalPostId,
           visibility,
           url: url.href,
