@@ -6,12 +6,19 @@ Version 0.8.4
 
 To be released.
 
+ -  Fixed a bug where boosting a quote post would incorrectly copy the
+    `quote_id` to the outer boost wrapper status, causing clients like
+    SubwayTooter to fail to display the quoted post correctly.  The
+    `quote_id` and `quote` fields now only appear inside the inner `reblog`
+    object.  [[#480]]
+
  -  Fixed a bug where no logs were output when running as a worker node
     (`NODE_TYPE=worker`).  The logging system was only initialized when the
     web server started, so worker-only processes ran silently regardless of
     the `LOG_LEVEL` setting.  [[#478]]
 
 [#478]: https://github.com/fedify-dev/hollo/issues/478
+[#480]: https://github.com/fedify-dev/hollo/issues/480
 
 
 Version 0.8.3
