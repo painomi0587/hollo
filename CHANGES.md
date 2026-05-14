@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.8.4
 -------------
 
-To be released.
+Released on May 14, 2026.
 
  -  Fixed a bug where boosting a quote post would incorrectly copy the
     `quote_id` to the outer boost wrapper status, causing clients like
