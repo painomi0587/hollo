@@ -33,6 +33,7 @@ if (handleHostSet !== webOriginSet) {
 // Fedify enforces the same shape when the origin is wired into
 // createFederation, but checking up front gives the operator a clear
 // error pointing at the env variable instead of a downstream TypeError.
+let normalizedWebOrigin: string | undefined;
 if (rawWebOrigin != null && rawWebOrigin !== "") {
   if (!URL.canParse(rawWebOrigin)) {
     throw new Error(
@@ -54,10 +55,13 @@ if (rawWebOrigin != null && rawWebOrigin !== "") {
       "WEB_ORIGIN must be a bare origin (scheme and host only) with no path, query string, or fragment.",
     );
   }
+  // URL.origin yields the canonical form (lowercased host, no trailing
+  // slash), so consumers can rely on a normalized value.
+  normalizedWebOrigin = webOriginUrl.origin;
 }
 
 export const HANDLE_HOST = handleHostSet ? rawHandleHost : undefined;
-export const WEB_ORIGIN = webOriginSet ? rawWebOrigin : undefined;
+export const WEB_ORIGIN = normalizedWebOrigin;
 export const FEDIFY_ORIGIN =
   HANDLE_HOST != null && WEB_ORIGIN != null
     ? { handleHost: HANDLE_HOST, webOrigin: WEB_ORIGIN }
