@@ -53,6 +53,36 @@ export const totps = pgTable("totps", {
 export type Totp = typeof totps.$inferSelect;
 export type NewTotp = typeof totps.$inferInsert;
 
+export const passkeys = pgTable("passkeys", {
+  id: text("id").primaryKey(),
+  credentialEmail: varchar("credential_email", { length: 254 })
+    .notNull()
+    .references(() => credentials.email, { onDelete: "cascade" }),
+  publicKey: text("public_key").notNull(),
+  counter: bigint("counter", { mode: "number" }).notNull(),
+  transports: text("transports")
+    .array()
+    .notNull()
+    .default(sql`(ARRAY[]::text[])`),
+  deviceType: text("device_type").notNull(),
+  backedUp: boolean("backed_up").notNull(),
+  nickname: text("nickname").notNull(),
+  lastUsed: timestamp("last_used", { withTimezone: true }),
+  created: timestamp("created", { withTimezone: true })
+    .notNull()
+    .default(currentTimestamp),
+});
+
+export const passkeyRelations = relations(passkeys, ({ one }) => ({
+  credential: one(credentials, {
+    fields: [passkeys.credentialEmail],
+    references: [credentials.email],
+  }),
+}));
+
+export type Passkey = typeof passkeys.$inferSelect;
+export type NewPasskey = typeof passkeys.$inferInsert;
+
 export const accountTypeEnum = pgEnum("account_type", [
   "Application",
   "Group",
