@@ -16,6 +16,8 @@ services:
       S3_FORCE_PATH_STYLE: "true"
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
+      # MEDIA_PROXY: off                # or "proxy" / "cache" — see docs/install/env
+      # REMOTE_MEDIA_THUMBNAILS: "on"   # set to "off" to skip local thumbnails
     depends_on:
       - postgres
       - minio

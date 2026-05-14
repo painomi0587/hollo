@@ -6,6 +6,42 @@ Version 0.9.0
 
 To be released.
 
+ -  Added a media proxy that re-serves remote avatars, headers, post
+    attachments, custom emojis, and preview-card images from Hollo's own
+    origin.  This sidesteps CORS configurations on remote object stores
+    and prevents the visitor's browser from talking directly to the
+    source server.  Controlled by a new `MEDIA_PROXY` environment
+    variable with three levels:  [[#481]]
+
+     -  `off` (default): the Mastodon API and web UI hand the original
+        remote URL to clients, matching the historical behaviour.
+     -  `proxy`: every remote media URL is rewritten to a signed
+        `/proxy/<sig>/<b64url>` path served by Hollo itself.  The proxy
+        runs SSRF checks on the upstream URL and on every redirect
+        target, allows only image/video/audio Content-Types (image/svg+xml
+        is explicitly blocked to avoid same-origin XSS), caps the body at
+        32 MiB, and serves the response with
+        `Cache-Control: public, max-age=2592000, immutable` and
+        `X-Content-Type-Options: nosniff`.  No on-disk cache.
+     -  `cache`: same URL rewriting, but the streamed body is persisted
+        to the configured storage backend as `proxy/<sha256>.bin`, with
+        a content-type sidecar alongside it at `proxy/<sha256>.json`.
+        Subsequent requests skip the upstream fetch.  The admin
+        dashboard at */thumbnail_cleanup* can purge the cache on demand.
+
+    Outbound federation is unaffected: Hollo still publishes the
+    original remote URLs in ActivityPub `icon`, `image`, `attachment`,
+    and emoji `Tag` references.
+
+ -  Added a `REMOTE_MEDIA_THUMBNAILS` environment variable that controls
+    whether Hollo downloads incoming remote attachments to generate a
+    local WebP thumbnail.  Set to `off` to skip the upstream fetch and
+    Sharp pipeline entirely, storing the remote URL itself as the
+    thumbnail URL — useful in combination with `MEDIA_PROXY=proxy` or
+    `cache` to free up the disk space the local thumbnails would
+    otherwise occupy.  Defaults to `on` (the historical behaviour).
+    [[#481]]
+
  -  Added [FEP-044f] quote authorization and policy support on top of the
     Mastodon-compatible quote APIs.  [[#457], [#459], [#460]]
 
@@ -156,6 +192,7 @@ To be released.
 [#466]: https://github.com/fedify-dev/hollo/pull/466
 [#467]: https://github.com/fedify-dev/hollo/pull/467
 [#479]: https://github.com/fedify-dev/hollo/issues/479
+[#481]: https://github.com/fedify-dev/hollo/issues/481
 [#482]: https://github.com/fedify-dev/hollo/pull/482
 
 
