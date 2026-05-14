@@ -29,6 +29,18 @@ if (handleHostSet !== webOriginSet) {
   );
 }
 
+// Syntax check only; Fedify enforces the stricter shape (http/https scheme,
+// no path/query/fragment) when the origin is wired into createFederation.
+if (
+  rawWebOrigin != null &&
+  rawWebOrigin !== "" &&
+  !URL.canParse(rawWebOrigin)
+) {
+  throw new Error(
+    "WEB_ORIGIN must be a valid URL (e.g. https://ap.example.com).",
+  );
+}
+
 export const HANDLE_HOST = handleHostSet ? rawHandleHost : undefined;
 export const WEB_ORIGIN = webOriginSet ? rawWebOrigin : undefined;
 export const FEDIFY_ORIGIN =
