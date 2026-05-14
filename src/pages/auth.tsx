@@ -489,6 +489,9 @@ async function AuthPage({ totp, tfa, passkeys }: AuthPageProps) {
           </div>
         </form>
       </section>
+
+      <script src="/public/simplewebauthn-browser.umd.js" defer />
+      <script src="/public/passkey.js" defer />
     </DashboardLayout>
   );
 }

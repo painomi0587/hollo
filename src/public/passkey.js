@@ -1,0 +1,132 @@
+// Glue between Hollo's auth/login pages and @simplewebauthn/browser.
+// The library is vendored in simplewebauthn-browser.umd.js (which exposes
+// `window.SimpleWebAuthnBrowser`) and is loaded immediately before this
+// script.  Both are dropped into a page only on the auth dashboard and
+// the public login screen — the rest of the dashboard stays zero-JS.
+//
+// To upgrade the vendored library, run:
+//   cp node_modules/@simplewebauthn/browser/dist/bundle/index.umd.min.js \
+//      src/public/simplewebauthn-browser.umd.js
+"use strict";
+
+(function () {
+  var lib = window.SimpleWebAuthnBrowser;
+  if (lib == null) return;
+
+  function setStatus(el, message, isError) {
+    if (el == null) return;
+    el.textContent = message;
+    el.classList.toggle("text-red-600", Boolean(isError));
+    el.classList.toggle("dark:text-red-400", Boolean(isError));
+  }
+
+  async function postJson(path, body) {
+    var response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: body == null ? "{}" : JSON.stringify(body),
+    });
+    if (!response.ok) {
+      var detail;
+      try {
+        detail = await response.json();
+      } catch (_err) {
+        detail = null;
+      }
+      var error = new Error(
+        (detail && detail.error) ||
+          "Request failed with status " + response.status,
+      );
+      error.status = response.status;
+      throw error;
+    }
+    // 204 No Content (used by the registration-finish endpoint on success)
+    // has an empty body and would throw if we asked for JSON.
+    if (response.status === 204) return null;
+    var len = response.headers.get("Content-Length");
+    if (len === "0") return null;
+    return response.json();
+  }
+
+  function bindEnroll(form) {
+    if (form == null) return;
+    var status = document.getElementById("passkey-enroll-status");
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var nicknameInput = form.querySelector('input[name="nickname"]');
+      var nickname = nicknameInput ? nicknameInput.value.trim() : "";
+      var submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      setStatus(status, "Follow the prompts on your device…", false);
+      (async function () {
+        try {
+          var options = await postJson("/auth/passkeys/registration/begin");
+          var registrationResponse = await lib.startRegistration({
+            optionsJSON: options,
+          });
+          await postJson("/auth/passkeys/registration/finish", {
+            nickname: nickname,
+            registrationResponse: registrationResponse,
+          });
+          setStatus(status, "Passkey added.", false);
+          window.location.reload();
+        } catch (err) {
+          var name = err && err.name ? err.name : "";
+          var message =
+            name === "NotAllowedError"
+              ? "Enrollment was cancelled."
+              : err && err.message
+                ? err.message
+                : "Could not enroll a passkey.";
+          setStatus(status, message, true);
+          if (submitButton) submitButton.disabled = false;
+        }
+      })();
+    });
+  }
+
+  function bindSignIn(button) {
+    if (button == null) return;
+    var status = document.getElementById("passkey-signin-status");
+    button.addEventListener("click", function () {
+      var next = button.getAttribute("data-next") || "";
+      button.disabled = true;
+      setStatus(status, "Choose a passkey on your device…", false);
+      (async function () {
+        try {
+          var options = await postJson("/login/passkey/begin");
+          var authenticationResponse = await lib.startAuthentication({
+            optionsJSON: options,
+          });
+          var result = await postJson("/login/passkey/finish", {
+            next: next,
+            authenticationResponse: authenticationResponse,
+          });
+          window.location.assign(result.redirect || "/");
+        } catch (err) {
+          var name = err && err.name ? err.name : "";
+          var message =
+            name === "NotAllowedError"
+              ? "Sign-in was cancelled."
+              : err && err.message
+                ? err.message
+                : "Could not sign in with a passkey.";
+          setStatus(status, message, true);
+          button.disabled = false;
+        }
+      })();
+    });
+  }
+
+  function init() {
+    bindEnroll(document.getElementById("passkey-enroll-form"));
+    bindSignIn(document.getElementById("passkey-signin-button"));
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();

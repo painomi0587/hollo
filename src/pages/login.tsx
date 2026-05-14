@@ -156,6 +156,12 @@ function LoginPage(props: LoginPageProps) {
           />
         )}
       </AuthCard>
+      {props.passkeyEnrolled && (
+        <>
+          <script src="/public/simplewebauthn-browser.umd.js" defer />
+          <script src="/public/passkey.js" defer />
+        </>
+      )}
     </Layout>
   );
 }
