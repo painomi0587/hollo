@@ -1,0 +1,177 @@
+---
+title: Split-domain WebFinger
+description: Run Hollo at one domain while addressing accounts under another.
+---
+
+import { Aside, Code, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Hollo supports a *split-domain WebFinger* setup: your fediverse handles
+live under one domain (e.g. `@alice@example.com`) while the actual
+ActivityPub server runs under another (e.g. `https://ap.example.com`).
+This is the same pattern Mastodon documents under "[hosting WebFinger
+at the root domain][mastodon-webfinger]" and that GoToSocial calls
+*host-meta*-based host swapping.
+
+This is implemented on top of [Fedify's `origin` configuration option].
+
+[mastodon-webfinger]: https://docs.joinmastodon.org/admin/config/#web_domain
+[Fedify's `origin` configuration option]: https://fedify.dev/manual/federation#separating-webfinger-host-from-the-server-origin
+
+
+Why split the domain?
+---------------------
+
+The typical reason is that you already own a nice short domain
+(`example.com`) and want your handles to look like
+`@alice@example.com`, but you don't want to host Hollo at the apex of
+that domain — the apex is reserved for a homepage, a different web app,
+or an existing service.
+
+In a split-domain setup:
+
+ -  Users address you as `@alice@example.com` everywhere in the
+    fediverse.
+ -  Hollo itself is served from `https://ap.example.com`.  The web
+    UI, the Mastodon-compatible API, OAuth, and the actor URIs all
+    live there.
+ -  The apex domain `example.com` only needs to handle one thing:
+    redirecting `/.well-known/webfinger` requests over to
+    `ap.example.com`.
+
+<Aside type="caution">
+  Pick the handle domain carefully — you can't change it after
+  federation has begun without breaking every remote follow.  See the
+  warning at the bottom of this page.
+</Aside>
+
+
+Configuration
+-------------
+
+Set both of these environment variables on your Hollo instance:
+
+ -  [`HANDLE_HOST`](/install/env/#handle_host) — the bare hostname
+    used in handles (no scheme, no path), e.g. `example.com`.
+ -  [`WEB_ORIGIN`](/install/env/#web_origin) — the scheme + host
+    where Hollo runs, e.g. `https://ap.example.com`.
+
+Both must be set together; setting only one causes Hollo to refuse to
+start.
+
+~~~~ env
+HANDLE_HOST=example.com
+WEB_ORIGIN=https://ap.example.com
+~~~~
+
+With this in place, Fedify takes care of the rest:
+
+ -  WebFinger responses use `acct:alice@example.com` as the subject.
+ -  Actor URIs are built under `https://ap.example.com/@alice`.
+ -  The Mastodon-compatible `/api/v1/instance` and `/api/v2/instance`
+    endpoints report `example.com` as the instance domain, so clients
+    display the correct handle.
+
+
+Reverse proxy redirect
+----------------------
+
+Hollo itself only listens on the `WEB_ORIGIN` host.  Remote servers
+that look up `@alice@example.com` will send their WebFinger query to
+`https://example.com/.well-known/webfinger`, so you must configure
+that domain's reverse proxy to redirect those requests to Hollo.
+
+A 301 redirect that preserves the query string is enough.  Send
+`/.well-known/nodeinfo` and `/.well-known/host-meta` along as well,
+since some implementations probe those during discovery.
+
+<Tabs>
+  <TabItem label="nginx">
+~~~~ nginx
+server {
+  listen 443 ssl;
+  server_name example.com;
+  # … your normal site config …
+
+  location /.well-known/webfinger {
+    return 301 https://ap.example.com$request_uri;
+  }
+  location /.well-known/nodeinfo {
+    return 301 https://ap.example.com$request_uri;
+  }
+  location /.well-known/host-meta {
+    return 301 https://ap.example.com$request_uri;
+  }
+}
+~~~~
+  </TabItem>
+  <TabItem label="Caddy">
+~~~~ caddy
+example.com {
+  # … your normal site config …
+
+  redir /.well-known/webfinger* https://ap.example.com{uri} permanent
+  redir /.well-known/nodeinfo*  https://ap.example.com{uri} permanent
+  redir /.well-known/host-meta* https://ap.example.com{uri} permanent
+}
+~~~~
+  </TabItem>
+</Tabs>
+
+You do **not** need to redirect the `/@username` path or any actor
+URLs — those URLs live on `ap.example.com` and remote servers will go
+straight there after resolving the WebFinger response.
+
+
+Verifying the setup
+-------------------
+
+After deploying, three quick checks confirm everything is wired up:
+
+ 1.  WebFinger from the handle domain redirects:
+
+     ~~~~ sh frame="none"
+     curl -i "https://example.com/.well-known/webfinger?resource=acct:alice@example.com"
+     ~~~~
+
+     should return a 301 to `https://ap.example.com/.well-known/webfinger?...`.
+
+ 2.  WebFinger from the server domain responds:
+
+     ~~~~ sh frame="none"
+     curl "https://ap.example.com/.well-known/webfinger?resource=acct:alice@example.com"
+     ~~~~
+
+     should return a JRD whose `subject` is `acct:alice@example.com`
+     and whose `self` link points at `https://ap.example.com/@alice`.
+
+ 3.  The instance endpoint reports the handle domain:
+
+     ~~~~ sh frame="none"
+     curl https://ap.example.com/api/v2/instance | jq .domain
+     ~~~~
+
+     should print `"example.com"`.
+
+For a more thorough audit, point Julian Fietkau's [WebFinger Canary]
+at your handle domain.  Mastodon and Fedify-based servers handle
+split-domain setups correctly today; Misskey and Pixelfed currently
+do not.
+
+[WebFinger Canary]: https://correct.webfinger-canary.fietkau.software/
+
+
+<Aside type="danger">
+  **Configure `HANDLE_HOST` and `WEB_ORIGIN` before creating your
+  first account.**
+
+  Hollo stores each local account's full `@user@host` handle in the
+  database when the account is created.  Other ActivityPub
+  implementations also cache your handle on first contact.  Changing
+  the handle domain later means your existing followers can no longer
+  resolve you, and there is no migration path that keeps existing
+  follow relationships intact.
+
+  On startup, Hollo logs a warning if `HANDLE_HOST` disagrees with the
+  stored handle of the existing account.  Treat that warning as a
+  problem to investigate before continuing to run the instance.
+</Aside>

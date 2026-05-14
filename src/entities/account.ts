@@ -1,3 +1,4 @@
+import { getInstanceHost } from "../instance-host";
 import { proxyUrl } from "../media-proxy";
 import type { Account, AccountOwner, Block, Follow, Mute } from "../schema";
 import type { Uuid } from "../uuid";
@@ -19,7 +20,7 @@ export function serializeAccount(
     baseUrl,
   ).href;
   let acct = account.handle.replace(/^@/, "");
-  if (acct.endsWith(`@${baseUrl.host}`)) {
+  if (acct.endsWith(`@${getInstanceHost(baseUrl)}`)) {
     acct = acct.replace(/@[^@]+$/, "");
   }
   const avatar = proxyUrl(account.avatarUrl, baseUrl) ?? defaultAvatarUrl;

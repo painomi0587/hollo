@@ -39,6 +39,7 @@ import {
   REMOTE_ACTOR_FETCH_POSTS,
   unfollowAccount,
 } from "../../federation/account";
+import { normalizeHandleForLookup } from "../../instance-host";
 import {
   scopeRequired,
   tokenRequired,
@@ -335,7 +336,10 @@ app.get(
   ),
   async (c) => {
     const query = c.req.valid("query");
-    const acct = query.acct;
+    const handleLookup = normalizeHandleForLookup(
+      query.acct,
+      new URL(c.req.url),
+    );
     let account:
       | (Account & {
           owner: AccountOwner | null;
@@ -343,12 +347,7 @@ app.get(
         })
       | null =
       (await db.query.accounts.findFirst({
-        where: eq(
-          accounts.handle,
-          acct.includes("@")
-            ? `@${acct}`
-            : `@${acct}@${new URL(c.req.url).host}`,
-        ),
+        where: eq(accounts.handle, handleLookup),
         with: { owner: true, successor: true },
       })) ?? null;
     if (account == null) {
@@ -357,7 +356,7 @@ app.get(
       }
       const fedCtx = federation.createContext(c.req.raw, undefined);
       const options = fedCtx;
-      const actor = await lookupObject(acct, options);
+      const actor = await lookupObject(normalizeHandle(query.acct), options);
       if (!isActor(actor)) return c.json({ error: "Record not found" }, 404);
       const loaded = await persistAccount(db, actor, c.req.url, options);
       if (loaded != null) {
@@ -383,7 +382,7 @@ app.get(
   },
 );
 
-import { HANDLE_PATTERN } from "../../patterns";
+import { HANDLE_PATTERN, normalizeHandle } from "../../patterns";
 
 app.get(
   "/search",
@@ -413,9 +412,13 @@ app.get(
   ),
   async (c) => {
     const query = c.req.valid("query");
+    const requestUrl = new URL(c.req.url);
+    const handleLookup = HANDLE_PATTERN.test(query.q)
+      ? normalizeHandleForLookup(query.q, requestUrl)
+      : `@${normalizeHandle(query.q)}`;
     if (query.resolve && HANDLE_PATTERN.test(query.q) && query.offset < 1) {
       const exactMatch = await db.query.accounts.findFirst({
-        where: ilike(accounts.handle, `@${query.q.replace(/^@/, "")}`),
+        where: ilike(accounts.handle, handleLookup),
       });
       if (exactMatch != null) {
         const fedCtx = federation.createContext(c.req.raw, undefined);
@@ -432,13 +435,14 @@ app.get(
     const accountList = await db.query.accounts.findMany({
       where: or(
         ilike(accounts.handle, `%${query.q}%`),
+        ilike(accounts.handle, `%${handleLookup}%`),
         ilike(accounts.name, `%${query.q}%`),
       ),
       with: { owner: true, successor: true },
       orderBy: [
-        desc(ilike(accounts.handle, `@${query.q.replace(/^@/, "")}`)),
+        desc(ilike(accounts.handle, handleLookup)),
         desc(ilike(accounts.name, query.q)),
-        desc(ilike(accounts.handle, `@${query.q.replace(/^@/, "")}%`)),
+        desc(ilike(accounts.handle, `${handleLookup}%`)),
         desc(ilike(accounts.name, `${query.q}%`)),
       ],
       offset: query.offset,

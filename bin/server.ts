@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { behindProxy } from "x-forwarded-fetch";
 
 import "../src/logging";
+import { checkHandleHostConsistency } from "../src/handle-host-check";
 import { configureSentry } from "../src/sentry";
 
 // oxlint-disable-next-line typescript/dot-notation
@@ -39,6 +40,9 @@ if (!["all", "web", "worker"].includes(NODE_TYPE)) {
   );
   process.exit(1);
 }
+
+// Warn if the configured HANDLE_HOST disagrees with an existing account.
+await checkHandleHostConsistency();
 
 // Start web server if running as web or all node
 if (NODE_TYPE === "web" || NODE_TYPE === "all") {

@@ -109,6 +109,15 @@ export default defineConfig({
               slug: "install/workers",
             },
             {
+              label: "Split-domain WebFinger",
+              translations: {
+                ko: "도메인 분리 WebFinger",
+                ja: "ドメイン分離 WebFinger",
+                "zh-CN": "分域 WebFinger",
+              },
+              slug: "install/split-domain",
+            },
+            {
               label: "Setting up",
               translations: {
                 ko: "설정하기",

@@ -428,6 +428,8 @@ STORAGE_URL_BASE=https://your-bucket.s3.amazonaws.com
 | `REMOTE_REPLIES_SCRAPE_COOLDOWN_SECONDS` | 300     | Completed scrape deduplication window    |
 | `MEDIA_PROXY`                            | off     | Remote media proxy: `off`, `proxy`, `cache` (booleans accepted: `true`→`proxy`, `false`→`off`) |
 | `REMOTE_MEDIA_THUMBNAILS`                | on      | Generate local sharp thumbnails for remote attachments (boolean) |
+| `HANDLE_HOST`                            | -       | Split-domain WebFinger handle host (e.g. `example.com`); must be set together with `WEB_ORIGIN` |
+| `WEB_ORIGIN`                             | -       | Split-domain ActivityPub server origin (e.g. `https://ap.example.com`); must be set together with `HANDLE_HOST` |
 
 
 Adding new environment variables

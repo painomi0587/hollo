@@ -6,6 +6,24 @@ Version 0.9.0
 
 To be released.
 
+ -  Added optional split-domain WebFinger support.  When the new
+    `HANDLE_HOST` and `WEB_ORIGIN` environment variables are set,
+    Hollo uses Fedify's `origin` configuration so that fediverse
+    handles (e.g. `@alice@example.com`) and ActivityPub actor URIs
+    (e.g. `https://ap.example.com/@alice`) can live on different
+    domains.  The Mastodon-compatible `/api/v1/instance` and
+    `/api/v2/instance` endpoints expose `HANDLE_HOST` as the instance
+    domain when this is configured, so clients display the correct
+    `@user@HANDLE_HOST` handle.  Both variables must be set together;
+    setting only one is a startup error.  They must be configured
+    *before* the first account is created — changing the handle
+    domain after federation has begun breaks remote follow
+    relationships; on startup Hollo logs a warning when the
+    configured `HANDLE_HOST` does not match the existing account's
+    stored handle.  Operators must also configure their reverse
+    proxy on the handle domain to redirect `/.well-known/webfinger`
+    to `WEB_ORIGIN`.  See the [Split-domain WebFinger guide].  [[#161], [#484]]
+
  -  Added a media proxy that re-serves remote avatars, headers, post
     attachments, custom emojis, and preview-card images from Hollo's own
     origin.  This sidesteps CORS configurations on remote object stores
@@ -187,6 +205,8 @@ To be released.
  -  Upgraded Fedify to 2.2.1.
 
 [FEP-044f]: https://w3id.org/fep/044f
+[Split-domain WebFinger guide]: https://docs.hollo.social/install/split-domain/
+[#161]: https://github.com/fedify-dev/hollo/issues/161
 [@hollo@hollo.social]: https://hollo.social/@hollo
 [#67]: https://github.com/fedify-dev/hollo/issues/67
 [#127]: https://github.com/fedify-dev/hollo/issues/127
@@ -200,6 +220,7 @@ To be released.
 [#481]: https://github.com/fedify-dev/hollo/issues/481
 [#482]: https://github.com/fedify-dev/hollo/pull/482
 [#483]: https://github.com/fedify-dev/hollo/pull/483
+[#484]: https://github.com/fedify-dev/hollo/pull/484
 
 
 Version 0.8.4
