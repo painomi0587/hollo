@@ -1,8 +1,10 @@
 import { HANDLE_HOST, WEB_ORIGIN } from "./env";
 import { normalizeHandle } from "./patterns";
 
+// Use hostname (not host) so a non-default port on WEB_ORIGIN doesn't end
+// up in the comparison value; fediverse handles never carry ports.
 const WEB_ORIGIN_HOST =
-  WEB_ORIGIN != null ? new URL(WEB_ORIGIN).host.toLowerCase() : undefined;
+  WEB_ORIGIN != null ? new URL(WEB_ORIGIN).hostname.toLowerCase() : undefined;
 
 export function getInstanceHost(fallback: URL | string): string {
   if (HANDLE_HOST != null) return HANDLE_HOST;
@@ -11,7 +13,9 @@ export function getInstanceHost(fallback: URL | string): string {
 
 export function isLocalHost(host: string, requestUrl: URL): boolean {
   const lower = host.toLowerCase();
-  if (lower === requestUrl.host.toLowerCase()) return true;
+  // Compare against hostname (not host) so a non-default port on the
+  // request URL doesn't make a local handle look remote.
+  if (lower === requestUrl.hostname.toLowerCase()) return true;
   if (HANDLE_HOST != null && lower === HANDLE_HOST) return true;
   if (WEB_ORIGIN_HOST != null && lower === WEB_ORIGIN_HOST) return true;
   return false;
