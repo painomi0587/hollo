@@ -35,6 +35,7 @@ import {
   REMOTE_ACTOR_FETCH_POSTS,
   unfollowAccount,
 } from "../federation/account.ts";
+import { getInstanceHost } from "../instance-host.ts";
 import { loginRequired } from "../login.ts";
 import {
   type Account,
@@ -163,7 +164,7 @@ accounts.post("/", async (c) => {
               : undefined,
         }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
-        host={new URL(c.req.url).host}
+        host={getInstanceHost(new URL(c.req.url))}
       />,
       400,
     );
@@ -190,7 +191,7 @@ accounts.post("/", async (c) => {
         }}
         errors={{ avatar: "Avatar must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
-        host={new URL(c.req.url).host}
+        host={getInstanceHost(new URL(c.req.url))}
       />,
       400,
     );
@@ -217,7 +218,7 @@ accounts.post("/", async (c) => {
         }}
         errors={{ header: "Header image must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
-        host={new URL(c.req.url).host}
+        host={getInstanceHost(new URL(c.req.url))}
       />,
       400,
     );
@@ -269,11 +270,12 @@ accounts.post("/", async (c) => {
         uploadedPaths.push(result.path);
       }
     }
+    const handleHost = getInstanceHost(fedCtx.host);
     dbResult = await db.transaction(async (tx) => {
       await tx
         .insert(instances)
         .values({
-          host: fedCtx.host,
+          host: handleHost,
           software: "hollo",
           softwareVersion: null,
         })
@@ -283,11 +285,11 @@ accounts.post("/", async (c) => {
         .values({
           id: accountId,
           iri: fedCtx.getActorUri(username).href,
-          instanceHost: fedCtx.host,
+          instanceHost: handleHost,
           type: "Person",
           name,
           emojis,
-          handle: `@${username}@${fedCtx.host}`,
+          handle: `@${username}@${handleHost}`,
           bioHtml: bioResult.html,
           url: fedCtx.getActorUri(username).href,
           protected: protected_,
@@ -399,7 +401,7 @@ accounts.get("/new", (c) => {
         expandSpoilers: false,
       }}
       officialAccount={HOLLO_OFFICIAL_ACCOUNT}
-      host={new URL(c.req.url).host}
+      host={getInstanceHost(new URL(c.req.url))}
     />,
   );
 });
@@ -429,7 +431,7 @@ accounts.get("/:id", async (c) => {
       accountOwner={accountOwner}
       news={news != null}
       officialAccount={HOLLO_OFFICIAL_ACCOUNT}
-      host={new URL(c.req.url).host}
+      host={getInstanceHost(new URL(c.req.url))}
     />,
   );
 });
@@ -549,7 +551,7 @@ accounts.post("/:id", async (c) => {
           name: name == null || name === "" ? "Display name is required." : "",
         }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
-        host={new URL(c.req.url).host}
+        host={getInstanceHost(new URL(c.req.url))}
       />,
       400,
     );
@@ -579,7 +581,7 @@ accounts.post("/:id", async (c) => {
         }}
         errors={{ avatar: "Avatar must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
-        host={new URL(c.req.url).host}
+        host={getInstanceHost(new URL(c.req.url))}
       />,
       400,
     );
@@ -609,7 +611,7 @@ accounts.post("/:id", async (c) => {
         }}
         errors={{ header: "Header image must be a JPEG, PNG, or GIF." }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
-        host={new URL(c.req.url).host}
+        host={getInstanceHost(new URL(c.req.url))}
       />,
       400,
     );

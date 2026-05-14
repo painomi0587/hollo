@@ -4,12 +4,14 @@ import { Hono } from "hono";
 import metadata from "../../../package.json" with { type: "json" };
 import { db } from "../../db";
 import { serializeAccountOwner } from "../../entities/account";
+import { getInstanceHost } from "../../instance-host";
 import { accountOwners, posts } from "../../schema";
 
 const app = new Hono();
 
 app.get("/", async (c) => {
   const url = new URL(c.req.url);
+  const instanceHost = getInstanceHost(url);
   const credential = await db.query.credentials.findFirst();
   if (credential == null) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
@@ -34,11 +36,11 @@ app.get("/", async (c) => {
     api_versions: {
       mastodon: 7,
     },
-    domain: url.host,
-    title: url.host,
+    domain: instanceHost,
+    title: instanceHost,
     version: metadata.version,
     source_url: "https://github.com/fedify-dev/hollo",
-    description: `A Hollo instance at ${url.host}`,
+    description: `A Hollo instance at ${instanceHost}`,
     usage: {
       users: {
         // TODO: Track active users in the past 4 weeks

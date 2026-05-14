@@ -14,3 +14,24 @@ if (secretKey.length < SECRET_KEY_MINIMUM_LENGTH) {
 }
 
 export const SECRET_KEY = secretKey;
+
+// oxlint-disable-next-line typescript/dot-notation
+const rawHandleHost = process.env["HANDLE_HOST"]?.trim().toLowerCase();
+// oxlint-disable-next-line typescript/dot-notation
+const rawWebOrigin = process.env["WEB_ORIGIN"]?.trim().replace(/\/+$/, "");
+
+const handleHostSet = rawHandleHost != null && rawHandleHost !== "";
+const webOriginSet = rawWebOrigin != null && rawWebOrigin !== "";
+
+if (handleHostSet !== webOriginSet) {
+  throw new Error(
+    "HANDLE_HOST and WEB_ORIGIN must be set together (or both unset).",
+  );
+}
+
+export const HANDLE_HOST = handleHostSet ? rawHandleHost : undefined;
+export const WEB_ORIGIN = webOriginSet ? rawWebOrigin : undefined;
+export const FEDIFY_ORIGIN =
+  HANDLE_HOST != null && WEB_ORIGIN != null
+    ? { handleHost: HANDLE_HOST, webOrigin: WEB_ORIGIN }
+    : undefined;

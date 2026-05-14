@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { Layout } from "../../components/Layout.tsx";
 import { renderCustomEmojis } from "../../custom-emoji.ts";
 import db from "../../db.ts";
+import { getInstanceHost } from "../../instance-host.ts";
 import { proxyUrl } from "../../media-proxy.ts";
 
 const homePage = new Hono().basePath("/");
@@ -25,7 +26,7 @@ homePage.get("/", async (c) => {
     // oxlint-disable-next-line typescript/dot-notation
     return c.redirect(process.env["HOME_URL"]);
   }
-  const host = new URL(c.req.url).host;
+  const host = getInstanceHost(new URL(c.req.url));
   const themeColor = owners[0]?.themeColor;
   return c.html(
     <Layout title={host} themeColor={themeColor}>

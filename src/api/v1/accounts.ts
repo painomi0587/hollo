@@ -39,6 +39,7 @@ import {
   REMOTE_ACTOR_FETCH_POSTS,
   unfollowAccount,
 } from "../../federation/account";
+import { getInstanceHost } from "../../instance-host";
 import {
   scopeRequired,
   tokenRequired,
@@ -347,7 +348,7 @@ app.get(
           accounts.handle,
           acct.includes("@")
             ? `@${acct}`
-            : `@${acct}@${new URL(c.req.url).host}`,
+            : `@${acct}@${getInstanceHost(new URL(c.req.url))}`,
         ),
         with: { owner: true, successor: true },
       })) ?? null;
