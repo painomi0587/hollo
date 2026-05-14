@@ -29,16 +29,31 @@ if (handleHostSet !== webOriginSet) {
   );
 }
 
-// Syntax check only; Fedify enforces the stricter shape (http/https scheme,
-// no path/query/fragment) when the origin is wired into createFederation.
-if (
-  rawWebOrigin != null &&
-  rawWebOrigin !== "" &&
-  !URL.canParse(rawWebOrigin)
-) {
-  throw new Error(
-    "WEB_ORIGIN must be a valid URL (e.g. https://ap.example.com).",
-  );
+// Syntax-level checks only; we don't resolve DNS or contact the host.
+// Fedify enforces the same shape when the origin is wired into
+// createFederation, but checking up front gives the operator a clear
+// error pointing at the env variable instead of a downstream TypeError.
+if (rawWebOrigin != null && rawWebOrigin !== "") {
+  if (!URL.canParse(rawWebOrigin)) {
+    throw new Error(
+      "WEB_ORIGIN must be a valid URL (e.g. https://ap.example.com).",
+    );
+  }
+  const webOriginUrl = new URL(rawWebOrigin);
+  if (webOriginUrl.protocol !== "http:" && webOriginUrl.protocol !== "https:") {
+    throw new Error(
+      "WEB_ORIGIN must use the http or https scheme (e.g. https://ap.example.com).",
+    );
+  }
+  if (
+    (webOriginUrl.pathname !== "/" && webOriginUrl.pathname !== "") ||
+    webOriginUrl.search !== "" ||
+    webOriginUrl.hash !== ""
+  ) {
+    throw new Error(
+      "WEB_ORIGIN must be a bare origin (scheme and host only) with no path, query string, or fragment.",
+    );
+  }
 }
 
 export const HANDLE_HOST = handleHostSet ? rawHandleHost : undefined;
