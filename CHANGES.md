@@ -6,6 +6,13 @@ Version 0.8.4
 
 To be released.
 
+ -  Fixed a bug where no logs were output when running as a worker node
+    (`NODE_TYPE=worker`).  The logging system was only initialized when the
+    web server started, so worker-only processes ran silently regardless of
+    the `LOG_LEVEL` setting.  [[#478]]
+
+[#478]: https://github.com/fedify-dev/hollo/issues/478
+
 
 Version 0.8.3
 -------------
