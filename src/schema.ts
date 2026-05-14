@@ -83,6 +83,29 @@ export const passkeyRelations = relations(passkeys, ({ one }) => ({
 export type Passkey = typeof passkeys.$inferSelect;
 export type NewPasskey = typeof passkeys.$inferInsert;
 
+// One row per in-flight passkey *login* ceremony.  The signed cookie sent
+// to the browser holds just `id`; the actual WebAuthn challenge lives
+// here so /finish can atomically `DELETE … WHERE id AND expires_at > now()
+// RETURNING challenge`, making a captured cookie + assertion pair good
+// for at most one /finish call even within the TTL.  Registration is
+// already bound to the logged-in session, so it doesn't need this.
+export const passkeyLoginChallenges = pgTable(
+  "passkey_login_challenges",
+  {
+    id: text("id").primaryKey(),
+    challenge: text("challenge").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [index().on(table.expiresAt)],
+);
+
+export type PasskeyLoginChallenge = typeof passkeyLoginChallenges.$inferSelect;
+export type NewPasskeyLoginChallenge =
+  typeof passkeyLoginChallenges.$inferInsert;
+
 export const accountTypeEnum = pgEnum("account_type", [
   "Application",
   "Group",

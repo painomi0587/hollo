@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 import { zValidator } from "@hono/zod-validator";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
 import { z } from "zod";
@@ -14,7 +16,7 @@ import {
   getRpInfo,
   verifyAuthentication,
 } from "../passkey.ts";
-import { credentials, passkeys } from "../schema.ts";
+import { credentials, passkeyLoginChallenges, passkeys } from "../schema.ts";
 
 // oxlint-disable-next-line typescript/dot-notation
 const SECRET_KEY = process.env["SECRET_KEY"];
@@ -236,13 +238,22 @@ function OtpPage(props: OtpPageProps) {
 login.post("/passkey/begin", async (c) => {
   const rpInfo = getRpInfo(c.req.url);
   const { options, challenge } = await buildAuthenticationOptions({ rpInfo });
-  const expiresAt = Date.now() + PASSKEY_LOGIN_MAX_AGE_SECONDS * 1000;
-  // Bind a server-side expiry into the signed cookie so a captured value
-  // can't be replayed after the TTL even though Max-Age is just a browser
-  // hint.  Pipe isn't part of the base64url alphabet, so it's a safe
-  // separator from the challenge.
-  const value = `${challenge}|${expiresAt.toString()}`;
-  await setSignedCookie(c, PASSKEY_LOGIN_COOKIE, value, SECRET_KEY, {
+  // Opportunistically GC expired rows so the table never grows unbounded
+  // even though Hollo doesn't run a separate cleanup worker for it.
+  await db
+    .delete(passkeyLoginChallenges)
+    .where(lt(passkeyLoginChallenges.expiresAt, new Date()));
+  const id = randomUUID();
+  const expiresAt = new Date(Date.now() + PASSKEY_LOGIN_MAX_AGE_SECONDS * 1000);
+  await db.insert(passkeyLoginChallenges).values({
+    id,
+    challenge,
+    expiresAt,
+  });
+  // The cookie only carries the row id — the challenge itself never
+  // leaves the server.  /finish does the atomic consume so a captured
+  // cookie + assertion pair is good for at most one request.
+  await setSignedCookie(c, PASSKEY_LOGIN_COOKIE, id, SECRET_KEY, {
     httpOnly: true,
     secure: rpInfo.origin.startsWith("https://"),
     sameSite: "Strict",
@@ -270,21 +281,29 @@ const passkeyFinishSchema = z.object({
 });
 
 login.post("/passkey/finish", async (c) => {
-  // Read and consume the transient cookie before *any* other parsing so a
-  // malformed body or signature-failure still burns the cookie — preventing
-  // replay of the captured value against a freshly-crafted assertion.
-  const cookieValue = await getSignedCookie(
-    c,
-    SECRET_KEY,
-    PASSKEY_LOGIN_COOKIE,
-  );
+  // Read the cookie and clear the browser-side copy up front, then
+  // atomically consume the matching server-side row.  Whichever path
+  // we leave on, the challenge can only be redeemed once.
+  const cookieId = await getSignedCookie(c, SECRET_KEY, PASSKEY_LOGIN_COOKIE);
   deleteCookie(c, PASSKEY_LOGIN_COOKIE, { path: "/login/passkey" });
-  if (cookieValue == null || cookieValue === false) {
+  if (cookieId == null || cookieId === false) {
     return c.json({ error: "Missing or invalid challenge cookie." }, 400);
   }
-  const [challenge, expiresAtStr] = cookieValue.split("|", 2);
-  const expiresAt = Number.parseInt(expiresAtStr ?? "", 10);
-  if (!challenge || !Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+  const consumed = await db
+    .delete(passkeyLoginChallenges)
+    .where(eq(passkeyLoginChallenges.id, cookieId))
+    .returning({
+      challenge: passkeyLoginChallenges.challenge,
+      expiresAt: passkeyLoginChallenges.expiresAt,
+    });
+  if (consumed.length === 0) {
+    return c.json(
+      { error: "Challenge has already been used or never existed." },
+      400,
+    );
+  }
+  const { challenge, expiresAt } = consumed[0];
+  if (expiresAt.getTime() < Date.now()) {
     return c.json({ error: "Challenge has expired." }, 400);
   }
 

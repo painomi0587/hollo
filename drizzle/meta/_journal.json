@@ -624,6 +624,13 @@
       "when": 1778782509038,
       "tag": "0088_passkeys",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1778802075419,
+      "tag": "0089_passkey_login_challenges",
+      "breakpoints": true
     }
   ]
 }

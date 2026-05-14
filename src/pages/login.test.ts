@@ -43,7 +43,11 @@ async function seedPasskey(id = "cred-id-login"): Promise<void> {
 describe("login passkeys", () => {
   beforeEach(async () => {
     await cleanDatabase();
-    vi.mocked(mockVerifyAuthentication).mockClear();
+    // mockReset() (not just mockClear) drops any queued
+    // mockResolvedValueOnce / mockImplementationOnce stacks left over
+    // from a prior test — otherwise a follow-up test could pick up the
+    // wrong one-shot return value.
+    vi.mocked(mockVerifyAuthentication).mockReset();
   });
 
   describe("GET /login", () => {
@@ -261,6 +265,69 @@ describe("login passkeys", () => {
       });
       expect(row?.counter).toBe(5);
       expect(row?.lastUsed).toBeNull();
+    });
+
+    it("rejects a replayed cookie + assertion pair (single-use challenge)", async () => {
+      await seedCredential();
+      await seedPasskey();
+
+      const beginResponse = await app.request(
+        "http://hollo.test/login/passkey/begin",
+        { method: "POST" },
+      );
+      const challengeCookie =
+        beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+
+      const finishBody = JSON.stringify({
+        authenticationResponse: {
+          id: "cred-id-login",
+          rawId: "cred-id-login",
+          type: "public-key",
+          clientExtensionResults: {},
+          response: {
+            clientDataJSON: "",
+            authenticatorData: "",
+            signature: "",
+          },
+        },
+      });
+
+      // First /finish: valid assertion + cookie → 200.
+      vi.mocked(mockVerifyAuthentication).mockResolvedValueOnce({
+        newCounter: 12,
+      });
+      const first = await app.request(
+        "http://hollo.test/login/passkey/finish",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: challengeCookie,
+          },
+          body: finishBody,
+        },
+      );
+      expect(first.status).toBe(200);
+
+      // Second /finish with the same captured cookie: even within the
+      // TTL it must be rejected because the server-side row was consumed.
+      vi.mocked(mockVerifyAuthentication).mockResolvedValueOnce({
+        newCounter: 13,
+      });
+      const second = await app.request(
+        "http://hollo.test/login/passkey/finish",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: challengeCookie,
+          },
+          body: finishBody,
+        },
+      );
+      expect(second.status).toBe(400);
+      // verifyAuthentication must not even be called on the replay.
+      expect(mockVerifyAuthentication).toHaveBeenCalledTimes(1);
     });
 
     it("returns 409 when a concurrent assertion has already advanced the counter", async () => {
