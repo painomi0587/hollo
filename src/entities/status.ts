@@ -1,6 +1,7 @@
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { stripQuoteInlineFallbacks } from "../html";
+import { proxyUrl } from "../media-proxy";
 import type { PreviewCard } from "../previewcard";
 import {
   type Account,
@@ -425,7 +426,9 @@ export function serializePost(
             website: post.application.website,
           },
     account: serializeAccount(post.account, baseUrl),
-    media_attachments: post.media.map(serializeMedium),
+    media_attachments: post.media.map((medium) =>
+      serializeMedium(medium, baseUrl),
+    ),
     mentions: post.mentions.map((mention) => ({
       id: mention.accountId,
       username: mention.account.handle.replaceAll(/(?:^@)|(?:@[^@]+$)/g, ""),
@@ -440,9 +443,15 @@ export function serializePost(
       url,
     })),
     card:
-      post.previewCard == null ? null : serializePreviewCard(post.previewCard),
-    emojis: serializeEmojis(post.emojis),
-    emoji_reactions: serializeReactions(post.reactions, currentAccountOwner),
+      post.previewCard == null
+        ? null
+        : serializePreviewCard(post.previewCard, baseUrl),
+    emojis: serializeEmojis(post.emojis, baseUrl),
+    emoji_reactions: serializeReactions(
+      post.reactions,
+      currentAccountOwner,
+      baseUrl,
+    ),
     poll:
       post.poll == null ? null : serializePoll(post.poll, currentAccountOwner),
     filtered: null,
@@ -451,7 +460,24 @@ export function serializePost(
 
 export function serializePreviewCard(
   card: PreviewCard,
+  baseUrl: URL | string,
 ): Record<string, unknown> {
+  // Compute the proxied image URL up front: if proxyUrl rejects the image
+  // (non-http(s) scheme), the dimensions should not be reported either.
+  const imageUrl =
+    card.image == null ? null : proxyUrl(card.image.url, baseUrl);
+  const width =
+    imageUrl == null || card.image?.width == null
+      ? 0
+      : typeof card.image.width === "string"
+        ? Number.parseInt(card.image.width, 10)
+        : card.image.width;
+  const height =
+    imageUrl == null || card.image?.height == null
+      ? 0
+      : typeof card.image.height === "string"
+        ? Number.parseInt(card.image.height, 10)
+        : card.image.height;
   return {
     url: card.url,
     title: card.title,
@@ -462,19 +488,9 @@ export function serializePreviewCard(
     provider_name: "",
     provider_url: "",
     html: "",
-    width:
-      card.image?.width == null
-        ? 0
-        : typeof card.image.width === "string"
-          ? Number.parseInt(card.image.width, 10)
-          : card.image.width,
-    height:
-      card.image?.height == null
-        ? 0
-        : typeof card.image.height === "string"
-          ? Number.parseInt(card.image.height, 10)
-          : card.image.height,
-    image: card.image == null ? null : card.image.url,
+    width,
+    height,
+    image: imageUrl,
     embed_url: "",
     blurhash: null,
   };

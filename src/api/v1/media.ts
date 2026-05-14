@@ -75,7 +75,7 @@ export async function postMedia(
   if (result.length < 1) {
     return c.json({ error: "Failed to insert media" }, 500);
   }
-  return c.json(serializeMedium(result[0]));
+  return c.json(serializeMedium(result[0], c.req.url));
 }
 
 app.post(
@@ -93,7 +93,7 @@ app.get("/:id", async (c) => {
     where: eq(media.id, mediumId),
   });
   if (medium == null) return c.json({ error: "Not found" }, 404);
-  return c.json(serializeMedium(medium));
+  return c.json(serializeMedium(medium, c.req.url));
 });
 
 app.put("/:id", tokenRequired, scopeRequired(["write:media"]), async (c) => {
@@ -116,7 +116,7 @@ app.put("/:id", tokenRequired, scopeRequired(["write:media"]), async (c) => {
     .where(eq(media.id, mediumId))
     .returning();
   if (result.length < 1) return c.json({ error: "Not found" }, 404);
-  return c.json(serializeMedium(result[0]));
+  return c.json(serializeMedium(result[0], c.req.url));
 });
 
 export default app;

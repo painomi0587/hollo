@@ -12,6 +12,7 @@ import {
 import { alias } from "drizzle-orm/pg-core";
 
 import db from "../db";
+import { proxyUrl } from "../media-proxy";
 import {
   accountOwners,
   accounts,
@@ -34,13 +35,17 @@ function normalizeAttachmentType(type: string): string {
   return "unknown";
 }
 
-// oxlint-disable-next-line typescript/no-explicit-any
-export function serializeMedium(medium: Medium): Record<string, any> {
+export function serializeMedium(
+  medium: Medium,
+  baseUrl: URL | string,
+  // oxlint-disable-next-line typescript/no-explicit-any
+): Record<string, any> {
+  const previewSource = medium.thumbnailCleaned ? null : medium.thumbnailUrl;
   return {
     id: medium.id,
     type: normalizeAttachmentType(medium.type),
-    url: medium.url,
-    preview_url: medium.thumbnailCleaned ? null : medium.thumbnailUrl,
+    url: proxyUrl(medium.url, baseUrl),
+    preview_url: proxyUrl(previewSource, baseUrl),
     remote_url: null,
     text_url: null,
     meta: {
