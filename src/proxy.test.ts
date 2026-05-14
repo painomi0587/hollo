@@ -192,6 +192,30 @@ describe.sequential("proxy route", () => {
     expect(response.status).toBe(404);
   });
 
+  it("rejects oversized bodies advertised via Content-Length up front", async () => {
+    expect.assertions(1);
+
+    // 64 MiB declared, which is well past the 32 MiB cap.  We never read
+    // the body in this path, so the actual payload size doesn't matter
+    // for the assertion.
+    fetchMock.mockResolvedValue(
+      new Response(new Uint8Array([0, 0, 0, 0]).buffer as ArrayBuffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/png",
+          "Content-Length": String(64 * 1024 * 1024),
+        },
+      }),
+    );
+
+    const app = createProxyApp("proxy");
+    const { sig, b64url } = signProxyUrl("https://remote.example/huge.png");
+
+    const response = await app.request(`/${sig}/${b64url}`);
+
+    expect(response.status).toBe(404);
+  });
+
   it("writes the cache on first hit and reuses it on the second in cache mode", async () => {
     expect.assertions(4);
 

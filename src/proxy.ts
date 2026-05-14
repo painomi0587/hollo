@@ -264,6 +264,20 @@ export function createProxyApp(mode: MediaProxyMode = MEDIA_PROXY): Hono {
         return c.notFound();
       }
 
+      // When the upstream tells us the body length up front we can
+      // short-circuit oversized responses without spending bandwidth on
+      // the read.  A missing or malformed header just falls through to
+      // the streaming cap inside readBoundedBody, which still enforces
+      // the limit.
+      const contentLengthHeader = upstream.headers.get("Content-Length");
+      if (contentLengthHeader != null) {
+        const declaredLength = Number.parseInt(contentLengthHeader, 10);
+        if (Number.isFinite(declaredLength) && declaredLength > MAX_BYTES) {
+          await discardBody(upstream);
+          return c.notFound();
+        }
+      }
+
       const body = await readBoundedBody(upstream, MAX_BYTES);
       if (body == null) return c.notFound();
 
