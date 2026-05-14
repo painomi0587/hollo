@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { Layout } from "../../components/Layout.tsx";
 import { renderCustomEmojis } from "../../custom-emoji.ts";
 import db from "../../db.ts";
+import { proxyUrl } from "../../media-proxy.ts";
 
 const homePage = new Hono().basePath("/");
 
@@ -57,19 +58,22 @@ homePage.get("/", async (c) => {
             const nameHtml = renderCustomEmojis(
               escape(owner.account.name),
               owner.account.emojis,
+              c.req.url,
             );
             const bioHtml = renderCustomEmojis(
               owner.account.bioHtml ?? "",
               owner.account.emojis,
+              c.req.url,
             );
+            const avatar = proxyUrl(owner.account.avatarUrl, c.req.url);
             return (
               <li>
                 <article class="rounded-xl border border-neutral-200 bg-white p-5 transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700">
                   <div class="flex items-start gap-4">
-                    {owner.account.avatarUrl && (
+                    {avatar && (
                       <a href={url} class="shrink-0">
                         <img
-                          src={owner.account.avatarUrl}
+                          src={avatar}
                           alt=""
                           width={56}
                           height={56}

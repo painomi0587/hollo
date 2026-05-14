@@ -13,6 +13,7 @@ interface AuthorizationPageProps {
   state?: string;
   codeChallenge?: string;
   codeChallengeMethod?: string;
+  baseUrl: URL | string;
 }
 
 export function AuthorizationPage(props: AuthorizationPageProps) {
@@ -46,6 +47,7 @@ export function AuthorizationPage(props: AuthorizationPageProps) {
                 const accountName = renderCustomEmojis(
                   escape(accountOwner.account.name),
                   accountOwner.account.emojis,
+                  props.baseUrl,
                 );
                 const inputId = `oauth-account-${accountOwner.id}`;
                 return (

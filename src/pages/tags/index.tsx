@@ -71,7 +71,7 @@ tags.get(async (c) => {
       reactions: true,
     },
   });
-  return c.html(<TagPage tag={tag} posts={postList} />);
+  return c.html(<TagPage tag={tag} posts={postList} baseUrl={c.req.url} />);
 });
 
 interface TagPageProps {
@@ -110,9 +110,10 @@ interface TagPageProps {
       | null;
     reactions: Reaction[];
   })[];
+  readonly baseUrl: URL | string;
 }
 
-function TagPage({ tag, posts }: TagPageProps) {
+function TagPage({ tag, posts, baseUrl }: TagPageProps) {
   return (
     <Layout title={`#${tag}`}>
       <main class="mx-auto w-full max-w-2xl px-4 py-8 sm:py-10">
@@ -134,7 +135,7 @@ function TagPage({ tag, posts }: TagPageProps) {
         </header>
         <div class="divide-y divide-neutral-200 dark:divide-neutral-800">
           {posts.map((post) => (
-            <PostView post={post} />
+            <PostView post={post} baseUrl={baseUrl} />
           ))}
         </div>
       </main>

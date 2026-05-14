@@ -175,6 +175,7 @@ profile.get<"/:handle">(async (c) => {
       atomUrl={atomUrl.href}
       olderUrl={olderUrl}
       newerUrl={newerUrl}
+      baseUrl={c.req.url}
     />,
   );
 });
@@ -275,6 +276,7 @@ profile.get("/tagged/:tag", async (c) => {
       featuredTags={featuredTagList}
       olderUrl={olderUrl}
       newerUrl={newerUrl}
+      baseUrl={c.req.url}
     />,
   );
 });
@@ -354,6 +356,7 @@ interface ProfilePageProps {
   readonly atomUrl?: string;
   readonly olderUrl?: string;
   readonly newerUrl?: string;
+  readonly baseUrl: URL | string;
 }
 
 function ProfilePage({
@@ -365,6 +368,7 @@ function ProfilePage({
   atomUrl,
   olderUrl,
   newerUrl,
+  baseUrl,
 }: ProfilePageProps) {
   return (
     <Layout
@@ -395,7 +399,7 @@ function ProfilePage({
       themeColor={accountOwner.themeColor}
     >
       <main class="mx-auto w-full max-w-2xl px-4 py-8 sm:py-10">
-        <Profile accountOwner={accountOwner} />
+        <Profile accountOwner={accountOwner} baseUrl={baseUrl} />
         {tag != null && (
           <h2 class="mt-10 text-lg font-semibold text-neutral-900 dark:text-neutral-100">
             Posts tagged{" "}
@@ -419,9 +423,11 @@ function ProfilePage({
         )}
         <div class="mt-6 divide-y divide-neutral-200 dark:divide-neutral-800">
           {tag == null &&
-            pinnedPosts.map((post) => <PostView post={post} pinned={true} />)}
+            pinnedPosts.map((post) => (
+              <PostView post={post} pinned={true} baseUrl={baseUrl} />
+            ))}
           {posts.map((post) => (
-            <PostView post={post} />
+            <PostView post={post} baseUrl={baseUrl} />
           ))}
         </div>
         {(newerUrl || olderUrl) && (

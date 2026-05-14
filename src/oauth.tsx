@@ -115,6 +115,7 @@ app.get(
         state={data.state}
         codeChallenge={data.code_challenge}
         codeChallengeMethod={data.code_challenge_method}
+        baseUrl={c.req.url}
       />,
     );
   },
