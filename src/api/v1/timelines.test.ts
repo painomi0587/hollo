@@ -384,3 +384,134 @@ describe.sequential("/api/v1/timelines/home", () => {
     expect(json[0].content).toContain(quotedPostUrl);
   });
 });
+
+describe.sequential("/api/v1/timelines/public (pagination)", () => {
+  let owner: Awaited<ReturnType<typeof createAccount>>;
+  let client: Awaited<ReturnType<typeof createOAuthApplication>>;
+  let accessToken: Awaited<ReturnType<typeof getAccessToken>>;
+  // postIds[0] is the oldest; postIds[24] is the newest.
+  let postIds: Uuid[];
+
+  beforeEach(async () => {
+    await cleanDatabase();
+
+    owner = await createAccount();
+    client = await createOAuthApplication({ scopes: ["read:statuses"] });
+    accessToken = await getAccessToken(client, owner, ["read:statuses"]);
+
+    postIds = [];
+    for (let i = 0; i < 25; i++) {
+      const id = uuidv7();
+      postIds.push(id);
+      await db.insert(posts).values({
+        id,
+        iri: `https://hollo.test/@hollo/${id}`,
+        type: "Note",
+        accountId: owner.id,
+        visibility: "public",
+        content: `Post ${i}`,
+        contentHtml: `<p>Post ${i}</p>`,
+        published: new Date(),
+      });
+    }
+  });
+
+  async function fetchTimeline(qs: string): Promise<Response> {
+    return await app.request(`/api/v1/timelines/public${qs}`, {
+      method: "GET",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+      },
+    });
+  }
+
+  it("returns the newest posts with bidirectional Link headers", async () => {
+    expect.assertions(6);
+
+    const response = await fetchTimeline("?limit=10");
+    expect(response.status).toBe(200);
+
+    const json = (await response.json()) as { id: string }[];
+    expect(json).toHaveLength(10);
+    expect(json[0].id).toBe(postIds[24]);
+    expect(json[9].id).toBe(postIds[15]);
+
+    const link = response.headers.get("Link") ?? "";
+    expect(link).toContain(`max_id=${postIds[15]}>; rel="next"`);
+    expect(link).toContain(`min_id=${postIds[24]}>; rel="prev"`);
+  });
+
+  it("walks up a large gap with min_id (Mastodon gap-loading)", async () => {
+    expect.assertions(4);
+
+    // Cursor sits 19 posts below the top. With limit=5, gap-loading must
+    // return the 5 posts *immediately* above the cursor — postIds[6..10] —
+    // ordered newest-first.  Naïve `since_id`-style logic would instead
+    // return postIds[24..20] and the gap would never close.
+    const response = await fetchTimeline(`?limit=5&min_id=${postIds[5]}`);
+    expect(response.status).toBe(200);
+
+    const json = (await response.json()) as { id: string }[];
+    expect(json.map((p) => p.id)).toEqual([
+      postIds[10],
+      postIds[9],
+      postIds[8],
+      postIds[7],
+      postIds[6],
+    ]);
+
+    // The rel="prev" cursor must point at the newest returned post so a
+    // follow-up request continues walking up the gap.
+    const link = response.headers.get("Link") ?? "";
+    expect(link).toContain(`min_id=${postIds[10]}>; rel="prev"`);
+    expect(link).toContain(`max_id=${postIds[6]}>; rel="next"`);
+  });
+
+  it("returns the newest posts above the cursor when only since_id is set", async () => {
+    expect.assertions(2);
+
+    const response = await fetchTimeline(`?limit=5&since_id=${postIds[5]}`);
+    expect(response.status).toBe(200);
+
+    const json = (await response.json()) as { id: string }[];
+    expect(json.map((p) => p.id)).toEqual([
+      postIds[24],
+      postIds[23],
+      postIds[22],
+      postIds[21],
+      postIds[20],
+    ]);
+  });
+
+  it("lets min_id win over since_id when both are supplied", async () => {
+    expect.assertions(1);
+
+    const response = await fetchTimeline(
+      `?limit=5&min_id=${postIds[5]}&since_id=${postIds[20]}`,
+    );
+    const json = (await response.json()) as { id: string }[];
+    expect(json.map((p) => p.id)).toEqual([
+      postIds[10],
+      postIds[9],
+      postIds[8],
+      postIds[7],
+      postIds[6],
+    ]);
+  });
+
+  it("drops conflicting cursors when generating Link headers", async () => {
+    expect.assertions(2);
+
+    // Passing every cursor at once should not propagate into the next/prev
+    // links — each link must contain exactly one of max_id/min_id and no
+    // stale since_id.
+    const response = await fetchTimeline(
+      `?limit=5&max_id=${postIds[24]}&min_id=${postIds[0]}&since_id=${postIds[10]}`,
+    );
+    const link = response.headers.get("Link") ?? "";
+    expect(link).not.toContain("since_id=");
+    // rel="next" carries max_id only; rel="prev" carries min_id only.
+    const matches = link.match(/(max_id|min_id|since_id)=/g) ?? [];
+    expect(matches).toHaveLength(2);
+  });
+});

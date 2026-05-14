@@ -1,6 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import {
   and,
+  asc,
   desc,
   eq,
   gt,
@@ -40,7 +41,7 @@ import {
   posts,
   timelinePosts,
 } from "../../schema";
-import { isUuid, uuid } from "../../uuid";
+import { isUuid, uuid, type Uuid } from "../../uuid";
 import {
   getApprovedFollowingAccountIds,
   postAccountIdInArray,
@@ -71,6 +72,44 @@ export const publicTimelineQuerySchema = timelineQuerySchema.extend({
     .transform((v) => v === "true"),
 });
 
+// Mastodon pagination semantics shared by every timeline endpoint:
+// `min_id` returns the posts *immediately* newer than the cursor (ASC +
+// reverse to newest-first); `since_id` is applied only when `min_id` is
+// absent and keeps the normal DESC order.
+function resolveTimelineCursor(query: { min_id?: Uuid; since_id?: Uuid }): {
+  useMinId: boolean;
+  lowerBound: Uuid | undefined;
+} {
+  return {
+    useMinId: query.min_id != null,
+    lowerBound: query.min_id ?? query.since_id,
+  };
+}
+
+// Build Mastodon-compatible bidirectional pagination Link header for a
+// timeline response.  `timeline` must be ordered newest-first (DESC by id).
+function buildTimelineLinkHeader(
+  requestUrl: string,
+  timeline: readonly { id: Uuid }[],
+  limit: number,
+): { Link: string } | undefined {
+  if (timeline.length === 0) return undefined;
+  const baseUrl = new URL(requestUrl);
+  baseUrl.searchParams.delete("max_id");
+  baseUrl.searchParams.delete("min_id");
+  baseUrl.searchParams.delete("since_id");
+  const linkParts: string[] = [];
+  if (timeline.length >= limit) {
+    const next = new URL(baseUrl);
+    next.searchParams.set("max_id", timeline[timeline.length - 1].id);
+    linkParts.push(`<${next.href}>; rel="next"`);
+  }
+  const prev = new URL(baseUrl);
+  prev.searchParams.set("min_id", timeline[0].id);
+  linkParts.push(`<${prev.href}>; rel="prev"`);
+  return { Link: linkParts.join(", ") };
+}
+
 app.get(
   "/public",
   withAccountOwner,
@@ -78,6 +117,7 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const query = c.req.valid("query");
+    const { useMinId, lowerBound } = resolveTimelineCursor(query);
     const timeline = await db.query.posts.findMany({
       where: and(
         eq(posts.visibility, "public"),
@@ -178,20 +218,17 @@ app.get(
           ),
         ),
         query.max_id == null ? undefined : lt(posts.id, query.max_id),
-        query.min_id == null ? undefined : gt(posts.id, query.min_id),
+        lowerBound == null ? undefined : gt(posts.id, lowerBound),
       ),
       with: getPostRelations(owner.id),
-      orderBy: [desc(posts.id)],
+      orderBy: [useMinId ? asc(posts.id) : desc(posts.id)],
       limit: query.limit,
     });
-    const nextMaxId =
-      timeline.length >= query.limit ? timeline[timeline.length - 1].id : null;
-    const nextLink = nextMaxId == null ? undefined : new URL(c.req.url);
-    nextLink?.searchParams.set("max_id", nextMaxId ?? "");
+    if (useMinId) timeline.reverse();
     return c.json(
       timeline.map((p) => serializePost(p, owner, c.req.url)),
       200,
-      nextLink == null ? undefined : { Link: `<${nextLink.href}>; rel="next"` },
+      buildTimelineLinkHeader(c.req.url, timeline, query.limit),
     );
   },
 );
@@ -204,6 +241,7 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const query = c.req.valid("query");
+    const { useMinId, lowerBound } = resolveTimelineCursor(query);
     let timeline: Parameters<typeof serializePost>[0][];
     if (TIMELINE_INBOXES) {
       timeline = await db.query.posts.findMany({
@@ -219,12 +257,16 @@ app.get(
                   query.max_id == null
                     ? undefined
                     : lt(timelinePosts.postId, query.max_id),
-                  query.min_id == null
+                  lowerBound == null
                     ? undefined
-                    : gt(timelinePosts.postId, query.min_id),
+                    : gt(timelinePosts.postId, lowerBound),
                 ),
               )
-              .orderBy(desc(timelinePosts.postId))
+              .orderBy(
+                useMinId
+                  ? asc(timelinePosts.postId)
+                  : desc(timelinePosts.postId),
+              )
               .limit(Math.min(TIMELINE_INBOX_LIMIT, query.limit)),
           ),
           // Hide future posts
@@ -313,7 +355,7 @@ app.get(
           ),
         ),
         with: getPostRelations(owner.id),
-        orderBy: [desc(posts.id)],
+        orderBy: [useMinId ? asc(posts.id) : desc(posts.id)],
         limit: query.limit,
       });
     } else {
@@ -460,21 +502,18 @@ app.get(
             ),
           ),
           query.max_id == null ? undefined : lt(posts.id, query.max_id),
-          query.min_id == null ? undefined : gt(posts.id, query.min_id),
+          lowerBound == null ? undefined : gt(posts.id, lowerBound),
         ),
         with: getPostRelations(owner.id),
-        orderBy: [desc(posts.id)],
+        orderBy: [useMinId ? asc(posts.id) : desc(posts.id)],
         limit: query.limit,
       });
     }
-    const nextMaxId =
-      timeline.length >= query.limit ? timeline[timeline.length - 1].id : null;
-    const nextLink = nextMaxId == null ? undefined : new URL(c.req.url);
-    nextLink?.searchParams.set("max_id", nextMaxId ?? "");
+    if (useMinId) timeline.reverse();
     return c.json(
       timeline.map((p) => serializePost(p, owner, c.req.url)),
       200,
-      nextLink == null ? undefined : { Link: `<${nextLink.href}>; rel="next"` },
+      buildTimelineLinkHeader(c.req.url, timeline, query.limit),
     );
   },
 );
@@ -494,6 +533,7 @@ app.get(
       where: and(eq(lists.id, listId), eq(lists.accountOwnerId, owner.id)),
     });
     if (list == null) return c.json({ error: "Record not found" }, 404);
+    const { useMinId, lowerBound } = resolveTimelineCursor(query);
     let timeline: Parameters<typeof serializePost>[0][];
     if (TIMELINE_INBOXES) {
       timeline = await db.query.posts.findMany({
@@ -509,12 +549,14 @@ app.get(
                   query.max_id == null
                     ? undefined
                     : lt(listPosts.postId, query.max_id),
-                  query.min_id == null
+                  lowerBound == null
                     ? undefined
-                    : gt(listPosts.postId, query.min_id),
+                    : gt(listPosts.postId, lowerBound),
                 ),
               )
-              .orderBy(desc(listPosts.postId))
+              .orderBy(
+                useMinId ? asc(listPosts.postId) : desc(listPosts.postId),
+              )
               .limit(Math.min(TIMELINE_INBOX_LIMIT, query.limit)),
           ),
           // Hide future posts
@@ -603,7 +645,7 @@ app.get(
           ),
         ),
         with: getPostRelations(owner.id),
-        orderBy: [desc(posts.id)],
+        orderBy: [useMinId ? asc(posts.id) : desc(posts.id)],
         limit: query.limit,
       });
     } else {
@@ -730,21 +772,18 @@ app.get(
             ),
           ),
           query.max_id == null ? undefined : lt(posts.id, query.max_id),
-          query.min_id == null ? undefined : gt(posts.id, query.min_id),
+          lowerBound == null ? undefined : gt(posts.id, lowerBound),
         ),
         with: getPostRelations(owner.id),
-        orderBy: [desc(posts.id)],
+        orderBy: [useMinId ? asc(posts.id) : desc(posts.id)],
         limit: query.limit,
       });
     }
-    const nextMaxId =
-      timeline.length >= query.limit ? timeline[timeline.length - 1].id : null;
-    const nextLink = nextMaxId == null ? undefined : new URL(c.req.url);
-    nextLink?.searchParams.set("max_id", nextMaxId ?? "");
+    if (useMinId) timeline.reverse();
     return c.json(
       timeline.map((p) => serializePost(p, owner, c.req.url)),
       200,
-      nextLink == null ? undefined : { Link: `<${nextLink.href}>; rel="next"` },
+      buildTimelineLinkHeader(c.req.url, timeline, query.limit),
     );
   },
 );
@@ -760,6 +799,7 @@ app.get(
     const query = c.req.valid("query");
     const hashtag = `#${c.req.param("hashtag")}`;
     const followingAccountIds = await getApprovedFollowingAccountIds(owner.id);
+    const { useMinId, lowerBound } = resolveTimelineCursor(query);
     const timeline = await db.query.posts.findMany({
       where: and(
         or(
@@ -830,20 +870,17 @@ app.get(
             .where(eq(blocks.blockedAccountId, owner.id)),
         ),
         query.max_id == null ? undefined : lt(posts.id, query.max_id),
-        query.min_id == null ? undefined : gt(posts.id, query.min_id),
+        lowerBound == null ? undefined : gt(posts.id, lowerBound),
       ),
       with: getPostRelations(owner.id),
-      orderBy: [desc(posts.id)],
+      orderBy: [useMinId ? asc(posts.id) : desc(posts.id)],
       limit: query.limit,
     });
-    const nextMaxId =
-      timeline.length >= query.limit ? timeline[timeline.length - 1].id : null;
-    const nextLink = nextMaxId == null ? undefined : new URL(c.req.url);
-    nextLink?.searchParams.set("max_id", nextMaxId ?? "");
+    if (useMinId) timeline.reverse();
     return c.json(
       timeline.map((p) => serializePost(p, owner, c.req.url)),
       200,
-      nextLink == null ? undefined : { Link: `<${nextLink.href}>; rel="next"` },
+      buildTimelineLinkHeader(c.req.url, timeline, query.limit),
     );
   },
 );
