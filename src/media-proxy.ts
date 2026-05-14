@@ -112,13 +112,16 @@ export function verifyProxySignature(
   return decoded.toString("utf-8");
 }
 
-function isStorageOrigin(origin: string): boolean {
-  if (STORAGE_URL_BASE == null) return false;
-  try {
-    return new URL(STORAGE_URL_BASE).origin === origin;
-  } catch {
-    return false;
-  }
+const STORAGE_URL_PREFIX = (() => {
+  if (STORAGE_URL_BASE == null) return null;
+  return STORAGE_URL_BASE.endsWith("/")
+    ? STORAGE_URL_BASE
+    : `${STORAGE_URL_BASE}/`;
+})();
+
+function isUnderStorageBase(url: string): boolean {
+  if (STORAGE_URL_PREFIX == null) return false;
+  return url.startsWith(STORAGE_URL_PREFIX);
 }
 
 export function proxyUrlForMode(
@@ -141,9 +144,18 @@ export function proxyUrlForMode(
   // data:/file:/javascript:/ftp:/etc. — and don't return them either, so a
   // caller that stored a hostile scheme falls back to its default.
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  // Don't proxy URLs we already serve ourselves.
-  if (parsed.origin === base.origin) return url;
-  if (isStorageOrigin(parsed.origin)) return url;
+  // Don't recurse if the URL is already a proxy URL on our own origin.
+  if (
+    parsed.origin === base.origin &&
+    parsed.pathname.startsWith(`${PROXY_URL_PREFIX}/`)
+  ) {
+    return url;
+  }
+  // Skip URLs that resolve under the configured asset storage prefix.  Origin
+  // alone isn't enough — path-style S3, shared CDNs, and "STORAGE_URL_BASE
+  // on the Hollo origin" all let other paths share the origin without
+  // belonging to our storage.
+  if (isUnderStorageBase(url)) return url;
   const { sig, b64url } = signProxyUrl(url);
   return new URL(`${PROXY_URL_PREFIX}/${sig}/${b64url}`, base).href;
 }

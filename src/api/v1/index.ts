@@ -8,6 +8,7 @@ import { db } from "../../db";
 import { serializeAccount } from "../../entities/account";
 import { getPostRelations, serializePost } from "../../entities/status";
 import { serializeTag } from "../../entities/tag";
+import { proxyUrl } from "../../media-proxy";
 import {
   scopeRequired,
   tokenRequired,
@@ -73,14 +74,21 @@ app.get(
 
 app.get("/custom_emojis", async (c) => {
   const emojis = await db.query.customEmojis.findMany();
+  const baseUrl = c.req.url;
   return c.json(
-    emojis.map((emoji) => ({
-      shortcode: emoji.shortcode,
-      url: emoji.url,
-      static_url: emoji.url,
-      visible_in_picker: true,
-      category: emoji.category,
-    })),
+    emojis.flatMap((emoji) => {
+      const url = proxyUrl(emoji.url, baseUrl);
+      if (url == null) return [];
+      return [
+        {
+          shortcode: emoji.shortcode,
+          url,
+          static_url: url,
+          visible_in_picker: true,
+          category: emoji.category,
+        },
+      ];
+    }),
   );
 });
 

@@ -63,19 +63,33 @@ describe("media-proxy", () => {
       expect(proxyUrlForMode("off", null, baseUrl)).toBeNull();
     });
 
-    it("does not proxy a URL on the same origin as baseUrl", () => {
+    it("does not proxy a URL under STORAGE_URL_BASE", () => {
       expect.assertions(1);
-      const local = "http://hollo.test/assets/foo.png";
-      expect(proxyUrlForMode("proxy", local, baseUrl)).toBe(local);
-    });
-
-    it("does not proxy a URL on STORAGE_URL_BASE origin", () => {
-      expect.assertions(1);
-      // .env.test sets STORAGE_URL_BASE=http://hollo.test/.  Use a different
-      // baseUrl so the storage-origin branch is what matches.
+      // .env.test sets STORAGE_URL_BASE=http://hollo.test/, so any URL with
+      // that prefix should pass through unchanged regardless of baseUrl.
       const otherBase = new URL("https://app.example/");
       const local = "http://hollo.test/media/x.webp";
       expect(proxyUrlForMode("proxy", local, otherBase)).toBe(local);
+    });
+
+    it("proxies same-origin URLs that aren't under STORAGE_URL_BASE", () => {
+      expect.assertions(2);
+      // Use a baseUrl whose origin doesn't match STORAGE_URL_BASE so the
+      // STORAGE_URL_BASE prefix branch can't accidentally cover this case.
+      const otherBase = new URL("https://app.example/");
+      const sameOrigin = "https://app.example/some/path.png";
+      const proxied = proxyUrlForMode("proxy", sameOrigin, otherBase);
+      expect(proxied).not.toBe(sameOrigin);
+      expect(new URL(proxied!).pathname.startsWith("/proxy/")).toBe(true);
+    });
+
+    it("does not re-proxy a URL that is already a proxy URL", () => {
+      expect.assertions(1);
+      const remote = "https://remote.example/a.png";
+      const proxied = proxyUrlForMode("proxy", remote, baseUrl);
+      // Feeding the proxy URL back in should leave it as-is rather than
+      // double-wrapping it.
+      expect(proxyUrlForMode("proxy", proxied, baseUrl)).toBe(proxied);
     });
 
     it("rewrites a remote URL through the proxy in proxy mode", () => {
