@@ -13,8 +13,11 @@ export function getInstanceHost(fallback: URL | string): string {
 
 export function isLocalHost(host: string, requestUrl: URL): boolean {
   const lower = host.toLowerCase();
-  // Compare against hostname (not host) so a non-default port on the
-  // request URL doesn't make a local handle look remote.
+  // Accept both request URL forms: .host (with port) covers
+  // non-split-domain deployments whose stored handles include the
+  // port (e.g. local dev at localhost:3000), and .hostname (no port)
+  // covers split-domain setups where HANDLE_HOST never carries one.
+  if (lower === requestUrl.host.toLowerCase()) return true;
   if (lower === requestUrl.hostname.toLowerCase()) return true;
   if (HANDLE_HOST != null && lower === HANDLE_HOST) return true;
   if (WEB_ORIGIN_HOST != null && lower === WEB_ORIGIN_HOST) return true;
