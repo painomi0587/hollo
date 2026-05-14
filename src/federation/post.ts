@@ -43,6 +43,7 @@ import {
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 import { escape } from "es-toolkit";
+import mime from "mime";
 // @ts-expect-error: No type definitions available
 import { isSSRFSafeURL } from "ssrfcheck";
 
@@ -560,17 +561,39 @@ export async function persistPost(
       // directly) to serve the preview.
       mediaType = attachment.mediaType ?? null;
       if (mediaType == null) {
-        // The ActivityPub object didn't carry mediaType.  Ask the upstream
-        // for just the Content-Type via HEAD so we don't drop the
-        // attachment outright (the prefetch path used to recover this from
-        // the response headers of the body GET).
+        // The ActivityPub object didn't carry mediaType.  Probe the
+        // upstream so we don't drop the attachment outright (the prefetch
+        // path used to recover this from the response headers of the body
+        // GET).  Try HEAD first, then a tiny Range GET for CDNs that
+        // reject HEAD (some return 405; some return 200 with the wrong
+        // Content-Type), then fall back to MIME-by-extension.
         try {
           const head = await fetch(url, { method: "HEAD" });
-          if (head.ok) {
-            mediaType = head.headers.get("Content-Type");
-          }
+          if (head.ok) mediaType = head.headers.get("Content-Type");
         } catch {
-          // ignore — fall through to the skip path below
+          // ignore — keep trying the GET fallback below
+        }
+        if (mediaType == null) {
+          try {
+            const ranged = await fetch(url, {
+              headers: { Range: "bytes=0-0" },
+            });
+            // 200 OK (server ignored Range) and 206 Partial Content both
+            // give us usable headers; cancel the body either way.
+            if (ranged.status === 200 || ranged.status === 206) {
+              mediaType = ranged.headers.get("Content-Type");
+            }
+            await ranged.body?.cancel().catch(() => {});
+          } catch {
+            // ignore — fall through to extension inference
+          }
+        }
+        if (mediaType == null) {
+          try {
+            mediaType = mime.getType(new URL(url).pathname);
+          } catch {
+            // ignore — leave mediaType null so we skip below
+          }
         }
       }
       if (mediaType == null) continue;
