@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseMediaProxyMode,
+  parseRemoteMediaThumbnails,
   proxyUrlForMode,
   signProxyUrl,
   verifyProxySignature,
@@ -164,6 +166,74 @@ describe("media-proxy", () => {
       // … but if a client appends a padding-equivalent character to the
       // last base64url group, it must NOT decode to the same payload.
       expect(verifyProxySignature(sig, `${b64url}A`)).toBeNull();
+    });
+  });
+
+  describe("parseMediaProxyMode", () => {
+    it("defaults to off when unset", () => {
+      expect.assertions(1);
+      expect(parseMediaProxyMode(undefined)).toBe("off");
+    });
+
+    it("returns the named modes verbatim", () => {
+      expect.assertions(3);
+      expect(parseMediaProxyMode("off")).toBe("off");
+      expect(parseMediaProxyMode("proxy")).toBe("proxy");
+      expect(parseMediaProxyMode("cache")).toBe("cache");
+    });
+
+    it("maps boolean truthy values to proxy", () => {
+      expect.assertions(3);
+      expect(parseMediaProxyMode("true")).toBe("proxy");
+      expect(parseMediaProxyMode("on")).toBe("proxy");
+      expect(parseMediaProxyMode("1")).toBe("proxy");
+    });
+
+    it("maps boolean falsy values to off", () => {
+      expect.assertions(2);
+      expect(parseMediaProxyMode("false")).toBe("off");
+      expect(parseMediaProxyMode("0")).toBe("off");
+    });
+
+    it("is case-insensitive", () => {
+      expect.assertions(3);
+      expect(parseMediaProxyMode("OFF")).toBe("off");
+      expect(parseMediaProxyMode("True")).toBe("proxy");
+      expect(parseMediaProxyMode("CACHE")).toBe("cache");
+    });
+
+    it("throws on unknown values", () => {
+      expect.assertions(2);
+      expect(() => parseMediaProxyMode("yes")).toThrow(/MEDIA_PROXY/);
+      expect(() => parseMediaProxyMode("")).toThrow(/MEDIA_PROXY/);
+    });
+  });
+
+  describe("parseRemoteMediaThumbnails", () => {
+    it("defaults to true when unset", () => {
+      expect.assertions(1);
+      expect(parseRemoteMediaThumbnails(undefined)).toBe(true);
+    });
+
+    it("accepts on/true/1 as true", () => {
+      expect.assertions(3);
+      expect(parseRemoteMediaThumbnails("on")).toBe(true);
+      expect(parseRemoteMediaThumbnails("true")).toBe(true);
+      expect(parseRemoteMediaThumbnails("1")).toBe(true);
+    });
+
+    it("accepts off/false/0 as false", () => {
+      expect.assertions(3);
+      expect(parseRemoteMediaThumbnails("off")).toBe(false);
+      expect(parseRemoteMediaThumbnails("false")).toBe(false);
+      expect(parseRemoteMediaThumbnails("0")).toBe(false);
+    });
+
+    it("throws on unknown values", () => {
+      expect.assertions(1);
+      expect(() => parseRemoteMediaThumbnails("maybe")).toThrow(
+        /REMOTE_MEDIA_THUMBNAILS/,
+      );
     });
   });
 });

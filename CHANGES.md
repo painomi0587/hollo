@@ -29,6 +29,11 @@ To be released.
         Subsequent requests skip the upstream fetch.  The admin
         dashboard at */thumbnail_cleanup* can purge the cache on demand.
 
+    `MEDIA_PROXY` also accepts the Boolean synonyms `true`/`on`/`1`
+    (as aliases for `proxy`) and `false`/`off`/`0` (as aliases for
+    `off`).  Disk caching is opt-in only via the explicit `cache`
+    value.
+
     Outbound federation is unaffected: Hollo still publishes the
     original remote URLs in ActivityPub `icon`, `image`, `attachment`,
     and emoji `Tag` references.
@@ -37,9 +42,9 @@ To be released.
     whether Hollo downloads incoming remote attachments to generate a
     local WebP thumbnail.  Set to `off` to skip the upstream fetch and
     Sharp pipeline entirely, storing the remote URL itself as the
-    thumbnail URL — useful in combination with `MEDIA_PROXY=proxy` or
+    thumbnail URL—useful in combination with `MEDIA_PROXY=proxy` or
     `cache` to free up the disk space the local thumbnails would
-    otherwise occupy.  Defaults to `on` (the historical behaviour).
+    otherwise occupy.  Defaults to `on` (the historical behavior).
     [[#481]]
 
  -  Added [FEP-044f] quote authorization and policy support on top of the

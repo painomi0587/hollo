@@ -5,22 +5,33 @@ import { DRIVE_DISK, STORAGE_URL_BASE } from "./storage-config";
 
 export type MediaProxyMode = "off" | "proxy" | "cache";
 
-function parseMediaProxyMode(value: string | undefined): MediaProxyMode {
+const TRUTHY_VALUES = new Set(["on", "true", "1"]);
+const FALSY_VALUES = new Set(["off", "false", "0"]);
+
+export function parseMediaProxyMode(value: string | undefined): MediaProxyMode {
   if (value === undefined) return "off";
   const lower = value.toLowerCase();
-  if (lower === "off" || lower === "proxy" || lower === "cache") return lower;
+  if (lower === "proxy" || lower === "cache") return lower;
+  // Boolean synonyms: `true`/`on`/`1` enable URL rewriting without on-disk
+  // caching (the simpler "yes" answer); operators who want the disk cache
+  // opt in explicitly with `cache`.  `false`/`off`/`0` mean off.
+  if (TRUTHY_VALUES.has(lower)) return "proxy";
+  if (FALSY_VALUES.has(lower)) return "off";
   throw new Error(
-    `Unknown MEDIA_PROXY value: '${value}'. Expected 'off', 'proxy', or 'cache'.`,
+    `Unknown MEDIA_PROXY value: '${value}'. ` +
+      "Expected 'off', 'proxy', 'cache', or a boolean ('true'/'false', " +
+      "'on'/'off', '1'/'0').",
   );
 }
 
-function parseRemoteMediaThumbnails(value: string | undefined): boolean {
+export function parseRemoteMediaThumbnails(value: string | undefined): boolean {
   if (value === undefined) return true;
   const lower = value.toLowerCase();
-  if (lower === "on" || lower === "true" || lower === "1") return true;
-  if (lower === "off" || lower === "false" || lower === "0") return false;
+  if (TRUTHY_VALUES.has(lower)) return true;
+  if (FALSY_VALUES.has(lower)) return false;
   throw new Error(
-    `Unknown REMOTE_MEDIA_THUMBNAILS value: '${value}'. Expected 'on' or 'off'.`,
+    `Unknown REMOTE_MEDIA_THUMBNAILS value: '${value}'. ` +
+      "Expected a boolean ('true'/'false', 'on'/'off', '1'/'0').",
   );
 }
 
