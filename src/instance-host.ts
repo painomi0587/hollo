@@ -11,6 +11,9 @@ export function getInstanceHost(fallback: URL | string): string {
   return typeof fallback === "string" ? fallback : fallback.host;
 }
 
+// String-equality check between hostnames; no DNS resolution and no
+// authority over the request itself.  Used by lookup paths to decide
+// whether a handle's host segment refers to this instance.
 export function isLocalHost(host: string, requestUrl: URL): boolean {
   const lower = host.toLowerCase();
   // Accept both request URL forms: .host (with port) covers
