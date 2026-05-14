@@ -1,5 +1,6 @@
 import { renderCustomEmojis } from "../custom-emoji";
 import { stripQuoteInlineFallbacks } from "../html";
+import { proxyUrl } from "../media-proxy";
 import type { PreviewCard } from "../previewcard";
 import type {
   Account,
@@ -49,6 +50,7 @@ export interface PostProps {
   readonly pinned?: boolean;
   readonly quoted?: boolean;
   readonly featured?: boolean;
+  readonly baseUrl: URL | string;
 }
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
@@ -58,18 +60,31 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
-export function Post({ post, shared, pinned, quoted, featured }: PostProps) {
+export function Post({
+  post,
+  shared,
+  pinned,
+  quoted,
+  featured,
+  baseUrl,
+}: PostProps) {
   if (post.sharing != null)
     return (
       <Post
         post={{ ...post.sharing, sharing: null }}
         shared={post.published ?? undefined}
         featured={featured}
+        baseUrl={baseUrl}
       />
     );
   const account = post.account;
-  const authorNameHtml = renderCustomEmojis(account.name, account.emojis);
+  const authorNameHtml = renderCustomEmojis(
+    account.name,
+    account.emojis,
+    baseUrl,
+  );
   const authorUrl = account.url ?? account.iri;
+  const avatar = proxyUrl(account.avatarUrl, baseUrl);
   const wrapperClass = quoted
     ? "rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900/60"
     : featured
@@ -86,10 +101,10 @@ export function Post({ post, shared, pinned, quoted, featured }: PostProps) {
         </p>
       )}
       <header class="flex items-start gap-3">
-        {account.avatarUrl && (
+        {avatar && (
           <a href={authorUrl} class="shrink-0">
             <img
-              src={account.avatarUrl}
+              src={avatar}
               alt=""
               width={avatarPx}
               height={avatarPx}
@@ -134,7 +149,7 @@ export function Post({ post, shared, pinned, quoted, featured }: PostProps) {
       </header>
       <div class="mt-3">
         {post.summary == null || post.summary.trim() === "" ? (
-          <PostContent post={post} featured={featured} />
+          <PostContent post={post} featured={featured} baseUrl={baseUrl} />
         ) : (
           <details class="group">
             <summary
@@ -144,7 +159,7 @@ export function Post({ post, shared, pinned, quoted, featured }: PostProps) {
               {post.summary}
             </summary>
             <div class="mt-3">
-              <PostContent post={post} featured={featured} />
+              <PostContent post={post} featured={featured} baseUrl={baseUrl} />
             </div>
           </details>
         )}
@@ -192,7 +207,7 @@ export function Post({ post, shared, pinned, quoted, featured }: PostProps) {
           <>
             <span aria-hidden="true">·</span>
             <span class="inline-flex flex-wrap items-center gap-1">
-              {Object.entries(groupByEmojis(post.reactions)).map(
+              {Object.entries(groupByEmojis(post.reactions, baseUrl)).map(
                 ([emoji, { src, count }]) =>
                   src == null ? (
                     <span title={`${emoji} × ${count}`}>{emoji}</span>
@@ -215,14 +230,18 @@ export function Post({ post, shared, pinned, quoted, featured }: PostProps) {
 
 function groupByEmojis(
   reactions: Reaction[],
+  baseUrl: URL | string,
 ): Record<string, { src?: string; count: number }> {
   const result: Record<string, { src?: string; count: number }> = {};
   for (const reaction of reactions) {
     if (result[reaction.emoji] == null) {
-      result[reaction.emoji] = {
-        src: reaction.customEmoji ?? undefined,
-        count: 1,
-      };
+      // proxyUrl returns null for unsafe schemes; fall back to unicode
+      // display in that case rather than emit the raw href.
+      const src =
+        reaction.customEmoji == null
+          ? undefined
+          : (proxyUrl(reaction.customEmoji, baseUrl) ?? undefined);
+      result[reaction.emoji] = { src, count: 1 };
     } else {
       result[reaction.emoji].count++;
     }
@@ -245,14 +264,19 @@ interface PostContentProps {
       | null;
   };
   readonly featured?: boolean;
+  readonly baseUrl: URL | string;
 }
 
-function PostContent({ post, featured }: PostContentProps) {
+function PostContent({ post, featured, baseUrl }: PostContentProps) {
   const displayContentHtml =
     post.quoteTarget == null
       ? post.contentHtml
       : stripQuoteInlineFallbacks(post.contentHtml);
-  const contentHtml = renderCustomEmojis(displayContentHtml, post.emojis);
+  const contentHtml = renderCustomEmojis(
+    displayContentHtml,
+    post.emojis,
+    baseUrl,
+  );
   return (
     <>
       {displayContentHtml && (
@@ -271,7 +295,7 @@ function PostContent({ post, featured }: PostContentProps) {
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
           {post.media.map((medium) => (
             <figure class="m-0">
-              <Medium medium={medium} />
+              <Medium medium={medium} baseUrl={baseUrl} />
               {medium.description && medium.description.trim() !== "" && (
                 <figcaption class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                   <details>
@@ -285,13 +309,14 @@ function PostContent({ post, featured }: PostContentProps) {
         </div>
       )}
       {post.previewCard != null && post.media.length === 0 && (
-        <PreviewCardView card={post.previewCard} />
+        <PreviewCardView card={post.previewCard} baseUrl={baseUrl} />
       )}
       {post.quoteTarget != null && (
         <div class="mt-3">
           <Post
             post={{ ...post.quoteTarget, sharing: null, quoteTarget: null }}
             quoted={true}
+            baseUrl={baseUrl}
           />
         </div>
       )}
@@ -301,16 +326,18 @@ function PostContent({ post, featured }: PostContentProps) {
 
 interface PreviewCardViewProps {
   readonly card: PreviewCard;
+  readonly baseUrl: URL | string;
 }
 
-function PreviewCardView({ card }: PreviewCardViewProps) {
+function PreviewCardView({ card, baseUrl }: PreviewCardViewProps) {
   let host: string | null = null;
   try {
     host = new URL(card.url).hostname.replace(/^www\./, "");
   } catch {
     host = null;
   }
-  const hasImage = card.image != null;
+  const imageUrl =
+    card.image == null ? null : proxyUrl(card.image.url, baseUrl);
   return (
     <a
       href={card.url}
@@ -318,10 +345,10 @@ function PreviewCardView({ card }: PreviewCardViewProps) {
       rel="noopener nofollow"
       class="mt-3 flex overflow-hidden rounded-lg border border-neutral-200 transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
     >
-      {hasImage && (
+      {imageUrl && (
         <div class="aspect-square w-28 shrink-0 bg-neutral-100 sm:w-36 dark:bg-neutral-900">
           <img
-            src={card.image!.url}
+            src={imageUrl}
             alt=""
             loading="lazy"
             class="size-full object-cover"
@@ -389,28 +416,44 @@ function Poll({ poll }: PollProps) {
 
 interface MediumProps {
   readonly medium: DbMedium;
+  readonly baseUrl: URL | string;
 }
 
-function Medium({ medium }: MediumProps) {
+function Medium({ medium, baseUrl }: MediumProps) {
+  const linkUrl = proxyUrl(medium.url, baseUrl);
+  const thumbnailUrl = medium.thumbnailCleaned
+    ? null
+    : proxyUrl(medium.thumbnailUrl, baseUrl);
+  const inner =
+    thumbnailUrl == null ? (
+      <span class="flex aspect-video items-center justify-center bg-neutral-100 px-3 text-xs text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400">
+        Thumbnail not available
+      </span>
+    ) : (
+      <img
+        key={medium.id}
+        src={thumbnailUrl}
+        alt={medium.description ?? ""}
+        width={medium.thumbnailWidth}
+        height={medium.thumbnailHeight}
+        class="block h-auto w-full object-cover"
+      />
+    );
+  // If proxyUrl rejects the media URL (non-http(s) scheme), drop the link
+  // wrapper rather than fall back to the raw href.
+  if (linkUrl == null) {
+    return (
+      <div class="block overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+        {inner}
+      </div>
+    );
+  }
   return (
     <a
-      href={medium.url}
+      href={linkUrl}
       class="block overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800"
     >
-      {medium.thumbnailCleaned ? (
-        <span class="flex aspect-video items-center justify-center bg-neutral-100 px-3 text-xs text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400">
-          Thumbnail not available
-        </span>
-      ) : (
-        <img
-          key={medium.id}
-          src={medium.thumbnailUrl}
-          alt={medium.description ?? ""}
-          width={medium.thumbnailWidth}
-          height={medium.thumbnailHeight}
-          class="block h-auto w-full object-cover"
-        />
-      )}
+      {inner}
     </a>
   );
 }

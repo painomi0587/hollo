@@ -2,6 +2,7 @@ import { getLogger } from "@logtape/logtape";
 import { and, count, eq, ilike, inArray, not, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 
+import { countProxyCacheBinKeys } from "../cleanup/processors";
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import { getMediaWithDeletableThumbnails } from "../entities/medium";
@@ -103,16 +104,37 @@ data.get("/", async (c) => {
   }
   const thumbnailsCount = thumbnailsCountResult[0].count;
 
-  const thumbnailsTable: { caption: string; count: number }[] = [
+  let proxyCacheCount = 0;
+  let proxyCacheTruncated = false;
+  let proxyCacheListFailed = false;
+  try {
+    const result = await countProxyCacheBinKeys();
+    proxyCacheCount = result.count;
+    proxyCacheTruncated = result.truncated;
+  } catch (error) {
+    proxyCacheListFailed = true;
+    logger.warn("Failed to inspect proxy cache: {error}", { error });
+  }
+  const proxyCacheResult = c.req.query("proxy-cache-result");
+
+  const thumbnailsTable: { caption: string; count: string }[] = [
     {
       caption: "Total, thumbnail hosted locally",
-      count: thumbnailsCount,
+      count: thumbnailsCount.toLocaleString("en"),
     },
     {
       caption: "Remote, thumbnail hosted locally",
-      count: thumbnailsRemoteCount,
+      count: thumbnailsRemoteCount.toLocaleString("en"),
     },
   ];
+  if (!proxyCacheListFailed) {
+    thumbnailsTable.push({
+      caption: "Media proxy cache entries",
+      count: proxyCacheTruncated
+        ? `${proxyCacheCount.toLocaleString("en")}+`
+        : proxyCacheCount.toLocaleString("en"),
+    });
+  }
 
   const dateInputClass =
     "rounded-md border bg-white px-3 py-2 text-sm shadow-sm transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900";
@@ -159,7 +181,7 @@ data.get("/", async (c) => {
                       {entry.caption}
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums text-neutral-700 dark:text-neutral-300">
-                      {entry.count.toLocaleString("en")}
+                      {entry.count}
                     </td>
                   </tr>
                 ))}
@@ -392,8 +414,93 @@ data.get("/", async (c) => {
             </p>
           </form>
         </section>
+
+        <section
+          id="cleanup-proxy-cache"
+          class="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <header class="mb-4">
+            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              Clear media proxy cache
+            </h2>
+            <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+              {proxyCacheResult ??
+                "Delete every entry the media proxy has cached on disk.  Hollo will re-fetch each item on demand the next time it is requested."}
+            </p>
+          </header>
+          <form
+            method="post"
+            action="/thumbnail_cleanup/proxy_cache/clear"
+            onsubmit="return confirm('Delete every cached proxy file?')"
+          >
+            <button
+              name="submit"
+              type="submit"
+              disabled={
+                shouldAutoRefresh ||
+                proxyCacheListFailed ||
+                proxyCacheCount === 0
+              }
+              class={primaryButtonClass}
+            >
+              {proxyCacheListFailed
+                ? "Cache size unavailable"
+                : proxyCacheTruncated
+                  ? `Clear ${proxyCacheCount.toLocaleString("en")}+ entries`
+                  : `Clear ${proxyCacheCount.toLocaleString("en")} entries`}
+            </button>
+            <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+              {proxyCacheListFailed
+                ? "Failed to inspect the proxy cache.  Check the server logs."
+                : proxyCacheCount === 0
+                  ? "The proxy cache is empty."
+                  : "Each cached body and its metadata sidecar will be removed."}
+            </p>
+          </form>
+        </section>
       </div>
     </DashboardLayout>,
+  );
+});
+
+data.post("/proxy_cache/clear", async (c) => {
+  // Defer enumeration to the cleanup worker so the dashboard request
+  // returns immediately even on a huge cache.  The worker is also the sole
+  // owner of the job lifecycle from this point on, which is what
+  // eliminates the previous race where pollAndProcess could finalize an
+  // empty pending job while this handler was still inserting items.
+  const jobId = uuidv7();
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(cleanupJobs).values({
+        id: jobId,
+        category: "cleanup_thumbnails",
+        // Counts only the enumeration item; the enumeration processor
+        // bumps this by the number of cache entries it queues.
+        totalItems: 1,
+      });
+      await tx.insert(cleanupJobItems).values({
+        id: uuidv7(),
+        jobId,
+        data: { kind: "enumerate_proxy_cache" },
+      });
+    });
+  } catch (error) {
+    logger.error("Failed to create proxy cache cleanup job: {error}", {
+      error,
+    });
+    return c.redirect(
+      `/thumbnail_cleanup?proxy-cache-result=${encodeURIComponent(
+        "Failed to schedule the proxy cache cleanup",
+      )}#cleanup-proxy-cache`,
+    );
+  }
+  logger.info(
+    "Scheduled proxy cache cleanup job {jobId}; enumeration deferred to worker",
+    { jobId },
+  );
+  return c.redirect(
+    `/thumbnail_cleanup?cleanup-job=${jobId}#cleanup-proxy-cache`,
   );
 });
 

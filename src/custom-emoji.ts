@@ -1,3 +1,5 @@
+import { proxyUrl } from "./media-proxy";
+
 const CUSTOM_EMOJI_REGEXP = /:([a-z0-9_-]+):/gi;
 const HTML_ELEMENT_REGEXP = /<\/?[^>]+>/g;
 
@@ -6,19 +8,23 @@ export { CUSTOM_EMOJI_REGEXP };
 export function renderCustomEmojis(
   html: string,
   emojis: Record<string, string>,
+  baseUrl: URL | string,
 ): string;
 export function renderCustomEmojis(
   html: null,
   emojis: Record<string, string>,
+  baseUrl: URL | string,
 ): null;
 export function renderCustomEmojis(
   html: string | null,
   emojis: Record<string, string>,
+  baseUrl: URL | string,
 ): string | null;
 
 export function renderCustomEmojis(
   html: string | null,
   emojis: Record<string, string>,
+  baseUrl: URL | string,
 ): string | null {
   if (html == null) return null;
   let result = "";
@@ -35,7 +41,11 @@ export function renderCustomEmojis(
     return input.replaceAll(CUSTOM_EMOJI_REGEXP, (match) => {
       const emoji = emojis[match] ?? emojis[match.replace(/^:|:$/g, "")];
       if (emoji == null) return match;
-      return `<img src="${emoji}" alt="${match}" class="not-prose" style="display: inline-block; height: 1em; margin: 0; vertical-align: -0.125em">`;
+      // proxyUrl returns null for non-http(s) schemes; drop the image and
+      // keep the literal :shortcode: rather than expose the raw URL.
+      const url = proxyUrl(emoji, baseUrl);
+      if (url == null) return match;
+      return `<img src="${url}" alt="${match}" class="not-prose" style="display: inline-block; height: 1em; margin: 0; vertical-align: -0.125em">`;
     });
   }
 }

@@ -115,7 +115,7 @@ accounts.get("/", async (c) => {
   const owners = await db.query.accountOwners.findMany({
     with: { account: true },
   });
-  return c.html(<AccountListPage accountOwners={owners} />);
+  return c.html(<AccountListPage accountOwners={owners} baseUrl={c.req.url} />);
 });
 
 accounts.post("/", async (c) => {
@@ -355,14 +355,15 @@ accounts.post("/", async (c) => {
       });
     }
   }
-  return c.html(<AccountListPage accountOwners={owners} />);
+  return c.html(<AccountListPage accountOwners={owners} baseUrl={c.req.url} />);
 });
 
 interface AccountListPageProps {
   accountOwners: (AccountOwner & { account: Account })[];
+  baseUrl: URL | string;
 }
 
-function AccountListPage({ accountOwners }: AccountListPageProps) {
+function AccountListPage({ accountOwners, baseUrl }: AccountListPageProps) {
   return (
     <DashboardLayout title="Hollo: Accounts" selectedMenu="accounts">
       <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -383,7 +384,7 @@ function AccountListPage({ accountOwners }: AccountListPageProps) {
           New account
         </a>
       </header>
-      <AccountList accountOwners={accountOwners} />
+      <AccountList accountOwners={accountOwners} baseUrl={baseUrl} />
     </DashboardLayout>
   );
 }

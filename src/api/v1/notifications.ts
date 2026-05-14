@@ -9,6 +9,7 @@ import {
 } from "../../entities/account";
 import { serializeReaction } from "../../entities/emoji";
 import { getPostRelations, serializePost } from "../../entities/status";
+import { proxyUrl } from "../../media-proxy";
 import {
   scopeRequired,
   tokenRequired,
@@ -390,13 +391,20 @@ app.get(
             // Add top-level emoji and emoji_url fields for client compatibility
             result.emoji = reaction.emoji;
             if (reaction.customEmoji != null) {
-              result.emoji_url = reaction.customEmoji;
-              // Also add camelCase variant for Phanpy compatibility (Phanpy bug workaround)
-              result.emojiURL = reaction.customEmoji;
+              const emojiUrl = proxyUrl(reaction.customEmoji, c.req.url);
+              if (emojiUrl != null) {
+                result.emoji_url = emojiUrl;
+                // Also add camelCase variant for Phanpy compatibility (Phanpy bug workaround)
+                result.emojiURL = emojiUrl;
+              }
             }
 
             // Also include emoji_reaction object for Mastodon-compatible clients
-            result.emoji_reaction = serializeReaction(reaction, owner);
+            result.emoji_reaction = serializeReaction(
+              reaction,
+              owner,
+              c.req.url,
+            );
           } else {
             // Fallback: reaction not found (deleted)
             logger.warn(

@@ -1,19 +1,21 @@
 import { escape } from "es-toolkit";
 
 import { renderCustomEmojis } from "../custom-emoji";
+import { proxyUrl } from "../media-proxy";
 import type { Account, AccountOwner } from "../schema";
 import { sanitizeHtml } from "../xss";
 
 export interface AccountListProps {
   accountOwners: (AccountOwner & { account: Account })[];
+  baseUrl: URL | string;
 }
 
-export function AccountList({ accountOwners }: AccountListProps) {
+export function AccountList({ accountOwners, baseUrl }: AccountListProps) {
   return (
     <ul class="space-y-4">
       {accountOwners.map((account) => (
         <li>
-          <AccountItem accountOwner={account} />
+          <AccountItem accountOwner={account} baseUrl={baseUrl} />
         </li>
       ))}
     </ul>
@@ -22,23 +24,33 @@ export function AccountList({ accountOwners }: AccountListProps) {
 
 interface AccountItemProps {
   accountOwner: AccountOwner & { account: Account };
+  baseUrl: URL | string;
 }
 
-function AccountItem({ accountOwner: { account, ...rest } }: AccountItemProps) {
-  const nameHtml = renderCustomEmojis(escape(account.name), account.emojis);
+function AccountItem({
+  accountOwner: { account, ...rest },
+  baseUrl,
+}: AccountItemProps) {
+  const nameHtml = renderCustomEmojis(
+    escape(account.name),
+    account.emojis,
+    baseUrl,
+  );
   const bioHtml = renderCustomEmojis(
     sanitizeHtml(account.bioHtml ?? ""),
     account.emojis,
+    baseUrl,
   );
   const href = account.url ?? account.iri;
   const ownerId = rest.id;
+  const avatar = proxyUrl(account.avatarUrl, baseUrl);
   return (
     <article class="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
       <div class="flex items-start gap-4">
-        {account.avatarUrl && (
+        {avatar && (
           <a href={href} class="shrink-0">
             <img
-              src={account.avatarUrl}
+              src={avatar}
               alt=""
               width={56}
               height={56}

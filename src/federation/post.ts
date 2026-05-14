@@ -43,11 +43,13 @@ import {
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 import { escape } from "es-toolkit";
+import mime from "mime";
 // @ts-expect-error: No type definitions available
 import { isSSRFSafeURL } from "ssrfcheck";
 
 import { extractPreviewLink } from "../html";
 import { makeVideoScreenshot, type Thumbnail, uploadThumbnail } from "../media";
+import { REMOTE_MEDIA_THUMBNAILS } from "../media-proxy";
 import { fetchPreviewCard } from "../previewcard";
 import type * as schema from "../schema";
 import {
@@ -523,24 +525,78 @@ export async function persistPost(
         ? attachment.url.href?.href
         : attachment.url?.href;
     if (url == null || !isSSRFSafeURL(url)) continue;
-    const response = await fetch(url);
-    const mediaType =
-      response.headers.get("Content-Type") ?? attachment.mediaType;
-    if (mediaType == null) continue;
     const id = uuidv7();
+    let mediaType: string | null;
     let thumbnail: Thumbnail;
     let metadata: { width?: number; height?: number };
-    try {
-      const imageData = new Uint8Array(await response.arrayBuffer());
-      let imageBytes: Uint8Array = imageData;
-      if (mediaType.startsWith("video/")) {
-        imageBytes = await makeVideoScreenshot(imageData);
+    if (REMOTE_MEDIA_THUMBNAILS) {
+      const response = await fetch(url);
+      mediaType = response.headers.get("Content-Type") ?? attachment.mediaType;
+      if (mediaType == null) continue;
+      try {
+        const imageData = new Uint8Array(await response.arrayBuffer());
+        let imageBytes: Uint8Array = imageData;
+        if (mediaType.startsWith("video/")) {
+          imageBytes = await makeVideoScreenshot(imageData);
+        }
+        const { default: sharp } = await import("sharp");
+        const image = sharp(imageBytes);
+        metadata = await image.metadata();
+        thumbnail = await uploadThumbnail(id, image);
+      } catch {
+        metadata = {
+          width: attachment.width ?? 512,
+          height: attachment.height ?? 512,
+        };
+        thumbnail = {
+          thumbnailUrl: url,
+          thumbnailType: mediaType,
+          thumbnailWidth: metadata.width!,
+          thumbnailHeight: metadata.height!,
+        };
       }
-      const { default: sharp } = await import("sharp");
-      const image = sharp(imageBytes);
-      metadata = await image.metadata();
-      thumbnail = await uploadThumbnail(id, image);
-    } catch {
+    } else {
+      // REMOTE_MEDIA_THUMBNAILS=off: skip the body download and the sharp
+      // pipeline.  Operators rely on the media proxy (or the remote server
+      // directly) to serve the preview.
+      mediaType = attachment.mediaType ?? null;
+      if (mediaType == null) {
+        // The ActivityPub object didn't carry mediaType.  Probe the
+        // upstream so we don't drop the attachment outright (the prefetch
+        // path used to recover this from the response headers of the body
+        // GET).  Try HEAD first, then a tiny Range GET for CDNs that
+        // reject HEAD (some return 405; some return 200 with the wrong
+        // Content-Type), then fall back to MIME-by-extension.
+        try {
+          const head = await fetch(url, { method: "HEAD" });
+          if (head.ok) mediaType = head.headers.get("Content-Type");
+        } catch {
+          // ignore — keep trying the GET fallback below
+        }
+        if (mediaType == null) {
+          try {
+            const ranged = await fetch(url, {
+              headers: { Range: "bytes=0-0" },
+            });
+            // 200 OK (server ignored Range) and 206 Partial Content both
+            // give us usable headers; cancel the body either way.
+            if (ranged.status === 200 || ranged.status === 206) {
+              mediaType = ranged.headers.get("Content-Type");
+            }
+            await ranged.body?.cancel().catch(() => {});
+          } catch {
+            // ignore — fall through to extension inference
+          }
+        }
+        if (mediaType == null) {
+          try {
+            mediaType = mime.getType(new URL(url).pathname);
+          } catch {
+            // ignore — leave mediaType null so we skip below
+          }
+        }
+      }
+      if (mediaType == null) continue;
       metadata = {
         width: attachment.width ?? 512,
         height: attachment.height ?? 512,

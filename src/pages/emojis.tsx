@@ -6,6 +6,7 @@ import mime from "mime";
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import { loginRequired } from "../login";
+import { proxyUrl } from "../media-proxy";
 import { accounts, customEmojis, posts, reactions } from "../schema";
 
 const logger = getLogger(["hollo", "pages", "emojis"]);
@@ -66,42 +67,51 @@ emojis.get("/", async (c) => {
                 </tr>
               </thead>
               <tbody class="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-900">
-                {emojis.map((emoji) => (
-                  <tr>
-                    <td class="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        id={`emoji-${emoji.shortcode}`}
-                        name="emoji"
-                        value={emoji.shortcode}
-                        class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
-                        onchange="this.form.querySelector('button[type=submit]').disabled = !this.form.querySelectorAll('input[name=emoji]:checked').length"
-                      />
-                    </td>
-                    <td class="px-3 py-2 text-neutral-700 dark:text-neutral-300">
-                      <label for={`emoji-${emoji.shortcode}`}>
-                        {emoji.category ?? "—"}
-                      </label>
-                    </td>
-                    <td class="px-3 py-2">
-                      <label
-                        for={`emoji-${emoji.shortcode}`}
-                        class="font-mono text-neutral-900 dark:text-neutral-100"
-                      >
-                        :{emoji.shortcode}:
-                      </label>
-                    </td>
-                    <td class="px-3 py-2">
-                      <label for={`emoji-${emoji.shortcode}`}>
-                        <img
-                          src={emoji.url}
-                          alt={`:${emoji.shortcode}:`}
-                          class="h-6 w-auto"
+                {emojis.map((emoji) => {
+                  const previewUrl = proxyUrl(emoji.url, c.req.url);
+                  return (
+                    <tr>
+                      <td class="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          id={`emoji-${emoji.shortcode}`}
+                          name="emoji"
+                          value={emoji.shortcode}
+                          class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
+                          onchange="this.form.querySelector('button[type=submit]').disabled = !this.form.querySelectorAll('input[name=emoji]:checked').length"
                         />
-                      </label>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td class="px-3 py-2 text-neutral-700 dark:text-neutral-300">
+                        <label for={`emoji-${emoji.shortcode}`}>
+                          {emoji.category ?? "—"}
+                        </label>
+                      </td>
+                      <td class="px-3 py-2">
+                        <label
+                          for={`emoji-${emoji.shortcode}`}
+                          class="font-mono text-neutral-900 dark:text-neutral-100"
+                        >
+                          :{emoji.shortcode}:
+                        </label>
+                      </td>
+                      <td class="px-3 py-2">
+                        <label for={`emoji-${emoji.shortcode}`}>
+                          {previewUrl == null ? (
+                            <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                              :{emoji.shortcode}:
+                            </span>
+                          ) : (
+                            <img
+                              src={previewUrl}
+                              alt={`:${emoji.shortcode}:`}
+                              class="h-6 w-auto"
+                            />
+                          )}
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -427,39 +437,48 @@ emojis.get("/import", async (c) => {
               </tr>
             </thead>
             <tbody class="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-900">
-              {Object.values(emojis).map(({ id, shortcode, url, domain }) => (
-                <tr>
-                  <td class="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      id={id}
-                      name="import"
-                      value={JSON.stringify({ shortcode, url })}
-                      class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
-                    />
-                  </td>
-                  <td class="px-3 py-2">
-                    <label
-                      for={id}
-                      class="font-mono text-neutral-900 dark:text-neutral-100"
-                    >
-                      :{shortcode}:
-                    </label>
-                  </td>
-                  <td class="px-3 py-2 text-neutral-700 dark:text-neutral-300">
-                    <label for={id}>{domain}</label>
-                  </td>
-                  <td class="px-3 py-2">
-                    <label for={id}>
-                      <img
-                        src={url}
-                        alt={`:${shortcode}:`}
-                        class="h-6 w-auto"
+              {Object.values(emojis).map(({ id, shortcode, url, domain }) => {
+                const previewUrl = proxyUrl(url, c.req.url);
+                return (
+                  <tr>
+                    <td class="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        id={id}
+                        name="import"
+                        value={JSON.stringify({ shortcode, url })}
+                        class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
                       />
-                    </label>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td class="px-3 py-2">
+                      <label
+                        for={id}
+                        class="font-mono text-neutral-900 dark:text-neutral-100"
+                      >
+                        :{shortcode}:
+                      </label>
+                    </td>
+                    <td class="px-3 py-2 text-neutral-700 dark:text-neutral-300">
+                      <label for={id}>{domain}</label>
+                    </td>
+                    <td class="px-3 py-2">
+                      <label for={id}>
+                        {previewUrl == null ? (
+                          <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                            :{shortcode}:
+                          </span>
+                        ) : (
+                          <img
+                            src={previewUrl}
+                            alt={`:${shortcode}:`}
+                            class="h-6 w-auto"
+                          />
+                        )}
+                      </label>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

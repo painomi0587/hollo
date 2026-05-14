@@ -107,7 +107,9 @@ profilePost.get<"/:handle{@[^/]+}/:id{[-a-f0-9]+}">(async (c) => {
     },
   });
   if (post == null) return c.notFound();
-  return c.html(<PostPage post={post} accountOwner={accountOwner} />);
+  return c.html(
+    <PostPage post={post} accountOwner={accountOwner} baseUrl={c.req.url} />,
+  );
 });
 
 interface PostPageProps {
@@ -180,9 +182,10 @@ interface PostPageProps {
     })[];
     reactions: Reaction[];
   };
+  readonly baseUrl: URL | string;
 }
 
-function PostPage({ post, accountOwner }: PostPageProps) {
+function PostPage({ post, accountOwner, baseUrl }: PostPageProps) {
   const summary =
     post.summary ??
     ((post.content ?? "").length > 30
@@ -201,7 +204,7 @@ function PostPage({ post, accountOwner }: PostPageProps) {
       themeColor={accountOwner.themeColor}
     >
       <main class="mx-auto w-full max-w-2xl px-4 py-8 sm:py-10">
-        <PostView post={post} featured={true} />
+        <PostView post={post} featured={true} baseUrl={baseUrl} />
         {post.replies.length > 0 && (
           <section class="mt-8">
             <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
@@ -211,7 +214,7 @@ function PostPage({ post, accountOwner }: PostPageProps) {
             </h2>
             <div class="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
               {post.replies.map((reply) => (
-                <PostView post={reply} />
+                <PostView post={reply} baseUrl={baseUrl} />
               ))}
             </div>
           </section>

@@ -1,28 +1,40 @@
 import { escape } from "es-toolkit";
 
 import { renderCustomEmojis } from "../custom-emoji";
+import { proxyUrl } from "../media-proxy";
 import type { Account, AccountOwner } from "../schema";
 
 export interface ProfileProps {
   accountOwner: AccountOwner & { account: Account };
+  baseUrl: URL | string;
 }
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
-export function Profile({ accountOwner }: ProfileProps) {
+export function Profile({ accountOwner, baseUrl }: ProfileProps) {
   const account = accountOwner.account;
-  const nameHtml = renderCustomEmojis(escape(account.name), account.emojis);
-  const bioHtml = renderCustomEmojis(account.bioHtml ?? "", account.emojis);
+  const nameHtml = renderCustomEmojis(
+    escape(account.name),
+    account.emojis,
+    baseUrl,
+  );
+  const bioHtml = renderCustomEmojis(
+    account.bioHtml ?? "",
+    account.emojis,
+    baseUrl,
+  );
   const url = account.url ?? account.iri;
+  const avatar = proxyUrl(account.avatarUrl, baseUrl);
+  const cover = proxyUrl(account.coverUrl, baseUrl);
   const fieldEntries = account.fieldHtmls
     ? Object.entries(account.fieldHtmls)
     : [];
   return (
     <header class="rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
       <div class="relative h-44 overflow-hidden rounded-t-xl bg-gradient-to-br from-brand-100 to-brand-300 dark:from-brand-900 dark:to-brand-700 sm:h-56">
-        {account.coverUrl && (
+        {cover && (
           <img
-            src={account.coverUrl}
+            src={cover}
             alt=""
             class="absolute inset-0 size-full object-cover"
           />
@@ -30,9 +42,9 @@ export function Profile({ accountOwner }: ProfileProps) {
       </div>
       <div class="px-5 pb-6 sm:px-7">
         <div class="relative -mt-12 flex items-end justify-between gap-4">
-          {account.avatarUrl ? (
+          {avatar ? (
             <img
-              src={account.avatarUrl}
+              src={avatar}
               alt={`${account.name}'s avatar`}
               width={96}
               height={96}

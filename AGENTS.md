@@ -426,6 +426,8 @@ STORAGE_URL_BASE=https://your-bucket.s3.amazonaws.com
 | `REMOTE_REPLIES_SCRAPE_INTERVAL_SECONDS` | 5       | Delay between scrape requests per origin |
 | `REMOTE_REPLIES_SCRAPE_BACKOFF_SECONDS`  | 300     | Backoff for 429 without `Retry-After`    |
 | `REMOTE_REPLIES_SCRAPE_COOLDOWN_SECONDS` | 300     | Completed scrape deduplication window    |
+| `MEDIA_PROXY`                            | off     | Remote media proxy: `off`, `proxy`, `cache` (booleans accepted: `true`→`proxy`, `false`→`off`) |
+| `REMOTE_MEDIA_THUMBNAILS`                | on      | Generate local sharp thumbnails for remote attachments (boolean) |
 
 
 Adding new environment variables
