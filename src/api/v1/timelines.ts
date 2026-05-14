@@ -72,6 +72,20 @@ export const publicTimelineQuerySchema = timelineQuerySchema.extend({
     .transform((v) => v === "true"),
 });
 
+// Mastodon pagination semantics shared by every timeline endpoint:
+// `min_id` returns the posts *immediately* newer than the cursor (ASC +
+// reverse to newest-first); `since_id` is applied only when `min_id` is
+// absent and keeps the normal DESC order.
+function resolveTimelineCursor(query: { min_id?: Uuid; since_id?: Uuid }): {
+  useMinId: boolean;
+  lowerBound: Uuid | undefined;
+} {
+  return {
+    useMinId: query.min_id != null,
+    lowerBound: query.min_id ?? query.since_id,
+  };
+}
+
 // Build Mastodon-compatible bidirectional pagination Link header for a
 // timeline response.  `timeline` must be ordered newest-first (DESC by id).
 function buildTimelineLinkHeader(
@@ -103,11 +117,7 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const query = c.req.valid("query");
-    // Mastodon pagination semantics: `min_id` returns the posts *immediately*
-    // newer than the cursor (ASC + reverse to newest-first); `since_id` is
-    // applied only when `min_id` is absent and keeps the normal DESC order.
-    const useMinId = query.min_id != null;
-    const lowerBound = query.min_id ?? query.since_id;
+    const { useMinId, lowerBound } = resolveTimelineCursor(query);
     const timeline = await db.query.posts.findMany({
       where: and(
         eq(posts.visibility, "public"),
@@ -231,9 +241,7 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const query = c.req.valid("query");
-    // Mastodon pagination semantics: see /public for details.
-    const useMinId = query.min_id != null;
-    const lowerBound = query.min_id ?? query.since_id;
+    const { useMinId, lowerBound } = resolveTimelineCursor(query);
     let timeline: Parameters<typeof serializePost>[0][];
     if (TIMELINE_INBOXES) {
       timeline = await db.query.posts.findMany({
@@ -525,9 +533,7 @@ app.get(
       where: and(eq(lists.id, listId), eq(lists.accountOwnerId, owner.id)),
     });
     if (list == null) return c.json({ error: "Record not found" }, 404);
-    // Mastodon pagination semantics: see /public for details.
-    const useMinId = query.min_id != null;
-    const lowerBound = query.min_id ?? query.since_id;
+    const { useMinId, lowerBound } = resolveTimelineCursor(query);
     let timeline: Parameters<typeof serializePost>[0][];
     if (TIMELINE_INBOXES) {
       timeline = await db.query.posts.findMany({
@@ -793,9 +799,7 @@ app.get(
     const query = c.req.valid("query");
     const hashtag = `#${c.req.param("hashtag")}`;
     const followingAccountIds = await getApprovedFollowingAccountIds(owner.id);
-    // Mastodon pagination semantics: see /public for details.
-    const useMinId = query.min_id != null;
-    const lowerBound = query.min_id ?? query.since_id;
+    const { useMinId, lowerBound } = resolveTimelineCursor(query);
     const timeline = await db.query.posts.findMany({
       where: and(
         or(
