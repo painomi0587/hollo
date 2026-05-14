@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { SECRET_KEY } from "./env";
-import { STORAGE_URL_BASE } from "./storage-config";
+import { DRIVE_DISK, STORAGE_URL_BASE } from "./storage-config";
 
 export type MediaProxyMode = "off" | "proxy" | "cache";
 
@@ -112,16 +112,35 @@ export function verifyProxySignature(
   return decoded.toString("utf-8");
 }
 
-const STORAGE_URL_PREFIX = (() => {
+// The canonical "URL prefix we're willing to skip proxying for", derived from
+// the configured asset storage.  We deliberately compare against the parsed
+// URL's normalized `.href` (not the raw input string) so dot-segment tricks
+// like `https://h/assets/../admin/avatar.png` and percent-encoded variants
+// can't slip past the prefix check while resolving somewhere else.
+//
+//  -  In FS mode the driver always serves at `/assets/` on the storage
+//     origin, regardless of any path component the operator put in
+//     STORAGE_URL_BASE.  Trust only that namespace.
+//  -  In S3 / generic mode the driver concatenates STORAGE_URL_BASE + "/" +
+//     key, so STORAGE_URL_BASE itself (normalized to end in "/") is the
+//     trusted namespace.
+const TRUSTED_STORAGE_PREFIX: string | null = (() => {
   if (STORAGE_URL_BASE == null) return null;
-  return STORAGE_URL_BASE.endsWith("/")
-    ? STORAGE_URL_BASE
-    : `${STORAGE_URL_BASE}/`;
+  let storage: URL;
+  try {
+    storage = new URL(STORAGE_URL_BASE);
+  } catch {
+    return null;
+  }
+  if (DRIVE_DISK === "fs") {
+    return new URL("/assets/", storage).href;
+  }
+  return storage.pathname.endsWith("/") ? storage.href : `${storage.href}/`;
 })();
 
-function isUnderStorageBase(url: string): boolean {
-  if (STORAGE_URL_PREFIX == null) return false;
-  return url.startsWith(STORAGE_URL_PREFIX);
+function isUnderStorageBase(parsed: URL): boolean {
+  if (TRUSTED_STORAGE_PREFIX == null) return false;
+  return parsed.href.startsWith(TRUSTED_STORAGE_PREFIX);
 }
 
 export function proxyUrlForMode(
@@ -151,11 +170,10 @@ export function proxyUrlForMode(
   ) {
     return url;
   }
-  // Skip URLs that resolve under the configured asset storage prefix.  Origin
-  // alone isn't enough — path-style S3, shared CDNs, and "STORAGE_URL_BASE
-  // on the Hollo origin" all let other paths share the origin without
-  // belonging to our storage.
-  if (isUnderStorageBase(url)) return url;
+  // Skip URLs that resolve under the canonical asset storage namespace.
+  // Comparing the parsed `.href` (not the raw input) is what makes the check
+  // resistant to dot-segment / percent-encoded path traversal.
+  if (isUnderStorageBase(parsed)) return url;
   const { sig, b64url } = signProxyUrl(url);
   return new URL(`${PROXY_URL_PREFIX}/${sig}/${b64url}`, base).href;
 }

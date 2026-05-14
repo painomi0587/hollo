@@ -63,23 +63,36 @@ describe("media-proxy", () => {
       expect(proxyUrlForMode("off", null, baseUrl)).toBeNull();
     });
 
-    it("does not proxy a URL under STORAGE_URL_BASE", () => {
+    it("does not proxy a URL under the FS storage /assets/ namespace", () => {
       expect.assertions(1);
-      // .env.test sets STORAGE_URL_BASE=http://hollo.test/, so any URL with
-      // that prefix should pass through unchanged regardless of baseUrl.
+      // .env.test sets DRIVE_DISK=fs and STORAGE_URL_BASE=http://hollo.test/,
+      // so the FS driver serves uploads at http://hollo.test/assets/*.
       const otherBase = new URL("https://app.example/");
-      const local = "http://hollo.test/media/x.webp";
+      const local = "http://hollo.test/assets/emojis/x.webp";
       expect(proxyUrlForMode("proxy", local, otherBase)).toBe(local);
     });
 
-    it("proxies same-origin URLs that aren't under STORAGE_URL_BASE", () => {
+    it("proxies same-origin URLs outside the storage namespace", () => {
       expect.assertions(2);
-      // Use a baseUrl whose origin doesn't match STORAGE_URL_BASE so the
-      // STORAGE_URL_BASE prefix branch can't accidentally cover this case.
-      const otherBase = new URL("https://app.example/");
-      const sameOrigin = "https://app.example/some/path.png";
-      const proxied = proxyUrlForMode("proxy", sameOrigin, otherBase);
-      expect(proxied).not.toBe(sameOrigin);
+      // /admin/... is on the Hollo origin but not under /assets/ — it must
+      // NOT be trusted, otherwise an attacker-crafted avatarUrl could ride
+      // the operator's session.
+      const proxied = proxyUrlForMode(
+        "proxy",
+        "http://hollo.test/admin/destructive.png",
+        baseUrl,
+      );
+      expect(proxied).not.toBe("http://hollo.test/admin/destructive.png");
+      expect(new URL(proxied!).pathname.startsWith("/proxy/")).toBe(true);
+    });
+
+    it("rejects dot-segment traversal that would escape the storage prefix", () => {
+      expect.assertions(2);
+      // The raw string starts with /assets/, but the parsed URL normalizes
+      // to /admin/secret.png which is NOT under the trusted namespace.
+      const sneaky = "http://hollo.test/assets/../admin/secret.png";
+      const proxied = proxyUrlForMode("proxy", sneaky, baseUrl);
+      expect(proxied).not.toBe(sneaky);
       expect(new URL(proxied!).pathname.startsWith("/proxy/")).toBe(true);
     });
 
