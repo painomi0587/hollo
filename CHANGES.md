@@ -131,6 +131,18 @@ To be released.
     before the Unix epoch (January 1, 1970), which caused `uuidv7()` to
     receive a negative timestamp.  [[#67], [#466]]
 
+ -  Fixed `min_id` handling on `GET /api/v1/timelines/public`,
+    `GET /api/v1/timelines/home`, `GET /api/v1/timelines/list/:list_id`, and
+    `GET /api/v1/timelines/tag/:hashtag` to follow Mastodon's pagination
+    semantics: `min_id` now returns the posts *immediately* newer than the
+    cursor (rather than the most recent posts above it), so gap-loading
+    clients such as SubwayTooter can converge on arbitrarily large gaps.
+    `since_id` is now honoured on these endpoints as well, and `min_id`
+    takes precedence when both are supplied.  Timeline responses also
+    include a `rel="prev"` entry in the `Link` header alongside the existing
+    `rel="next"` entry, so clients no longer have to guess which cursor
+    parameter to use.  [[#479], [#482]]
+
  -  Upgraded Fedify to 2.2.1.
 
 [FEP-044f]: https://w3id.org/fep/044f
@@ -143,6 +155,8 @@ To be released.
 [#460]: https://github.com/fedify-dev/hollo/pull/460
 [#466]: https://github.com/fedify-dev/hollo/pull/466
 [#467]: https://github.com/fedify-dev/hollo/pull/467
+[#479]: https://github.com/fedify-dev/hollo/issues/479
+[#482]: https://github.com/fedify-dev/hollo/pull/482
 
 
 Version 0.8.4
