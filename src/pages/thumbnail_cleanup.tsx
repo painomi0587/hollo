@@ -105,29 +105,34 @@ data.get("/", async (c) => {
   const thumbnailsCount = thumbnailsCountResult[0].count;
 
   let proxyCacheCount = 0;
+  let proxyCacheTruncated = false;
   let proxyCacheListFailed = false;
   try {
-    proxyCacheCount = await countProxyCacheBinKeys();
+    const result = await countProxyCacheBinKeys();
+    proxyCacheCount = result.count;
+    proxyCacheTruncated = result.truncated;
   } catch (error) {
     proxyCacheListFailed = true;
     logger.warn("Failed to inspect proxy cache: {error}", { error });
   }
   const proxyCacheResult = c.req.query("proxy-cache-result");
 
-  const thumbnailsTable: { caption: string; count: number }[] = [
+  const thumbnailsTable: { caption: string; count: string }[] = [
     {
       caption: "Total, thumbnail hosted locally",
-      count: thumbnailsCount,
+      count: thumbnailsCount.toLocaleString("en"),
     },
     {
       caption: "Remote, thumbnail hosted locally",
-      count: thumbnailsRemoteCount,
+      count: thumbnailsRemoteCount.toLocaleString("en"),
     },
   ];
   if (!proxyCacheListFailed) {
     thumbnailsTable.push({
       caption: "Media proxy cache entries",
-      count: proxyCacheCount,
+      count: proxyCacheTruncated
+        ? `${proxyCacheCount.toLocaleString("en")}+`
+        : proxyCacheCount.toLocaleString("en"),
     });
   }
 
@@ -176,7 +181,7 @@ data.get("/", async (c) => {
                       {entry.caption}
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums text-neutral-700 dark:text-neutral-300">
-                      {entry.count.toLocaleString("en")}
+                      {entry.count}
                     </td>
                   </tr>
                 ))}
@@ -440,7 +445,9 @@ data.get("/", async (c) => {
             >
               {proxyCacheListFailed
                 ? "Cache size unavailable"
-                : `Clear ${proxyCacheCount.toLocaleString("en")} entries`}
+                : proxyCacheTruncated
+                  ? `Clear ${proxyCacheCount.toLocaleString("en")}+ entries`
+                  : `Clear ${proxyCacheCount.toLocaleString("en")} entries`}
             </button>
             <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
               {proxyCacheListFailed

@@ -192,8 +192,22 @@ export async function* iterateProxyCacheBinKeys(): AsyncGenerator<
   } while (paginationToken != null);
 }
 
-export async function countProxyCacheBinKeys(): Promise<number> {
+// Maximum value reported by countProxyCacheBinKeysBounded.  The dashboard
+// only needs an order-of-magnitude indicator, so we stop the storage walk
+// once we know there are at least this many entries instead of paging
+// through every object on every page load.
+export const PROXY_CACHE_COUNT_CAP = 10_000;
+
+export interface ProxyCacheCountResult {
+  count: number;
+  truncated: boolean;
+}
+
+export async function countProxyCacheBinKeys(): Promise<ProxyCacheCountResult> {
   let count = 0;
-  for await (const _key of iterateProxyCacheBinKeys()) count++;
-  return count;
+  for await (const _key of iterateProxyCacheBinKeys()) {
+    count++;
+    if (count >= PROXY_CACHE_COUNT_CAP) return { count, truncated: true };
+  }
+  return { count, truncated: false };
 }
