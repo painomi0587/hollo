@@ -352,3 +352,34 @@ shorthand at class extraction time, but the original string still ships
 in the HTML `class` attribute, where the browser splits it on
 whitespace and matches `ring-2` (etc.) as a standalone class.  Always
 write each variant out long-form (`focus:border-brand-500 focus:ring-2 …`).
+
+
+### Page-scoped client scripts
+
+The lightweight-SSR principle still stands: *Layout.tsx* and the
+dashboard chrome stay JavaScript-free.  A handful of existing pages
+emit tiny inline scripts (e.g. `onsubmit="this.submit.ariaBusy='true'"`
+on long-running forms, or `<script dangerouslySetInnerHTML>` blocks
+for small DOM enhancements like dependent field reveal); those are
+fine for one-liners that decorate an otherwise functional form, and
+they're allowed to stay.
+
+For features that genuinely *can't* work without JavaScript — currently
+just the WebAuthn passkey ceremonies on the admin *Auth* page and the
+public login page — prefer the passkey pattern over an inline blob:
+
+ -  Drop a small, hand-written `.js` file into *src/public/* (e.g.
+    *passkey.js*).  Keep it short, IIFE-wrapped, no framework, no build
+    step.  If it depends on a vendored library, copy that library's
+    UMD bundle into *src/public/* as a separate file and add a comment
+    documenting how to re-vendor it after a dep bump.
+ -  Emit `<script src="/public/your-script.js" defer>` at the very end
+    of the JSX tree of only the page(s) that need it — not in
+    *Layout.tsx*.  A referenced static asset stays CSP-friendly and
+    lets the script live as a normal source file with real syntax
+    highlighting.
+ -  The script must degrade gracefully: if it fails to load, the
+    underlying HTML form should still be operable (or the feature
+    should be hidden behind a button the user has to click).
+ -  Wire to the DOM via stable `id`s on the form / button the page
+    already renders.  The server-rendered markup is the contract.

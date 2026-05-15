@@ -53,6 +53,59 @@ export const totps = pgTable("totps", {
 export type Totp = typeof totps.$inferSelect;
 export type NewTotp = typeof totps.$inferInsert;
 
+export const passkeys = pgTable("passkeys", {
+  id: text("id").primaryKey(),
+  credentialEmail: varchar("credential_email", { length: 254 })
+    .notNull()
+    .references(() => credentials.email, { onDelete: "cascade" }),
+  publicKey: text("public_key").notNull(),
+  counter: bigint("counter", { mode: "number" }).notNull(),
+  transports: text("transports")
+    .array()
+    .notNull()
+    .default(sql`(ARRAY[]::text[])`),
+  deviceType: text("device_type").notNull(),
+  backedUp: boolean("backed_up").notNull(),
+  nickname: text("nickname").notNull(),
+  lastUsed: timestamp("last_used", { withTimezone: true }),
+  created: timestamp("created", { withTimezone: true })
+    .notNull()
+    .default(currentTimestamp),
+});
+
+export const passkeyRelations = relations(passkeys, ({ one }) => ({
+  credential: one(credentials, {
+    fields: [passkeys.credentialEmail],
+    references: [credentials.email],
+  }),
+}));
+
+export type Passkey = typeof passkeys.$inferSelect;
+export type NewPasskey = typeof passkeys.$inferInsert;
+
+// One row per in-flight passkey *login* ceremony.  The signed cookie sent
+// to the browser holds just `id`; the actual WebAuthn challenge lives
+// here so /finish can atomically `DELETE … WHERE id AND expires_at > now()
+// RETURNING challenge`, making a captured cookie + assertion pair good
+// for at most one /finish call even within the TTL.  Registration is
+// already bound to the logged-in session, so it doesn't need this.
+export const passkeyLoginChallenges = pgTable(
+  "passkey_login_challenges",
+  {
+    id: text("id").primaryKey(),
+    challenge: text("challenge").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [index().on(table.expiresAt)],
+);
+
+export type PasskeyLoginChallenge = typeof passkeyLoginChallenges.$inferSelect;
+export type NewPasskeyLoginChallenge =
+  typeof passkeyLoginChallenges.$inferInsert;
+
 export const accountTypeEnum = pgEnum("account_type", [
   "Application",
   "Group",
