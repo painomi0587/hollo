@@ -212,10 +212,11 @@ auth.post("/passkeys/registration/finish", async (c) => {
   if (verified == null) {
     return c.json({ error: "Registration could not be verified." }, 400);
   }
-  const trimmedNickname = body.nickname?.trim();
+  // body.nickname has already been .trim()'d by finishBodySchema, so it's
+  // either a non-empty trimmed string, an empty string, or undefined.
   const nickname =
-    trimmedNickname != null && trimmedNickname !== ""
-      ? trimmedNickname
+    body.nickname != null && body.nickname !== ""
+      ? body.nickname
       : nicknameFromUserAgent(c.req.header("user-agent"));
   const inserted = await db
     .insert(passkeys)
