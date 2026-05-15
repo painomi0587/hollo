@@ -256,6 +256,20 @@ To be released.
     piled up and could exhaust the connection pool.  A B-tree index on
     `posts.updated` is now created by migration.  [[#488]]
 
+ -  Further optimized the NodeInfo endpoint with three changes that
+    together reduce a previously 42-second query to a handful of
+    milliseconds:
+
+     -  Rewrote the `activeMonth` and `activeHalfyear` queries from
+        a `RIGHT JOIN` + `countDistinct` (full scan of all posts) to
+        an `EXISTS` semi-join that performs at most one index lookup
+        per local account owner.
+     -  Added a composite B-tree index on `(actor_id, updated)` to
+        support the `EXISTS` subquery without heap fetches.
+     -  Added a 5-minute in-process TTL cache on the NodeInfo
+        dispatcher so repeated polls by external directories and
+        health checkers no longer hit the database at all.
+
  -  Upgraded Fedify to 2.2.1.
 
  -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.

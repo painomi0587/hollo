@@ -578,6 +578,7 @@ export const posts = pgTable(
       table.contentHtml.op("gin_trgm_ops"),
     ),
     index("posts_updated_index").on(table.updated),
+    index("posts_actor_id_updated_index").on(table.accountId, table.updated),
     index("posts_actor_id_published_index").on(
       table.accountId,
       table.published,
