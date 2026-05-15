@@ -162,84 +162,88 @@ const finishBodySchema = z.object({
   }),
 });
 
-auth.post(
-  "/passkeys/registration/finish",
-  zValidator("json", finishBodySchema),
-  async (c) => {
-    const login = await getSignedCookie(c, SECRET_KEY, "login");
-    if (login == null || login === false) {
-      return c.redirect(`/login?next=${encodeURIComponent(c.req.url)}`);
-    }
-    const cookieValue = await getSignedCookie(
-      c,
-      SECRET_KEY,
-      PASSKEY_REG_COOKIE,
+auth.post("/passkeys/registration/finish", async (c) => {
+  const login = await getSignedCookie(c, SECRET_KEY, "login");
+  if (login == null || login === false) {
+    return c.redirect(`/login?next=${encodeURIComponent(c.req.url)}`);
+  }
+  // Consume the registration challenge cookie up front, before any body
+  // parsing or schema validation, so a malformed first request still
+  // burns the cookie.  Otherwise zValidator would short-circuit on a bad
+  // payload and leave passkey_reg replayable until its TTL.
+  const cookieValue = await getSignedCookie(c, SECRET_KEY, PASSKEY_REG_COOKIE);
+  deleteCookie(c, PASSKEY_REG_COOKIE, { path: "/auth/passkeys" });
+  if (cookieValue == null || cookieValue === false) {
+    return c.json({ error: "Missing or invalid challenge cookie." }, 400);
+  }
+  const parts = cookieValue.split("|");
+  if (parts.length !== 3) {
+    return c.json({ error: "Malformed challenge cookie." }, 400);
+  }
+  const [challenge, expiresAtStr, boundLogin] = parts;
+  const expiresAt = Number.parseInt(expiresAtStr, 10);
+  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+    return c.json({ error: "Challenge has expired." }, 400);
+  }
+  if (boundLogin !== login) {
+    return c.json(
+      { error: "Challenge is bound to a different login session." },
+      400,
     );
-    // The cookie is always consumed, even on failure paths, to prevent
-    // replays of a captured value.
-    deleteCookie(c, PASSKEY_REG_COOKIE, { path: "/auth/passkeys" });
-    if (cookieValue == null || cookieValue === false) {
-      return c.json({ error: "Missing or invalid challenge cookie." }, 400);
-    }
-    const parts = cookieValue.split("|");
-    if (parts.length !== 3) {
-      return c.json({ error: "Malformed challenge cookie." }, 400);
-    }
-    const [challenge, expiresAtStr, boundLogin] = parts;
-    const expiresAt = Number.parseInt(expiresAtStr, 10);
-    if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
-      return c.json({ error: "Challenge has expired." }, 400);
-    }
-    if (boundLogin !== login) {
-      return c.json(
-        { error: "Challenge is bound to a different login session." },
-        400,
-      );
-    }
-    const credential = await db.query.credentials.findFirst();
-    if (credential == null) return c.redirect("/setup");
+  }
+  const credential = await db.query.credentials.findFirst();
+  if (credential == null) return c.redirect("/setup");
 
-    const body = c.req.valid("json");
-    const rpInfo = getRpInfo(c.req.url);
-    const verified = await verifyRegistration({
-      rpInfo,
-      // SimpleWebAuthn validates the inner shape; the Zod schema above
-      // just rejects obviously wrong payloads.
-      // oxlint-disable-next-line typescript/no-explicit-any
-      response: body.registrationResponse as any,
-      expectedChallenge: challenge,
-    });
-    if (verified == null) {
-      return c.json({ error: "Registration could not be verified." }, 400);
-    }
-    const trimmedNickname = body.nickname?.trim();
-    const nickname =
-      trimmedNickname != null && trimmedNickname !== ""
-        ? trimmedNickname
-        : nicknameFromUserAgent(c.req.header("user-agent"));
-    const inserted = await db
-      .insert(passkeys)
-      .values({
-        id: verified.credentialId,
-        credentialEmail: credential.email,
-        publicKey: encodePublicKey(verified.publicKey),
-        counter: verified.counter,
-        transports: verified.transports,
-        deviceType: verified.deviceType,
-        backedUp: verified.backedUp,
-        nickname,
-      })
-      .onConflictDoNothing()
-      .returning({ id: passkeys.id });
-    if (inserted.length === 0) {
-      return c.json(
-        { error: "This passkey is already enrolled on this account." },
-        409,
-      );
-    }
-    return c.body(null, 204);
-  },
-);
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body." }, 400);
+  }
+  const parsed = finishBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid request body." }, 400);
+  }
+  const body = parsed.data;
+  const rpInfo = getRpInfo(c.req.url);
+  const verified = await verifyRegistration({
+    rpInfo,
+    // SimpleWebAuthn validates the inner shape; the Zod schema above
+    // just rejects obviously wrong payloads.
+    // oxlint-disable-next-line typescript/no-explicit-any
+    response: body.registrationResponse as any,
+    expectedChallenge: challenge,
+  });
+  if (verified == null) {
+    return c.json({ error: "Registration could not be verified." }, 400);
+  }
+  const trimmedNickname = body.nickname?.trim();
+  const nickname =
+    trimmedNickname != null && trimmedNickname !== ""
+      ? trimmedNickname
+      : nicknameFromUserAgent(c.req.header("user-agent"));
+  const inserted = await db
+    .insert(passkeys)
+    .values({
+      id: verified.credentialId,
+      credentialEmail: credential.email,
+      publicKey: encodePublicKey(verified.publicKey),
+      counter: verified.counter,
+      transports: verified.transports,
+      deviceType: verified.deviceType,
+      backedUp: verified.backedUp,
+      nickname,
+    })
+    .onConflictDoNothing()
+    .returning({ id: passkeys.id });
+  if (inserted.length === 0) {
+    return c.json(
+      { error: "This passkey is already enrolled on this account." },
+      409,
+    );
+  }
+  return c.body(null, 204);
+});
 
 auth.post("/passkeys/:id/delete", async (c) => {
   const id = c.req.param("id");

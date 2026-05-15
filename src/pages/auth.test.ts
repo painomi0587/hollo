@@ -353,6 +353,37 @@ describe("auth passkeys", () => {
       });
       expect(row?.nickname).toBe("macOS device");
     });
+
+    it("consumes the challenge cookie even on a malformed body", async () => {
+      // A malformed first request would previously short-circuit at the
+      // schema validator before the cookie was deleted, leaving the same
+      // signed value usable for the rest of its TTL.
+      await seedCredential();
+      const cookie = await getLoginCookie();
+      const beginResponse = await app.request(
+        "http://hollo.test/auth/passkeys/registration/begin",
+        { method: "POST", headers: { Cookie: cookie } },
+      );
+      const challengeCookie = beginResponse.headers.get("Set-Cookie") ?? "";
+      const passkeyRegCookie = challengeCookie.split(";")[0];
+
+      const finishResponse = await app.request(
+        "http://hollo.test/auth/passkeys/registration/finish",
+        {
+          method: "POST",
+          headers: {
+            Cookie: `${cookie}; ${passkeyRegCookie}`,
+            "Content-Type": "application/json",
+          },
+          // The schema requires `registrationResponse`, so this body is
+          // invalid and used to trip zValidator before the handler ran.
+          body: JSON.stringify({ nickname: "no response" }),
+        },
+      );
+      expect(finishResponse.status).toBe(400);
+      const setCookie = finishResponse.headers.get("Set-Cookie") ?? "";
+      expect(setCookie).toMatch(/passkey_reg=;/);
+    });
   });
 
   describe("POST /auth/passkeys/:id/delete", () => {
