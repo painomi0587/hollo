@@ -1,0 +1,1 @@
+CREATE INDEX "posts_actor_id_published_index" ON "posts" USING btree ("actor_id","published");

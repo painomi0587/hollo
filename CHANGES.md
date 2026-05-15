@@ -227,6 +227,26 @@ To be released.
     `rel="next"` entry, so clients no longer have to guess which cursor
     parameter to use.  [[#479], [#482]]
 
+ -  Fixed a performance bug that caused profile page queries to take
+    hundreds of seconds on a cold PostgreSQL buffer cache and trigger a
+    thundering herd that exhausted the connection pool.  Two root
+    causes:  [[#489]]
+
+     -  `posts.actor_id` had no composite index with `published`, so
+        timeline queries that `ORDER BY published DESC` performed a
+        full sort of all matching rows.  A B-tree index on
+        `(actor_id, published)` is now created by migration.
+     -  Every API response that fetches a list of posts used a lateral
+        join to eagerly load all direct replies for each post, even
+        though only the denormalized `replies_count` counter is actually
+        used in the Mastodon API serialization.  The lateral join is
+        removed from all list-context queries (`getPostRelations`,
+        timelines, notifications, outbox, etc.).  The ActivityPub
+        object serializer now also uses `replies_count` for the
+        `replies` collection `totalItems` instead of reloading every
+        reply.  Single-post views (the public post permalink page) still
+        fetch replies but are now capped at 20 per request.
+
  -  Fixed a performance bug where the NodeInfo endpoint performed a
     sequential scan of the entire `posts` table on every request because
     `posts.updated` had no index.  On large instances (e.g. 4 M rows /
@@ -258,6 +278,7 @@ To be released.
 [#484]: https://github.com/fedify-dev/hollo/pull/484
 [#487]: https://github.com/fedify-dev/hollo/pull/487
 [#488]: https://github.com/fedify-dev/hollo/issues/488
+[#489]: https://github.com/fedify-dev/hollo/issues/489
 
 
 Version 0.8.4

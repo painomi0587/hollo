@@ -42,6 +42,7 @@ import {
   toDelete,
   toObject,
   toUpdate,
+  updatePostStats,
 } from "../../federation/post";
 import { appendPostToTimelines } from "../../federation/timeline";
 import { requestBody } from "../../helpers";
@@ -487,6 +488,9 @@ app.post(
           .where(eq(posts.id, quoteTargetId));
       }
       await updateAccountStats(tx, owner);
+      if (insertedRows[0].replyTargetId != null) {
+        await updatePostStats(tx, { id: insertedRows[0].replyTargetId });
+      }
       await appendPostToTimelines(tx, {
         ...insertedRows[0],
         sharing: null,
@@ -790,6 +794,9 @@ app.delete(
           .where(eq(posts.id, post.quoteTargetId));
       }
       await updateAccountStats(tx, owner);
+      if (post.replyTargetId != null) {
+        await updatePostStats(tx, { id: post.replyTargetId });
+      }
     });
     const fedCtx = federation.createContext(c.req.raw, undefined);
     const activity = toDelete(post, fedCtx);

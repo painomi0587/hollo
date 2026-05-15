@@ -906,7 +906,7 @@ export function toObject(
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     mentions: (Mention & { account: Account })[];
-    replies: Post[];
+    replies?: Post[];
   },
   ctx: Context<unknown>,
   opts: { includeInactiveQuoteTarget?: boolean } = {},
@@ -1013,8 +1013,10 @@ export function toObject(
       post.replyTarget == null ? null : new URL(post.replyTarget.iri),
     replies: new OrderedCollection({
       id: new URL("#replies", post.iri),
-      totalItems: post.replies.length,
-      items: post.replies.map((r) => new URL(r.iri)),
+      totalItems: post.repliesCount ?? 0,
+      ...(post.replies != null && post.replies.length > 0
+        ? { items: post.replies.map((r) => new URL(r.iri)) }
+        : {}),
     }),
     shares:
       post.sharesCount == null
@@ -1190,7 +1192,7 @@ export function toCreate(
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     mentions: (Mention & { account: Account })[];
-    replies: Post[];
+    replies?: Post[];
   },
   ctx: Context<unknown>,
 ): Create {
@@ -1213,7 +1215,7 @@ export function toUpdate(
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     mentions: (Mention & { account: Account })[];
-    replies: Post[];
+    replies?: Post[];
   },
   ctx: Context<unknown>,
   updated?: Date,
@@ -1240,7 +1242,7 @@ export function toDelete(
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     mentions: (Mention & { account: Account })[];
-    replies: Post[];
+    replies?: Post[];
   },
   ctx: Context<unknown>,
   deleted: Date = new Date(),

@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
@@ -68,6 +68,8 @@ profilePost.get<"/:handle{@[^/]+}/:id{[-a-f0-9]+}">(async (c) => {
       },
       replies: {
         where: inArray(posts.visibility, ["public", "unlisted"]),
+        orderBy: desc(posts.published),
+        limit: 20,
         with: {
           account: true,
           media: true,

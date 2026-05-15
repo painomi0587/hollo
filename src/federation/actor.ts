@@ -237,7 +237,6 @@ federation
           poll: { with: { options: true } },
           mentions: { with: { account: true } },
           sharing: { with: { account: true } },
-          replies: true,
         },
       });
       return {
@@ -338,7 +337,6 @@ federation.setFeaturedDispatcher(
             media: true,
             poll: { with: { options: { orderBy: pollOptions.index } } },
             mentions: { with: { account: true } },
-            replies: true,
           },
         },
       },

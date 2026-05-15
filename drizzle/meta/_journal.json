@@ -645,6 +645,13 @@
       "when": 1778818883760,
       "tag": "0091_posts_updated_index",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1778819574883,
+      "tag": "0092_posts_actor_id_published_index",
+      "breakpoints": true
     }
   ]
 }

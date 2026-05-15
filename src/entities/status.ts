@@ -244,7 +244,6 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
         ownerId == null ? sql`false` : eq(bookmarks.accountOwnerId, ownerId),
     },
     pin: true,
-    replies: true,
   } as const;
 }
 

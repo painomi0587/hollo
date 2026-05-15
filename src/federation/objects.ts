@@ -59,7 +59,7 @@ federation.setObjectDispatcher(
         media: true,
         poll: { with: { options: { orderBy: pollOptions.index } } },
         mentions: { with: { account: true } },
-        replies: true,
+        replies: { limit: 20 },
       },
     });
     if (post == null) return null;
