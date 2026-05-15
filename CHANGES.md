@@ -24,7 +24,7 @@ To be released.
     gesture.  Registration challenges are bound to the current login
     session with a server-enforced 5-minute TTL, and login challenges
     are stored in a single-use `passkey_login_challenges` table so a
-    captured cookie + assertion pair can be redeemed at most once.
+    captured cookie + assertion pair can be redeemed at most once.  [[#487]]
 
  -  Added optional split-domain WebFinger support.  When the new
     `HANDLE_HOST` and `WEB_ORIGIN` environment variables are set,
@@ -241,6 +241,7 @@ To be released.
 [#482]: https://github.com/fedify-dev/hollo/pull/482
 [#483]: https://github.com/fedify-dev/hollo/pull/483
 [#484]: https://github.com/fedify-dev/hollo/pull/484
+[#487]: https://github.com/fedify-dev/hollo/pull/487
 
 
 Version 0.8.4
