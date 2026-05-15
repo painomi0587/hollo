@@ -267,19 +267,23 @@ login.post("/passkey/begin", async (c) => {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(${PASSKEY_LOGIN_BEGIN_LOCK})`,
     );
+    // One timestamp for the whole transaction so the GC predicate and
+    // the count predicate can't disagree if the wall clock ticks
+    // between them.
+    const now = new Date();
     // Opportunistically GC expired rows so the table never grows
     // unbounded even though Hollo doesn't run a separate cleanup
     // worker for it.
     await tx
       .delete(passkeyLoginChallenges)
-      .where(lt(passkeyLoginChallenges.expiresAt, new Date()));
+      .where(lt(passkeyLoginChallenges.expiresAt, now));
     // Soft cap on outstanding (unexpired) rows to keep an
     // unauthenticated caller from pumping the table during the TTL
     // window.  Counting after the GC makes the cap reflect
     // "still-usable" rows only.
     const outstanding = await tx.$count(
       passkeyLoginChallenges,
-      gte(passkeyLoginChallenges.expiresAt, new Date()),
+      gte(passkeyLoginChallenges.expiresAt, now),
     );
     if (outstanding >= PASSKEY_LOGIN_MAX_OUTSTANDING_CHALLENGES) {
       return true;
