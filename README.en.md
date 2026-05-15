@@ -46,5 +46,7 @@ Docs
      -  [Manual installation](https://docs.hollo.social/install/manual/)
      -  [Environment variables](https://docs.hollo.social/install/env/)
      -  [Setting up](https://docs.hollo.social/install/setup/)
+     -  [Separating worker nodes](https://docs.hollo.social/install/workers/)
+     -  [Split-domain WebFinger](https://docs.hollo.social/install/split-domain/)
  -  [Tested clients](https://docs.hollo.social/clients/)
  -  [Search](https://docs.hollo.social/search/)

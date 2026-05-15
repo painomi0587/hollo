@@ -47,5 +47,7 @@ Hollo를 사용할 수 있습니다.
      -  [수동 설치](https://docs.hollo.social/ko/install/manual/)
      -  [환경 변수](https://docs.hollo.social/ko/install/env/)
      -  [설정하기](https://docs.hollo.social/ko/install/setup/)
+     -  [워커 노드 분리](https://docs.hollo.social/ko/install/workers/)
+     -  [도메인 분리 WebFinger](https://docs.hollo.social/ko/install/split-domain/)
  -  [테스트된 클라이언트](https://docs.hollo.social/ko/clients/)
  -  [검색](https://docs.hollo.social/ko/search/)

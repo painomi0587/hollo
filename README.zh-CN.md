@@ -45,5 +45,7 @@ Hollo 互动。
      -  [手动安装](https://docs.hollo.social/zh-cn/install/manual/)
      -  [环境变量](https://docs.hollo.social/zh-cn/install/env/)
      -  [配置指南](https://docs.hollo.social/zh-cn/install/setup/)
+     -  [分离工作节点](https://docs.hollo.social/zh-cn/install/workers/)
+     -  [分域 WebFinger](https://docs.hollo.social/zh-cn/install/split-domain/)
  -  [测试过的客户端](https://docs.hollo.social/zh-cn/clients/)
  -  [搜索](https://docs.hollo.social/zh-cn/search/)

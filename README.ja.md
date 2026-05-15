@@ -47,5 +47,7 @@ Holloは、独自のウェブインタフェースを持たない「ヘッドレ
      -  [手動インストール](https://docs.hollo.social/ja/install/manual/)
      -  [環境変数](https://docs.hollo.social/ja/install/env/)
      -  [初期設定](https://docs.hollo.social/ja/install/setup/)
+     -  [ワーカーノードの分離](https://docs.hollo.social/ja/install/workers/)
+     -  [ドメイン分離 WebFinger](https://docs.hollo.social/ja/install/split-domain/)
  -  [テスト済みクライアント](https://docs.hollo.social/ja/clients/)
  -  [検索](https://docs.hollo.social/ja/search/)
