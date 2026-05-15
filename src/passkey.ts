@@ -225,10 +225,7 @@ export function encodePublicKey(bytes: Uint8Array): string {
 
 /** Decode a base64url-encoded public-key blob back into bytes. */
 export function decodePublicKey(encoded: string): Uint8Array<ArrayBuffer> {
-  const buf = Buffer.from(encoded, "base64url");
-  const out = new Uint8Array(new ArrayBuffer(buf.byteLength));
-  out.set(buf);
-  return out;
+  return Buffer.from(encoded, "base64url");
 }
 
 const PLATFORM_LABELS: ReadonlyArray<{ pattern: RegExp; label: string }> = [

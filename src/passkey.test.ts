@@ -87,7 +87,7 @@ describe("encodePublicKey / decodePublicKey", () => {
     const bytes = new Uint8Array([0, 1, 2, 250, 251, 252, 253, 254, 255]);
     const encoded = encodePublicKey(bytes);
     expect(typeof encoded).toBe("string");
-    expect(decodePublicKey(encoded)).toEqual(bytes);
+    expect(Array.from(decodePublicKey(encoded))).toEqual(Array.from(bytes));
   });
 
   it("encodes to base64url (no +, /, or = padding)", () => {
@@ -99,7 +99,7 @@ describe("encodePublicKey / decodePublicKey", () => {
   it("decodes the same value when given a string with padding stripped", () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const encoded = encodePublicKey(bytes);
-    expect(decodePublicKey(encoded)).toEqual(bytes);
+    expect(Array.from(decodePublicKey(encoded))).toEqual(Array.from(bytes));
   });
 });
 
