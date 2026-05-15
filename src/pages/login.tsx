@@ -364,7 +364,7 @@ login.post("/passkey/finish", async (c) => {
     .where(
       and(
         eq(passkeyLoginChallenges.id, cookieId),
-        gte(passkeyLoginChallenges.expiresAt, new Date(Date.now())),
+        gte(passkeyLoginChallenges.expiresAt, new Date()),
       ),
     )
     .returning({

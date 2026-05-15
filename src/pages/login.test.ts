@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import * as timekeeper from "timekeeper";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanDatabase } from "../../tests/helpers";
@@ -489,11 +490,9 @@ describe("login passkeys", () => {
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
 
       // Move past the 5-minute server-side expiry without waiting in real
-      // time.  Date.now is mocked just for this assertion.
-      const realNow = Date.now.bind(Date);
-      const stub = vi
-        .spyOn(Date, "now")
-        .mockReturnValue(realNow() + 6 * 60_000);
+      // time.  timekeeper mocks both Date.now() and `new Date()` (the
+      // SQL expiry predicate constructs a Date directly).
+      timekeeper.travel(new Date(Date.now() + 6 * 60_000));
       try {
         const response = await app.request(
           "http://hollo.test/login/passkey/finish",
@@ -521,7 +520,7 @@ describe("login passkeys", () => {
         expect(response.status).toBe(400);
         expect(mockVerifyAuthentication).not.toHaveBeenCalled();
       } finally {
-        stub.mockRestore();
+        timekeeper.reset();
       }
     });
 
