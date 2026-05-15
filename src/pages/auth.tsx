@@ -141,8 +141,8 @@ auth.post("/passkeys/registration/begin", async (c) => {
 const finishBodySchema = z.object({
   nickname: z.string().trim().max(80).optional(),
   registrationResponse: z.object({
-    id: z.string(),
-    rawId: z.string(),
+    id: z.string().min(1),
+    rawId: z.string().min(1),
     type: z.literal("public-key"),
     clientExtensionResults: z.record(z.string(), z.unknown()),
     authenticatorAttachment: z.string().optional(),

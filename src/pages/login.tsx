@@ -333,7 +333,7 @@ const passkeyFinishSchema = z.object({
   next: z.string().optional(),
   authenticationResponse: z.object({
     id: z.string().min(1),
-    rawId: z.string(),
+    rawId: z.string().min(1),
     type: z.literal("public-key"),
     clientExtensionResults: z.record(z.string(), z.unknown()),
     authenticatorAttachment: z.string().optional(),
