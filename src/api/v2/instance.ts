@@ -7,11 +7,34 @@ import { serializeAccountOwner } from "../../entities/account";
 import { getInstanceHost } from "../../instance-host";
 import { accountOwners, posts } from "../../schema";
 
+const TTL_MS = 5 * 60 * 1000;
+const MAX_CACHE_ENTRIES = 10;
+const cache = new Map<string, { body: unknown; expires: number }>();
+
+function setCacheEntry(key: string, body: unknown): void {
+  const now = Date.now();
+  for (const [k, v] of cache) {
+    if (v.expires <= now) cache.delete(k);
+  }
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = [...cache.entries()].reduce((a, b) =>
+      a[1].expires < b[1].expires ? a : b,
+    );
+    cache.delete(oldest[0]);
+  }
+  cache.set(key, { body, expires: now + TTL_MS });
+}
+
 const app = new Hono();
 
 app.get("/", async (c) => {
   const url = new URL(c.req.url);
   const instanceHost = getInstanceHost(url);
+  const cacheKey = url.origin;
+  const cached = cache.get(cacheKey);
+  if (cached != null && cached.expires > Date.now()) {
+    return c.json(cached.body);
+  }
   const credential = await db.query.credentials.findFirst();
   if (credential == null) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
@@ -32,7 +55,7 @@ app.get("/", async (c) => {
       ),
     )
     .groupBy(posts.language);
-  return c.json({
+  const body = {
     api_versions: {
       mastodon: 7,
     },
@@ -121,7 +144,9 @@ app.get("/", async (c) => {
       "enable_wide_emoji",
       "enable_wide_emoji_reaction",
     ],
-  });
+  };
+  setCacheEntry(cacheKey, body);
+  return c.json(body);
 });
 
 export default app;

@@ -270,6 +270,13 @@ To be released.
         dispatcher so repeated polls by external directories and
         health checkers no longer hit the database at all.
 
+ -  Optimized the `GET /api/v2/instance` endpoint.  The `languages` field was
+    previously computed by a full scan of the `posts` table on every request.
+    A new partial composite index `posts_actor_id_language_index` on
+    `(actor_id, language) WHERE language IS NOT NULL` turns this into an
+    Index-Only Scan, and a 5-minute in-process response cache absorbs
+    repeated calls so the database is queried at most once per 5 minutes.
+
  -  Upgraded Fedify to 2.2.1.
 
  -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.
