@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanDatabase } from "../../tests/helpers";
 import db from "../db";
-import { credentials, passkeys } from "../schema";
+import { credentials, passkeyLoginChallenges, passkeys } from "../schema";
 import app from "./index";
 
 vi.mock("../passkey", async () => {
@@ -89,7 +89,45 @@ describe("login passkeys", () => {
   });
 
   describe("POST /login/passkey/begin", () => {
-    it("returns authn options and sets a challenge cookie", async () => {
+    it("returns 404 and does not insert a challenge when no passkeys are enrolled", async () => {
+      const response = await app.request(
+        "http://hollo.test/login/passkey/begin",
+        { method: "POST" },
+      );
+      expect(response.status).toBe(404);
+      const rows = await db.query.passkeyLoginChallenges.findMany();
+      expect(rows).toEqual([]);
+      // No transient cookie should be issued on this rejection path.
+      const setCookie = response.headers.get("Set-Cookie") ?? "";
+      expect(setCookie).not.toMatch(/passkey_login=/);
+    });
+
+    it("returns 429 when the outstanding-challenge cap is reached", async () => {
+      await seedCredential();
+      await seedPasskey();
+      // Pre-fill the table up to the cap so the next /begin tips over.
+      const futureExpiry = new Date(Date.now() + 60_000);
+      const rows = Array.from({ length: 64 }, (_, i) => ({
+        id: `seeded-${i.toString()}`,
+        challenge: "seeded-challenge",
+        expiresAt: futureExpiry,
+      }));
+      await db.insert(passkeyLoginChallenges).values(rows);
+
+      const response = await app.request(
+        "http://hollo.test/login/passkey/begin",
+        { method: "POST" },
+      );
+      expect(response.status).toBe(429);
+      expect(response.headers.get("Retry-After")).toBe("300");
+      // The seeded rows are still there; no new one was inserted.
+      const total = await db.$count(passkeyLoginChallenges);
+      expect(total).toBe(64);
+    });
+
+    it("returns authn options and sets a challenge cookie when at least one is enrolled", async () => {
+      await seedCredential();
+      await seedPasskey();
       const response = await app.request(
         "http://hollo.test/login/passkey/begin",
         { method: "POST" },
@@ -135,6 +173,11 @@ describe("login passkeys", () => {
     });
 
     it("rejects assertions for unknown credential ids", async () => {
+      // /begin needs at least one passkey enrolled to hand out a
+      // challenge cookie; the actual credential id we send to /finish
+      // is unrelated to it, which is the case under test.
+      await seedCredential();
+      await seedPasskey("a-different-cred");
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
         { method: "POST" },

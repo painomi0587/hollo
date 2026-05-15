@@ -7,6 +7,7 @@ import {
   encodePublicKey,
   getRpInfo,
   nicknameFromUserAgent,
+  sanitizeTransports,
   userIdFromEmail,
   verifyAuthentication,
   verifyRegistration,
@@ -99,6 +100,40 @@ describe("encodePublicKey / decodePublicKey", () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const encoded = encodePublicKey(bytes);
     expect(decodePublicKey(encoded)).toEqual(bytes);
+  });
+});
+
+describe("sanitizeTransports", () => {
+  it("keeps the values WebAuthn defines", () => {
+    expect(
+      sanitizeTransports([
+        "internal",
+        "hybrid",
+        "usb",
+        "nfc",
+        "ble",
+        "cable",
+        "smart-card",
+      ]),
+    ).toEqual([
+      "internal",
+      "hybrid",
+      "usb",
+      "nfc",
+      "ble",
+      "cable",
+      "smart-card",
+    ]);
+  });
+
+  it("drops unknown transport hints", () => {
+    expect(
+      sanitizeTransports(["internal", "totally-fake", "DROP TABLE passkeys"]),
+    ).toEqual(["internal"]);
+  });
+
+  it("returns [] for undefined input", () => {
+    expect(sanitizeTransports(undefined)).toEqual([]);
   });
 });
 

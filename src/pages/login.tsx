@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { zValidator } from "@hono/zod-validator";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
 import { z } from "zod";
@@ -24,6 +24,19 @@ if (SECRET_KEY == null) throw new Error("SECRET_KEY is required");
 
 const PASSKEY_LOGIN_COOKIE = "passkey_login";
 const PASSKEY_LOGIN_MAX_AGE_SECONDS = 5 * 60;
+// Soft cap on unexpired rows in `passkey_login_challenges`.  Hollo is a
+// single-user instance, so even on a popular profile a handful of
+// in-flight ceremonies at a time is the realistic ceiling — well below
+// this number.  The cap is here to keep an unauthenticated caller from
+// pumping rows into the table during the TTL window.  Going above the
+// cap returns 429 without writing a row.
+const PASSKEY_LOGIN_MAX_OUTSTANDING_CHALLENGES = 64;
+// Stable, arbitrary key for the Postgres advisory lock that serialises
+// the GC + count + insert sequence inside /login/passkey/begin so the
+// cap above can't be bypassed by a flurry of concurrent requests
+// racing between the count and the insert.  The value is just an
+// opaque integer; nothing else in the codebase shares it.
+const PASSKEY_LOGIN_BEGIN_LOCK = 7626128400n;
 
 /**
  * Accept only same-origin paths so `next=` can't be hijacked into an open
@@ -236,20 +249,60 @@ function OtpPage(props: OtpPageProps) {
 }
 
 login.post("/passkey/begin", async (c) => {
+  // /begin is reachable without a session, so it can't become a cheap
+  // unauthenticated INSERT endpoint.  If no passkeys are enrolled there
+  // is nothing for /finish to verify against either, so refuse early
+  // and skip the DB write entirely.
+  const passkeyCount = await db.$count(passkeys);
+  if (passkeyCount === 0) {
+    return c.json({ error: "No passkeys are enrolled on this server." }, 404);
+  }
   const rpInfo = getRpInfo(c.req.url);
   const { options, challenge } = await buildAuthenticationOptions({ rpInfo });
-  // Opportunistically GC expired rows so the table never grows unbounded
-  // even though Hollo doesn't run a separate cleanup worker for it.
-  await db
-    .delete(passkeyLoginChallenges)
-    .where(lt(passkeyLoginChallenges.expiresAt, new Date()));
   const id = randomUUID();
   const expiresAt = new Date(Date.now() + PASSKEY_LOGIN_MAX_AGE_SECONDS * 1000);
-  await db.insert(passkeyLoginChallenges).values({
-    id,
-    challenge,
-    expiresAt,
+  // GC + count + insert are wrapped in one transaction guarded by a
+  // Postgres advisory transaction lock, so concurrent /begin requests
+  // serialise on the lock instead of racing between the count and the
+  // insert.  This is the only place that takes this lock, so contention
+  // is limited to this endpoint.
+  const tooManyInFlight = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${PASSKEY_LOGIN_BEGIN_LOCK})`,
+    );
+    // Opportunistically GC expired rows so the table never grows
+    // unbounded even though Hollo doesn't run a separate cleanup
+    // worker for it.
+    await tx
+      .delete(passkeyLoginChallenges)
+      .where(lt(passkeyLoginChallenges.expiresAt, new Date()));
+    // Soft cap on outstanding (unexpired) rows to keep an
+    // unauthenticated caller from pumping the table during the TTL
+    // window.  Counting after the GC makes the cap reflect
+    // "still-usable" rows only.
+    const outstanding = await tx.$count(
+      passkeyLoginChallenges,
+      gte(passkeyLoginChallenges.expiresAt, new Date()),
+    );
+    if (outstanding >= PASSKEY_LOGIN_MAX_OUTSTANDING_CHALLENGES) {
+      return true;
+    }
+    await tx.insert(passkeyLoginChallenges).values({
+      id,
+      challenge,
+      expiresAt,
+    });
+    return false;
   });
+  if (tooManyInFlight) {
+    c.header("Retry-After", PASSKEY_LOGIN_MAX_AGE_SECONDS.toString());
+    return c.json(
+      {
+        error: "Too many passkey login ceremonies in flight; try again later.",
+      },
+      429,
+    );
+  }
   // The cookie only carries the row id — the challenge itself never
   // leaves the server.  /finish does the atomic consume so a captured
   // cookie + assertion pair is good for at most one request.

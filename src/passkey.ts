@@ -92,6 +92,32 @@ export interface VerifiedRegistration {
   backedUp: boolean;
 }
 
+// The set of transport hint values WebAuthn defines.  Anything else the
+// browser passes through gets dropped before we store it, so a malicious
+// or buggy client can't poison future `excludeCredentials` payloads.
+const VALID_TRANSPORTS: ReadonlySet<AuthenticatorTransportFuture> = new Set([
+  "ble",
+  "cable",
+  "hybrid",
+  "internal",
+  "nfc",
+  "smart-card",
+  "usb",
+]);
+
+export function sanitizeTransports(
+  values: readonly string[] | undefined,
+): AuthenticatorTransportFuture[] {
+  if (values == null) return [];
+  const out: AuthenticatorTransportFuture[] = [];
+  for (const v of values) {
+    if (VALID_TRANSPORTS.has(v as AuthenticatorTransportFuture)) {
+      out.push(v as AuthenticatorTransportFuture);
+    }
+  }
+  return out;
+}
+
 export async function verifyRegistration(
   input: VerifyRegistrationInput,
 ): Promise<VerifiedRegistration | null> {
@@ -119,7 +145,7 @@ export async function verifyRegistration(
     credentialId: credential.id,
     publicKey: credential.publicKey,
     counter: credential.counter,
-    transports: input.response.response.transports ?? [],
+    transports: sanitizeTransports(input.response.response.transports),
     deviceType: credentialDeviceType,
     backedUp: credentialBackedUp,
   };
