@@ -431,10 +431,20 @@ async function AuthPage({ totp, tfa, passkeys }: AuthPageProps) {
                     {p.nickname}
                   </p>
                   <p class="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                    Added {formatDate(p.created)}
-                    {p.lastUsed != null
-                      ? ` · last used ${formatDate(p.lastUsed)}`
-                      : " · never used"}
+                    Added{" "}
+                    <time dateTime={p.created.toISOString()}>
+                      {formatDate(p.created)}
+                    </time>
+                    {p.lastUsed != null ? (
+                      <>
+                        {" · last used "}
+                        <time dateTime={p.lastUsed.toISOString()}>
+                          {formatDate(p.lastUsed)}
+                        </time>
+                      </>
+                    ) : (
+                      " · never used"
+                    )}
                   </p>
                 </div>
                 <form
@@ -496,10 +506,11 @@ async function AuthPage({ totp, tfa, passkeys }: AuthPageProps) {
 }
 
 function formatDate(value: Date): string {
-  // toISOString() produces a stable, locale-independent string; the browser
-  // can fancy this up later if needed.  Using just the date portion keeps
-  // the list scannable.
-  return value.toISOString().slice(0, 10);
+  // Server-side rendering uses the server's locale, which inside a typical
+  // Hollo container is UTC; the wrapping <time dateTime> attribute carries
+  // the canonical ISO instant so a browser-side enhancement could re-render
+  // it in the visitor's locale.  Same pattern as src/components/AccountList.tsx.
+  return value.toLocaleDateString();
 }
 
 function qrCode(data: string): Promise<string> {
