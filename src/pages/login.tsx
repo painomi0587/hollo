@@ -11,16 +11,13 @@ import { Layout } from "../components/Layout.tsx";
 import { LoginForm } from "../components/LoginForm.tsx";
 import { OtpForm } from "../components/OtpForm.tsx";
 import { db } from "../db.ts";
+import { SECRET_KEY } from "../env.ts";
 import {
   buildAuthenticationOptions,
   getRpInfo,
   verifyAuthentication,
 } from "../passkey.ts";
 import { credentials, passkeyLoginChallenges, passkeys } from "../schema.ts";
-
-// oxlint-disable-next-line typescript/dot-notation
-const SECRET_KEY = process.env["SECRET_KEY"];
-if (SECRET_KEY == null) throw new Error("SECRET_KEY is required");
 
 const PASSKEY_LOGIN_COOKIE = "passkey_login";
 const PASSKEY_LOGIN_MAX_AGE_SECONDS = 5 * 60;
