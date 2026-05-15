@@ -190,6 +190,11 @@ To be released.
     Files are stored using the same storage backend as the Mastodon-compatible
     API (`PATCH /api/v1/accounts/update_credentials`).
 
+ -  Search queries on account handles, names, and post content now use
+    PostgreSQL trigram indexes via the *pg_trgm* extension, improving
+    `ILIKE` search performance.  The `pg_trgm` extension is enabled
+    automatically when the migration is applied.
+
  -  Fixed a performance bug on the account edit page where saving an account
     always triggered a network lookup of [@hollo@hollo.social] regardless of
     whether the “Receive Hollo news” setting had actually changed.  The lookup

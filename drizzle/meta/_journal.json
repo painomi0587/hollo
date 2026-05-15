@@ -631,6 +631,13 @@
       "when": 1778802075419,
       "tag": "0089_passkey_login_challenges",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1778817605871,
+      "tag": "0090_pg_trgm_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -116,46 +116,59 @@ export const accountTypeEnum = pgEnum("account_type", [
 
 export type AccountType = (typeof accountTypeEnum.enumValues)[number];
 
-export const accounts = pgTable("accounts", {
-  id: uuid("id").$type<Uuid>().primaryKey(),
-  iri: text("iri").notNull().unique(),
-  type: accountTypeEnum("type").notNull(),
-  name: varchar("name", { length: 100 }).notNull(),
-  handle: text("handle").notNull().unique(),
-  bioHtml: text("bio_html"),
-  url: text("url"),
-  protected: boolean("protected").notNull().default(false),
-  avatarUrl: text("avatar_url"),
-  coverUrl: text("cover_url"),
-  inboxUrl: text("inbox_url").notNull(),
-  followersUrl: text("followers_url"),
-  sharedInboxUrl: text("shared_inbox_url"),
-  featuredUrl: text("featured_url"),
-  followingCount: bigint("following_count", { mode: "number" }).default(0),
-  followersCount: bigint("followers_count", { mode: "number" }).default(0),
-  postsCount: bigint("posts_count", { mode: "number" }).default(0),
-  fieldHtmls: json("field_htmls")
-    .notNull()
-    .default({})
-    .$type<Record<string, string>>(),
-  emojis: jsonb("emojis").notNull().default({}).$type<Record<string, string>>(),
-  sensitive: boolean("sensitive").notNull().default(false),
-  successorId: uuid("successor_id")
-    .$type<Uuid>()
-    .references((): AnyPgColumn => accounts.id, { onDelete: "cascade" }),
-  aliases: text("aliases")
-    .array()
-    .notNull()
-    .default(sql`(ARRAY[]::text[])`),
-  instanceHost: text("instance_host")
-    .notNull()
-    .references(() => instances.host),
-  published: timestamp("published", { withTimezone: true }),
-  updated: timestamp("updated", { withTimezone: true })
-    .notNull()
-    .default(currentTimestamp),
-  fetched: timestamp("fetched", { withTimezone: true }),
-});
+export const accounts = pgTable(
+  "accounts",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    iri: text("iri").notNull().unique(),
+    type: accountTypeEnum("type").notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    handle: text("handle").notNull().unique(),
+    bioHtml: text("bio_html"),
+    url: text("url"),
+    protected: boolean("protected").notNull().default(false),
+    avatarUrl: text("avatar_url"),
+    coverUrl: text("cover_url"),
+    inboxUrl: text("inbox_url").notNull(),
+    followersUrl: text("followers_url"),
+    sharedInboxUrl: text("shared_inbox_url"),
+    featuredUrl: text("featured_url"),
+    followingCount: bigint("following_count", { mode: "number" }).default(0),
+    followersCount: bigint("followers_count", { mode: "number" }).default(0),
+    postsCount: bigint("posts_count", { mode: "number" }).default(0),
+    fieldHtmls: json("field_htmls")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
+    emojis: jsonb("emojis")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
+    sensitive: boolean("sensitive").notNull().default(false),
+    successorId: uuid("successor_id")
+      .$type<Uuid>()
+      .references((): AnyPgColumn => accounts.id, { onDelete: "cascade" }),
+    aliases: text("aliases")
+      .array()
+      .notNull()
+      .default(sql`(ARRAY[]::text[])`),
+    instanceHost: text("instance_host")
+      .notNull()
+      .references(() => instances.host),
+    published: timestamp("published", { withTimezone: true }),
+    updated: timestamp("updated", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    fetched: timestamp("fetched", { withTimezone: true }),
+  },
+  (table) => [
+    index("accounts_handle_trgm_idx").using(
+      "gin",
+      table.handle.op("gin_trgm_ops"),
+    ),
+    index("accounts_name_trgm_idx").using("gin", table.name.op("gin_trgm_ops")),
+  ],
+);
 
 export const accountRelations = relations(accounts, ({ one, many }) => ({
   owner: one(accountOwners, {
@@ -560,6 +573,10 @@ export const posts = pgTable(
     index()
       .on(table.visibility, table.accountId, table.replyTargetId)
       .where(isNotNull(table.replyTargetId)),
+    index("posts_content_html_trgm_idx").using(
+      "gin",
+      table.contentHtml.op("gin_trgm_ops"),
+    ),
   ],
 );
 
