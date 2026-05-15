@@ -102,15 +102,19 @@ describe("login passkeys", () => {
       expect(setCookie).not.toMatch(/passkey_login=/);
     });
 
-    it("returns 429 when the outstanding-challenge cap is reached", async () => {
+    it("evicts the oldest outstanding row instead of 429 when at cap", async () => {
+      // An unauthenticated attacker should not be able to park the
+      // table at the cap to lock out legitimate sign-ins.  When /begin
+      // hits the cap it evicts the oldest unexpired row to make space
+      // and still returns a fresh challenge.
       await seedCredential();
       await seedPasskey();
-      // Pre-fill the table up to the cap so the next /begin tips over.
-      const futureExpiry = new Date(Date.now() + 60_000);
+      const baseExpiry = Date.now() + 60_000;
       const rows = Array.from({ length: 64 }, (_, i) => ({
-        id: `seeded-${i.toString()}`,
+        id: `seeded-${i.toString().padStart(2, "0")}`,
         challenge: "seeded-challenge",
-        expiresAt: futureExpiry,
+        // Older rows expire sooner, so the i=0 row is the FIFO head.
+        expiresAt: new Date(baseExpiry + i * 1000),
       }));
       await db.insert(passkeyLoginChallenges).values(rows);
 
@@ -118,11 +122,16 @@ describe("login passkeys", () => {
         "http://hollo.test/login/passkey/begin",
         { method: "POST" },
       );
-      expect(response.status).toBe(429);
-      expect(response.headers.get("Retry-After")).toBe("300");
-      // The seeded rows are still there; no new one was inserted.
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Retry-After")).toBeNull();
+      // Table size is unchanged (one evicted, one inserted).
       const total = await db.$count(passkeyLoginChallenges);
       expect(total).toBe(64);
+      // The oldest seeded row is the one that got dropped.
+      const evicted = await db.query.passkeyLoginChallenges.findFirst({
+        where: eq(passkeyLoginChallenges.id, "seeded-00"),
+      });
+      expect(evicted).toBeUndefined();
     });
 
     it("returns authn options and sets a challenge cookie when at least one is enrolled", async () => {

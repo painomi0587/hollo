@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { zValidator } from "@hono/zod-validator";
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
 import { z } from "zod";
@@ -21,12 +21,13 @@ import { credentials, passkeyLoginChallenges, passkeys } from "../schema.ts";
 
 const PASSKEY_LOGIN_COOKIE = "passkey_login";
 const PASSKEY_LOGIN_MAX_AGE_SECONDS = 5 * 60;
-// Soft cap on unexpired rows in `passkey_login_challenges`.  Hollo is a
+// Hard cap on unexpired rows in `passkey_login_challenges`.  Hollo is a
 // single-user instance, so even on a popular profile a handful of
 // in-flight ceremonies at a time is the realistic ceiling — well below
-// this number.  The cap is here to keep an unauthenticated caller from
-// pumping rows into the table during the TTL window.  Going above the
-// cap returns 429 without writing a row.
+// this number.  The cap exists to bound the table under unauthenticated
+// abuse; when it's reached, /begin evicts the oldest unexpired row to
+// make space rather than refusing the new request, so an attacker can
+// never force a legitimate sign-in into 429.
 const PASSKEY_LOGIN_MAX_OUTSTANDING_CHALLENGES = 64;
 // Stable, arbitrary key for the Postgres advisory lock that serialises
 // the GC + count + insert sequence inside /login/passkey/begin so the
@@ -265,12 +266,12 @@ login.post("/passkey/begin", async (c) => {
   const { options, challenge } = await buildAuthenticationOptions({ rpInfo });
   const id = randomUUID();
   const expiresAt = new Date(Date.now() + PASSKEY_LOGIN_MAX_AGE_SECONDS * 1000);
-  // GC + count + insert are wrapped in one transaction guarded by a
-  // Postgres advisory transaction lock, so concurrent /begin requests
-  // serialise on the lock instead of racing between the count and the
-  // insert.  This is the only place that takes this lock, so contention
-  // is limited to this endpoint.
-  const tooManyInFlight = await db.transaction(async (tx) => {
+  // GC + count + (evict +) insert are wrapped in one transaction
+  // guarded by a Postgres advisory transaction lock, so concurrent
+  // /begin requests serialise on the lock instead of racing between the
+  // count and the insert.  This is the only place that takes this
+  // lock, so contention is limited to this endpoint.
+  await db.transaction(async (tx) => {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(${PASSKEY_LOGIN_BEGIN_LOCK})`,
     );
@@ -284,33 +285,37 @@ login.post("/passkey/begin", async (c) => {
     await tx
       .delete(passkeyLoginChallenges)
       .where(lt(passkeyLoginChallenges.expiresAt, now));
-    // Soft cap on outstanding (unexpired) rows to keep an
-    // unauthenticated caller from pumping the table during the TTL
-    // window.  Counting after the GC makes the cap reflect
-    // "still-usable" rows only.
+    // Count after the GC so the cap reflects "still-usable" rows only.
     const outstanding = await tx.$count(
       passkeyLoginChallenges,
       gte(passkeyLoginChallenges.expiresAt, now),
     );
+    // At the cap, evict the oldest unexpired row to make space.
+    // Refusing the new request would let any unauthenticated caller
+    // park the cap at 64 outstanding rows for the full TTL and force
+    // every legitimate sign-in into 429; eviction keeps the table
+    // bounded without that DoS surface.  An attacker can still race
+    // the legitimate user's row out before /finish, but that's a much
+    // harder attack than holding the door shut.
     if (outstanding >= PASSKEY_LOGIN_MAX_OUTSTANDING_CHALLENGES) {
-      return true;
+      const oldest = await tx
+        .select({ id: passkeyLoginChallenges.id })
+        .from(passkeyLoginChallenges)
+        .where(gte(passkeyLoginChallenges.expiresAt, now))
+        .orderBy(asc(passkeyLoginChallenges.expiresAt))
+        .limit(1);
+      if (oldest.length > 0) {
+        await tx
+          .delete(passkeyLoginChallenges)
+          .where(eq(passkeyLoginChallenges.id, oldest[0].id));
+      }
     }
     await tx.insert(passkeyLoginChallenges).values({
       id,
       challenge,
       expiresAt,
     });
-    return false;
   });
-  if (tooManyInFlight) {
-    c.header("Retry-After", PASSKEY_LOGIN_MAX_AGE_SECONDS.toString());
-    return c.json(
-      {
-        error: "Too many passkey login ceremonies in flight; try again later.",
-      },
-      429,
-    );
-  }
   // The cookie only carries the row id — the challenge itself never
   // leaves the server.  /finish does the atomic consume so a captured
   // cookie + assertion pair is good for at most one request.
