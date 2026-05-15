@@ -7,7 +7,7 @@ hero:
   tagline: >-
     A federated microblogging software for single-users.
     ActivityPub-enabled, Mastodon-compatible API, supports CommonMark and
-    Misskey-style quotes.
+    FEP-044f-compliant quotes.
   image:
     light: ../../assets/logo-black.svg
     dark: ../../assets/logo-white.svg
@@ -53,12 +53,14 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
 
     [CommonMark]: https://commonmark.org/
   </Card>
-  <Card title="Misskey-style quotes" icon="comment">
-    Hollo supports [Misskey]-style quotes, so you can quote other posts
-    in your own posts. It's compatible with other fediverse software that
-    supports Misskey-style quotes, e.g., Misskey, [Akkoma], [Fedibird],
-    [Threads].
+  <Card title="Quote posts" icon="comment">
+    Hollo supports [FEP-044f]-compliant quotes, so you can quote other posts
+    in your own posts. It's compatible with both Misskey-style and
+    Mastodon-style quote implementations, including [Mastodon], [Misskey],
+    [Akkoma], [Fedibird], and [Threads].
 
+    [FEP-044f]: https://w3id.org/fep/044f
+    [Mastodon]: https://joinmastodon.org/
     [Misskey]: https://misskey-hub.net/
     [Akkoma]: https://akkoma.social/
     [Fedibird]: https://github.com/fedibird/mastodon

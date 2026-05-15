@@ -48,7 +48,8 @@ When it comes to writing your posts, Hollo keeps things flexible. You can:
 
  -  Write posts up to 10,000 characters long
  -  Use [CommonMark] (so-called Markdown) for easy formatting
- -  Use Misskey-style quotes to add some flair to your posts
+ -  Use [FEP-044f]-compliant quotes (Misskey-style and Mastodon-style) to add
+    some flair to your posts
 
 Hollo is what we call "headless," which is a techy way of saying it doesn't have
 its own web interface. Instead, you can use any Mastodon-compatible app to post
@@ -63,6 +64,7 @@ terms. It's not aiming to be the next big social network--it's just here to
 make microblogging a bit easier and more connected.
 
 [CommonMark]: https://commonmark.org/
+[FEP-044f]: https://w3id.org/fep/044f
 
 
 License

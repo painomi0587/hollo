@@ -46,7 +46,7 @@ Hollo는 대부분의 개인 사용자가 필요한 기능에 대해서는 Masto
 
  -  최대 10,000자의 글 작성
  -  (흔히 Markdown이라 불리는) [CommonMark] 문법 지원
- -  Misskey 스타일의 인용
+ -  [FEP-044f] 준수 인용 (Misskey 스타일 및 Mastodon 스타일 모두 지원)
 
 Hollo는 자체적인 웹 인터페이스가 없는 「헤들리스」(headless) 소프트웨어입니다.
 대신, 여러분은 아무 Mastodon 호환 클라이언트 앱으로 Hollo를 사용할 수 있습니다.
@@ -60,6 +60,7 @@ Hollo는 자체적인 웹 인터페이스가 없는 「헤들리스」(headless)
 차세대 대형 소셜 네트워크가 아닌, 마이크로블로깅을 좀 더 쉽고 아늑하게 즐길 수 있도록 만들어졌습니다.
 
 [CommonMark]: https://commonmark.org/
+[FEP-044f]: https://w3id.org/fep/044f
 
 
 라이선스
