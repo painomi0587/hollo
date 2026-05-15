@@ -227,6 +227,14 @@ To be released.
     `rel="next"` entry, so clients no longer have to guess which cursor
     parameter to use.  [[#479], [#482]]
 
+ -  Fixed a performance bug where the NodeInfo endpoint performed a
+    sequential scan of the entire `posts` table on every request because
+    `posts.updated` had no index.  On large instances (e.g. 4 M rows /
+    13 GB) this took 15–20 seconds per query; since NodeInfo is polled
+    frequently (Caddy health checks, remote servers), the slow queries
+    piled up and could exhaust the connection pool.  A B-tree index on
+    `posts.updated` is now created by migration.  [[#488]]
+
  -  Upgraded Fedify to 2.2.1.
 
  -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.
@@ -249,6 +257,7 @@ To be released.
 [#483]: https://github.com/fedify-dev/hollo/pull/483
 [#484]: https://github.com/fedify-dev/hollo/pull/484
 [#487]: https://github.com/fedify-dev/hollo/pull/487
+[#488]: https://github.com/fedify-dev/hollo/issues/488
 
 
 Version 0.8.4

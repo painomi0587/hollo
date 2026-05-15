@@ -577,6 +577,7 @@ export const posts = pgTable(
       "gin",
       table.contentHtml.op("gin_trgm_ops"),
     ),
+    index("posts_updated_index").on(table.updated),
   ],
 );
 

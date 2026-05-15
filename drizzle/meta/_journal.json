@@ -638,6 +638,13 @@
       "when": 1778817605871,
       "tag": "0090_pg_trgm_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1778818883760,
+      "tag": "0091_posts_updated_index",
+      "breakpoints": true
     }
   ]
 }
