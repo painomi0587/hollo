@@ -558,5 +558,52 @@ describe("login passkeys", () => {
       const body = (await response.json()) as { redirect: string };
       expect(body.redirect).toBe("/");
     });
+
+    it("rejects a same-origin next URL whose pathname starts with //", async () => {
+      // The WHATWG URL parser normalises "/.//evil.example/x" into pathname
+      // "//evil.example/x" against the request origin, so the existing
+      // origin check passes but window.location.assign would still treat
+      // the result as protocol-relative.
+      await seedCredential();
+      await seedPasskey();
+      vi.mocked(mockVerifyAuthentication).mockResolvedValueOnce({
+        newCounter: 12,
+      });
+
+      const beginResponse = await app.request(
+        "http://hollo.test/login/passkey/begin",
+        { method: "POST" },
+      );
+      const challengeCookie =
+        beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+
+      const response = await app.request(
+        "http://hollo.test/login/passkey/finish",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: challengeCookie,
+          },
+          body: JSON.stringify({
+            next: "/.//evil.example/phish",
+            authenticationResponse: {
+              id: "cred-id-login",
+              rawId: "cred-id-login",
+              type: "public-key",
+              clientExtensionResults: {},
+              response: {
+                clientDataJSON: "",
+                authenticatorData: "",
+                signature: "",
+              },
+            },
+          }),
+        },
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { redirect: string };
+      expect(body.redirect).toBe("/");
+    });
   });
 });

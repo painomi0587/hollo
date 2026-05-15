@@ -54,7 +54,14 @@ function safeNext(value: unknown, requestUrl: string | URL): string {
   const base =
     requestUrl instanceof URL ? requestUrl : new URL(String(requestUrl));
   if (parsed.origin !== base.origin) return "/";
-  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  // The origin check above catches `/\evil.com` style inputs (URL parsing
+  // already moves the origin away from the request origin), but the WHATWG
+  // URL spec normalises `/.//evil.com` into pathname `//evil.com` while
+  // leaving the origin alone.  Returning that lets the browser treat the
+  // redirect target as protocol-relative.  Refuse any pathname starting
+  // with two slashes.
+  return path.startsWith("//") ? "/" : path;
 }
 
 const login = new Hono();
