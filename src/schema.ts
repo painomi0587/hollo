@@ -586,6 +586,7 @@ export const posts = pgTable(
     index("posts_actor_id_language_index")
       .on(table.accountId, table.language)
       .where(isNotNull(table.language)),
+    index("posts_tags_gin_idx").using("gin", table.tags),
   ],
 );
 

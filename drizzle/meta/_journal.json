@@ -666,6 +666,13 @@
       "when": 1778858477697,
       "tag": "0094_posts_actor_id_language_index",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1778859502896,
+      "tag": "0095_posts_tags_gin_idx",
+      "breakpoints": true
     }
   ]
 }

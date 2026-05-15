@@ -277,6 +277,13 @@ To be released.
     Index-Only Scan, and a 5-minute in-process response cache absorbs
     repeated calls so the database is queried at most once per 5 minutes.
 
+ -  Improved hashtag timeline and featured tag performance by adding a GIN
+    index on `posts.tags`.  All `?` and `?|` operator lookups on the tags
+    column (hashtag timeline, featured tag counts, profile hashtag filters,
+    and tag pages) previously caused a full sequential scan of the 4 M+ row
+    `posts` table, taking several seconds even on a warm cache.  The new
+    index cuts these to index lookups.
+
  -  Upgraded Fedify to 2.2.1.
 
  -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.
