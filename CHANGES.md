@@ -1,6 +1,47 @@
 Hollo changelog
 ===============
 
+Version 0.8.4
+-------------
+
+Released on May 14, 2026.
+
+ -  Fixed a bug where boosting a quote post would incorrectly copy the
+    `quote_id` to the outer boost wrapper status, causing clients like
+    SubwayTooter to fail to display the quoted post correctly.  The
+    `quote_id` and `quote` fields now only appear inside the inner `reblog`
+    object.  [[#480]]
+
+ -  Fixed a bug where no logs were output when running as a worker node
+    (`NODE_TYPE=worker`).  The logging system was only initialized when the
+    web server started, so worker-only processes ran silently regardless of
+    the `LOG_LEVEL` setting.  [[#478]]
+
+[#478]: https://github.com/fedify-dev/hollo/issues/478
+[#480]: https://github.com/fedify-dev/hollo/issues/480
+
+
+Version 0.8.3
+-------------
+
+Released on May 10, 2026.
+
+ -  Upgraded Fedify to 2.1.12 to fix a critical SSRF (Server-Side Request
+    Forgery) vulnerability where private IPv4 addresses encoded as IPv6 literals
+    could bypass security checks during remote ActivityPub object fetching.
+
+
+Version 0.8.2
+-------------
+
+Released on May 5, 2026.
+
+ -  Fixed a security vulnerability where the hashtag follow/unfollow API
+    endpoints were missing an ownership filter, allowing a single authenticated
+    request to modify followed tags for all account owners in the database.
+    [[#429] by tomaioo]
+
+
 Version 0.8.1
 -------------
 
@@ -186,6 +227,29 @@ Released on April 27, 2026.
 [#447]: https://github.com/fedify-dev/hollo/pull/447
 [#448]: https://github.com/fedify-dev/hollo/pull/448
 [Fedify debugger]: https://fedify.dev/manual/debug
+
+
+Version 0.7.15
+--------------
+
+Released on May 10, 2026.
+
+ -  Upgraded Fedify to 1.10.9 to fix a critical SSRF (Server-Side Request
+    Forgery) vulnerability where private IPv4 addresses encoded as IPv6 literals
+    could bypass security checks during remote ActivityPub object fetching.
+
+
+Version 0.7.14
+--------------
+
+Released on May 5, 2026.
+
+ -  Fixed a security vulnerability where the hashtag follow/unfollow API
+    endpoints were missing an ownership filter, allowing a single authenticated
+    request to modify followed tags for all account owners in the database.
+    [[#429] by tomaioo]
+
+[#429]: https://github.com/fedify-dev/hollo/pull/429
 
 
 Version 0.7.13

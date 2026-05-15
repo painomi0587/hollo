@@ -214,6 +214,70 @@ describe.sequential("/api/v1/accounts/verify_credentials", () => {
   });
 });
 
+describe.sequential("/api/v1/statuses/:id/reblog", () => {
+  let client: Awaited<ReturnType<typeof createOAuthApplication>>;
+  let account: Awaited<ReturnType<typeof createAccount>>;
+  let accessToken: Awaited<ReturnType<typeof getAccessToken>>;
+
+  beforeEach(async () => {
+    await cleanDatabase();
+
+    account = await createAccount({ generateKeyPair: true });
+    client = await createOAuthApplication({ scopes: ["write:statuses"] });
+    accessToken = await getAccessToken(client, account, ["write:statuses"]);
+  });
+
+  it("does not carry quote_id on the boost wrapper when boosting a quote post", async () => {
+    expect.assertions(5);
+
+    // Create the quoted post
+    const quotedPostId = uuidv7();
+    await db.insert(posts).values({
+      id: quotedPostId,
+      iri: `https://hollo.test/@hollo/${quotedPostId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Original post",
+      contentHtml: "<p>Original post</p>",
+      published: new Date(),
+    });
+
+    // Create a quote post referencing the quoted post
+    const quotePostId = uuidv7();
+    await db.insert(posts).values({
+      id: quotePostId,
+      iri: `https://hollo.test/@hollo/${quotePostId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Quote post",
+      contentHtml: "<p>Quote post</p>",
+      quoteTargetId: quotedPostId,
+      published: new Date(),
+    });
+
+    // Boost the quote post
+    const response = await app.request(
+      `/api/v1/statuses/${quotePostId}/reblog`,
+      {
+        method: "POST",
+        headers: { authorization: bearerAuthorization(accessToken) },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+
+    // The outer boost wrapper must not carry quote_id
+    expect(json.quote_id).toBeNull();
+    // The inner reblog object must retain the quote_id
+    expect(json.reblog).not.toBeNull();
+    expect(json.reblog.id).toBe(quotePostId);
+    expect(json.reblog.quote_id).toBe(quotedPostId);
+  });
+});
+
 describe.sequential("/api/v1/statuses visibility", () => {
   let viewer: Awaited<ReturnType<typeof createAccount>>;
   let approvedAuthor: Awaited<ReturnType<typeof createAccount>>;
