@@ -1,0 +1,71 @@
+---
+title: 已測試用戶端
+description: >-
+  Hollo 是一款無頭微博軟體，它實作了 Mastodon API。
+  這意味著您可以使用任何與 Mastodon 相容的用戶端與其進行互動。
+  以下是一些經過 Hollo 測試的用戶端。
+---
+
+import { Badge } from '@astrojs/starlight/components';
+
+Hollo 是一款無頭微博軟體，它實作了 Mastodon API。
+這意味著您可以使用任何與 Mastodon 相容的用戶端與其進行互動。
+然而，實際上，由於 Mastodon API 的實作方式不同，
+某些用戶端可能無法按預期運作。
+以下是一些經過 Hollo 測試的用戶端。
+
+
+Web
+---
+
+### [Elk](https://elk.zone/)
+ 
+ -  引用是唯寫的。[^1]
+ -  不支援表情回應。
+
+[^1]: 您可以在撰寫新貼文時透過貼上連結來引用貼文。
+
+### [Phanpy](https://phanpy.social/) <Badge text="推薦" />
+
+ -  表情回應是唯讀的。
+
+
+Android
+-------
+
+### [Moshidon](https://lucasggamerm.github.io/moshidon/) <Badge text="推薦" />
+ 
+ -  您需要開啟 *設定* → *實例* → *啟用表情回應*，才能使用表情符號回應。
+ -  您需要開啟 *設定* → *實例* → *啟用嘟文格式*，
+    並將 *預設的內容類型* 設定為 *Markdown*，才能使用 CommonMark。
+
+### [Subway Tooter](https://play.google.com/store/apps/details?id=jp.juggler.subwaytooter)
+
+ -  引用是唯寫的。[^1]
+
+
+iOS
+---
+
+### [Mona](https://getmona.app/)
+
+ -  不支援表情回應。
+
+### [Nightfox DAWN](https://noppe.dev/dawn) <Badge text="推薦" />
+
+ -  要引用，您需要手動貼上貼文的連結。[^1]
+ -  不支援中文。
+
+### [Tusker](https://vaccor.space/tusker/)
+
+ -  引用是唯寫的。[^1]
+ -  不支援表情回應。
+ -  不支援中文。
+
+### [Woolly](https://apps.apple.com/app/woolly-for-mastodon/id6444360628)
+
+ -  引用是唯寫的。[^1]
+ -  不支援表情回應。
+ -  不支援中文。
+
+----

@@ -12,7 +12,8 @@ Hollo
 
 _Other languages are available: [日本語](./README.ja.md) (Japanese),
 [한국어](./README.ko.md) (Korean),
-[简体中文](./README.zh-CN.md) (Chinese)._
+[简体中文](./README.zh-CN.md) (Simplified Chinese),
+[繁體中文](./README.zh-TW.md) (Traditional Chinese)._
 
 Hollo is a simple, single-user microblogging tool powered by [Fedify].
 It lets you run your own little corner of the internet: think of it as

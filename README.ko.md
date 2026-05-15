@@ -12,7 +12,8 @@ Hollo
 
 _다른 언어로도 볼 수 있습니다: [English](./README.en.md) (영어),
 [日本語](./README.ja.md) (일본어),
-[简体中文](./README.zh-CN.md) (중국어 간체)._
+[简体中文](./README.zh-CN.md) (중국어 간체),
+[繁體中文](./README.zh-TW.md) (중국어 번체)._
 
 Hollo는 [Fedify] 기반의 간편한 1인 사용자용 마이크로블로그입니다.
 개인용 Mastodon 인스턴스라고 생각해도 되지만, 정말 필요한 기능들로만 구성되어

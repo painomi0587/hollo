@@ -12,7 +12,8 @@ Hollo
 
 _也可阅读其他语言版本：[English](./README.en.md)（英语）、
 [日本語](./README.ja.md)（日语）、
-[한국어](./README.ko.md)（韩语）。_
+[한국어](./README.ko.md)（韩语）、
+[繁體中文](./README.zh-TW.md)（繁体中文）。_
 
 Hollo 是由 [Fedify] 驱动的简单单用户微博工具，让你可以在网络上拥有自己的
 小天地。  你可以将它视为你的个人 Mastodon 实例，但仅保留了核心功能。

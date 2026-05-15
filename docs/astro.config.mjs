@@ -44,6 +44,10 @@ export default defineConfig({
           label: "简体中文",
           lang: "zh-CN",
         },
+        "zh-tw": {
+          label: "繁體中文",
+          lang: "zh-TW",
+        },
       },
       sidebar: [
         {
@@ -53,6 +57,7 @@ export default defineConfig({
             ko: "Hollo란?",
             ja: "Holloとは？",
             "zh-CN": "什么是 Hollo？",
+            "zh-TW": "什麼是 Hollo？",
           },
         },
         {
@@ -61,6 +66,7 @@ export default defineConfig({
             ko: "설치",
             ja: "インストール",
             "zh-CN": "安装",
+            "zh-TW": "安裝",
           },
           items: [
             {
@@ -69,6 +75,7 @@ export default defineConfig({
                 ko: "Railway에 배포",
                 ja: "Railwayにデプロイ",
                 "zh-CN": "部署到 Railway",
+                "zh-TW": "部署到 Railway",
               },
               slug: "install/railway",
             },
@@ -78,6 +85,7 @@ export default defineConfig({
                 ko: "Docker로 배포",
                 ja: "Dockerでデプロイ",
                 "zh-CN": "使用 Docker 部署",
+                "zh-TW": "使用 Docker 部署",
               },
               slug: "install/docker",
             },
@@ -87,6 +95,7 @@ export default defineConfig({
                 ko: "수동 설치",
                 ja: "手動インストール",
                 "zh-CN": "手动安装",
+                "zh-TW": "手動安裝",
               },
               slug: "install/manual",
             },
@@ -96,6 +105,7 @@ export default defineConfig({
                 ko: "환경 변수",
                 ja: "環境変数",
                 "zh-CN": "环境变量",
+                "zh-TW": "環境變數",
               },
               slug: "install/env",
             },
@@ -105,6 +115,7 @@ export default defineConfig({
                 ko: "워커 노드 분리",
                 ja: "ワーカーノードの分離",
                 "zh-CN": "分离工作节点",
+                "zh-TW": "分離工作節點",
               },
               slug: "install/workers",
             },
@@ -114,6 +125,7 @@ export default defineConfig({
                 ko: "도메인 분리 WebFinger",
                 ja: "ドメイン分離 WebFinger",
                 "zh-CN": "分域 WebFinger",
+                "zh-TW": "分域 WebFinger",
               },
               slug: "install/split-domain",
             },
@@ -123,6 +135,7 @@ export default defineConfig({
                 ko: "설정하기",
                 ja: "初期設定",
                 "zh-CN": "配置指南",
+                "zh-TW": "初始設定",
               },
               slug: "install/setup",
             },
@@ -135,6 +148,7 @@ export default defineConfig({
             ko: "테스트된 클라이언트",
             ja: "テスト済みクライアント",
             "zh-CN": "已测试客户端",
+            "zh-TW": "已測試的客戶端",
           },
         },
         {
@@ -144,6 +158,7 @@ export default defineConfig({
             ko: "검색",
             ja: "検索",
             "zh-CN": "搜索",
+            "zh-TW": "搜尋",
           },
         },
       ],

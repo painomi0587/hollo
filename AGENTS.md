@@ -450,6 +450,7 @@ When adding a new environment variable to Hollo, update these locations:
      -  *docs/src/content/docs/ja/install/* (Japanese)
      -  *docs/src/content/docs/ko/install/* (Korean)
      -  *docs/src/content/docs/zh-cn/install/* (Simplified Chinese)
+     -  *docs/src/content/docs/zh-tw/install/* (Traditional Chinese)
 
  4. *Docker Compose files*: If the variable is relevant for Docker deployments:
 

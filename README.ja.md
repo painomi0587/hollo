@@ -12,7 +12,8 @@ Hollo
 
 _他の言語でも読めます: [English](./README.en.md)（英語）、
 [한국어](./README.ko.md)（韓国語）、
-[简体中文](./README.zh-CN.md)（簡体字中国語）。_
+[简体中文](./README.zh-CN.md)（簡体字中国語）、
+[繁體中文](./README.zh-TW.md)（繁体字中国語）。_
 
 Holloは[Fedify]を利用した、簡単な1人用マイクロブログです。
 個人用Mastodonのインスタンスと考えてもいいですが、本当に必要な機能だけで

@@ -224,6 +224,8 @@ To be released.
 
  -  Upgraded Fedify to 2.2.1.
 
+ -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.
+
 [FEP-044f]: https://w3id.org/fep/044f
 [Split-domain WebFinger guide]: https://docs.hollo.social/install/split-domain/
 [#161]: https://github.com/fedify-dev/hollo/issues/161
