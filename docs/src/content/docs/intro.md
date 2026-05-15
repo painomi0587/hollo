@@ -7,7 +7,7 @@ Hollo is a simple, single-user microblogging tool that lets you run your own
 little corner of the internet. Think of it as your personal Mastodon instance,
 but stripped down to the essentials.
 
-What makes Hollo stand out is that it's part of the [fediverse]--a network of
+What makes Hollo stand out is that it's part of the [fediverse]—a network of
 interconnected servers running on open protocols, primarily [ActivityPub].
 This means you can connect and interact with folks on other platforms like:
 
@@ -51,16 +51,16 @@ When it comes to writing your posts, Hollo keeps things flexible. You can:
  -  Use [FEP-044f]-compliant quotes (Misskey-style and Mastodon-style) to add
     some flair to your posts
 
-Hollo is what we call "headless," which is a techy way of saying it doesn't have
+Hollo is what we call “headless,” which is a techy way of saying it doesn't have
 its own web interface. Instead, you can use any Mastodon-compatible app to post
 and interact. This might sound odd at first, but it actually gives you
 the freedom to pick an app that suits your style.
 
 In essence, Hollo is a straightforward tool that brings the power of Mastodon
 or Misskey
-to individual users. It helps you share thoughts online--from quick updates to
-longer musings--connect with others in the fediverse, and do it all on your own
-terms. It's not aiming to be the next big social network--it's just here to
+to individual users. It helps you share thoughts online—from quick updates to
+longer musings—connect with others in the fediverse, and do it all on your own
+terms. It's not aiming to be the next big social network—it's just here to
 make microblogging a bit easier and more connected.
 
 [CommonMark]: https://commonmark.org/
@@ -70,10 +70,10 @@ make microblogging a bit easier and more connected.
 License
 -------
 
-Hollo is distributed under the terms of the [GNU Affero General Public License
-version 3][AGPLv3] or later, which means you can use, modify, and distribute it
-freely, as long as you keep the source code open and share your changes with
-others.
+Hollo is distributed under the terms of the
+[GNU Affero General Public License version 3][AGPLv3] or later, which means you
+can use, modify, and distribute it freely, as long as you keep the source code
+open and share your changes with others.
 
 [AGPLv3]: https://www.gnu.org/licenses/agpl-3.0
 

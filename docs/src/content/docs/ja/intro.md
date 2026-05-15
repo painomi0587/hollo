@@ -62,6 +62,7 @@ Holloは、独自のウェブインタフェースを持たない「ヘッドレ
 [CommonMark]: https://commonmark.org/
 [FEP-044f]: https://w3id.org/fep/044f
 
+
 ライセンス
 ----------
 

@@ -3,7 +3,6 @@
   <img src="logo-black.svg" width="50" height="50">
 </picture>
 
-
 Hollo
 =====
 
@@ -24,29 +23,41 @@ Mastodon、Misskey 等其他平台上的用户连接和互动。
 
 Hollo 是所谓的「无头」软件，意思是它没有自己的网页界面。  相反，它实现了
 Mastodon 兼容 API，因此你可以使用大多数
-[Mastodon 兼容应用程序](https://docs.hollo.social/zh-cn/clients/)与
+[Mastodon 兼容应用程序]与
 Hollo 互动。
 
 [Matrix badge]: https://img.shields.io/matrix/fedify%3Amatrix.org?logo=matrix
 [Matrix]: https://matrix.to/#/%23hollo-users:matrix.org
-[Official Hollo]: https://hollo.social/@hollo
 [Official Hollo badge]: https://fedi-badge.deno.dev/@hollo@hollo.social/followers.svg
+[Official Hollo]: https://hollo.social/@hollo
 [Fedify]: https://fedify.dev/
 [联邦宇宙]: https://www.theverge.com/24063290/fediverse-explained-activitypub-social-media-open-protocol
 [ActivityPub]: https://www.w3.org/TR/activitypub/
+[Mastodon 兼容应用程序]: https://docs.hollo.social/zh-cn/clients/
 
 
 文档
 ----
 
- -  [什么是 Hollo？](https://docs.hollo.social/zh-cn/intro/)
+ -  [什么是 Hollo？]
  -  安装
-     -  [部署到 Railway](https://docs.hollo.social/zh-cn/install/railway/)
-     -  [使用 Docker 部署](https://docs.hollo.social/zh-cn/install/docker/)
-     -  [手动安装](https://docs.hollo.social/zh-cn/install/manual/)
-     -  [环境变量](https://docs.hollo.social/zh-cn/install/env/)
-     -  [配置指南](https://docs.hollo.social/zh-cn/install/setup/)
-     -  [分离工作节点](https://docs.hollo.social/zh-cn/install/workers/)
-     -  [分域 WebFinger](https://docs.hollo.social/zh-cn/install/split-domain/)
- -  [测试过的客户端](https://docs.hollo.social/zh-cn/clients/)
- -  [搜索](https://docs.hollo.social/zh-cn/search/)
+     -  [部署到 Railway]
+     -  [使用 Docker 部署]
+     -  [手动安装]
+     -  [环境变量]
+     -  [配置指南]
+     -  [分离工作节点]
+     -  [分域 WebFinger]
+ -  [测试过的客户端]
+ -  [搜索]
+
+[什么是 Hollo？]: https://docs.hollo.social/zh-cn/intro/
+[部署到 Railway]: https://docs.hollo.social/zh-cn/install/railway/
+[使用 Docker 部署]: https://docs.hollo.social/zh-cn/install/docker/
+[手动安装]: https://docs.hollo.social/zh-cn/install/manual/
+[环境变量]: https://docs.hollo.social/zh-cn/install/env/
+[配置指南]: https://docs.hollo.social/zh-cn/install/setup/
+[分离工作节点]: https://docs.hollo.social/zh-cn/install/workers/
+[分域 WebFinger]: https://docs.hollo.social/zh-cn/install/split-domain/
+[测试过的客户端]: https://docs.hollo.social/zh-cn/clients/
+[搜索]: https://docs.hollo.social/zh-cn/search/

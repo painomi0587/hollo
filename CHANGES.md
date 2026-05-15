@@ -7,8 +7,8 @@ Version 0.9.0
 To be released.
 
  -  Added passkey (WebAuthn) authentication.  The admin *Auth* page now
-    has a "Passkeys" section for enrolling and managing passkeys, and
-    the public login page presents a "Sign in with passkey" button
+    has a “Passkeys” section for enrolling and managing passkeys, and
+    the public login page presents a “Sign in with passkey” button
     (with the email/password form tucked behind a toggle) whenever at
     least one passkey is enrolled.  Both device-bound and synced
     (multi-device) passkeys are accepted.  A passkey on its own counts
@@ -65,7 +65,7 @@ To be released.
         to the configured storage backend as `proxy/<sha256>.bin`, with
         a content-type sidecar alongside it at `proxy/<sha256>.json`.
         Subsequent requests skip the upstream fetch.  The admin
-        dashboard at */thumbnail_cleanup* can purge the cache on demand.
+        dashboard at */thumbnail\_cleanup* can purge the cache on demand.
 
     `MEDIA_PROXY` also accepts the Boolean synonyms `true`/`on`/`1`
     (as aliases for `proxy`) and `false`/`off`/`0` (as aliases for
@@ -123,9 +123,10 @@ To be released.
  -  Added custom field editing to the admin account creation and editing
     forms, allowing up to 10 label–value pairs per profile (beyond
     Mastodon's limit of 4).  Field values support Markdown and mention
-    syntax.  The Mastodon-compatible `PATCH /api/v1/accounts/
-    update_credentials` endpoint now also accepts up to 10 custom fields
-    via `fields_attributes[0]` through `fields_attributes[9]`.
+    syntax.  The Mastodon-compatible
+    `PATCH /api/v1/accounts/ update_credentials` endpoint now also accepts up
+    to 10 custom fields via `fields_attributes[0]` through
+    `fields_attributes[9]`.
 
  -  Fixed a bug in `PATCH /api/v1/accounts/update_credentials` where
     submitting any credential update (e.g. `display_name`) without
@@ -191,7 +192,7 @@ To be released.
     API (`PATCH /api/v1/accounts/update_credentials`).
 
  -  Search queries on account handles, names, and post content now use
-    PostgreSQL trigram indexes via the *pg_trgm* extension, improving
+    PostgreSQL trigram indexes via the *pg\_trgm* extension, improving
     `ILIKE` search performance.  The `pg_trgm` extension is enabled
     automatically when the migration is applied.
 
@@ -259,12 +260,12 @@ To be released.
 
  -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.
 
-[FEP-044f]: https://w3id.org/fep/044f
 [Split-domain WebFinger guide]: https://docs.hollo.social/install/split-domain/
-[#161]: https://github.com/fedify-dev/hollo/issues/161
+[FEP-044f]: https://w3id.org/fep/044f
 [@hollo@hollo.social]: https://hollo.social/@hollo
 [#67]: https://github.com/fedify-dev/hollo/issues/67
 [#127]: https://github.com/fedify-dev/hollo/issues/127
+[#161]: https://github.com/fedify-dev/hollo/issues/161
 [#457]: https://github.com/fedify-dev/hollo/pull/457
 [#458]: https://github.com/fedify-dev/hollo/pull/458
 [#459]: https://github.com/fedify-dev/hollo/pull/459
@@ -320,6 +321,8 @@ Released on May 5, 2026.
     endpoints were missing an ownership filter, allowing a single authenticated
     request to modify followed tags for all account owners in the database.
     [[#429] by tomaioo]
+
+[#429]: https://github.com/fedify-dev/hollo/pull/429
 
 
 Version 0.8.1
@@ -528,8 +531,6 @@ Released on May 5, 2026.
     endpoints were missing an ownership filter, allowing a single authenticated
     request to modify followed tags for all account owners in the database.
     [[#429] by tomaioo]
-
-[#429]: https://github.com/fedify-dev/hollo/pull/429
 
 
 Version 0.7.13

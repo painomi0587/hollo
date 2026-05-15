@@ -353,7 +353,6 @@ in the HTML `class` attribute, where the browser splits it on
 whitespace and matches `ring-2` (etc.) as a standalone class.  Always
 write each variant out long-form (`focus:border-brand-500 focus:ring-2 …`).
 
-
 ### Page-scoped client scripts
 
 The lightweight-SSR principle still stands: *Layout.tsx* and the
