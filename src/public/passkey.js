@@ -27,6 +27,17 @@
       credentials: "same-origin",
       body: body == null ? "{}" : JSON.stringify(body),
     });
+    // The auth-gated /auth/passkeys/* endpoints can answer with a
+    // redirect to /login when the session is gone (e.g., the user
+    // logged out in another tab and then triggered an enrollment
+    // here).  fetch() follows that redirect, so response.ok stays
+    // true and the final HTML page lands here.  Detect it and send
+    // the browser to /login itself instead of trying to parse HTML
+    // as JSON.
+    if (response.redirected) {
+      window.location.assign(response.url);
+      throw new Error("Session expired; redirecting to sign in.");
+    }
     if (!response.ok) {
       var detail;
       try {
