@@ -355,23 +355,28 @@ login.post("/passkey/finish", async (c) => {
   if (cookieId == null || cookieId === false) {
     return c.json({ error: "Missing or invalid challenge cookie." }, 400);
   }
+  // Atomically consume only an unexpired matching row.  An expired row
+  // is left in place for the next /begin's GC to clean up, since a
+  // captured cookie referring to an expired challenge has nothing to
+  // gain by being deleted earlier than that.
   const consumed = await db
     .delete(passkeyLoginChallenges)
-    .where(eq(passkeyLoginChallenges.id, cookieId))
+    .where(
+      and(
+        eq(passkeyLoginChallenges.id, cookieId),
+        gte(passkeyLoginChallenges.expiresAt, new Date(Date.now())),
+      ),
+    )
     .returning({
       challenge: passkeyLoginChallenges.challenge,
-      expiresAt: passkeyLoginChallenges.expiresAt,
     });
   if (consumed.length === 0) {
     return c.json(
-      { error: "Challenge has already been used or never existed." },
+      { error: "Challenge has already been used, expired, or never existed." },
       400,
     );
   }
-  const { challenge, expiresAt } = consumed[0];
-  if (expiresAt.getTime() < Date.now()) {
-    return c.json({ error: "Challenge has expired." }, 400);
-  }
+  const { challenge } = consumed[0];
 
   let rawBody: unknown;
   try {
