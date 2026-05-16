@@ -1,16 +1,7 @@
 import { Emoji, Flag, Note, QuoteAuthorization } from "@fedify/vocab";
-import { and, eq, inArray, isNotNull, isNull, like, or } from "drizzle-orm";
 
 import { db } from "../db";
-import {
-  accountOwners,
-  accounts,
-  customEmojis,
-  follows,
-  pollOptions,
-  posts,
-  reports,
-} from "../schema";
+import { accounts } from "../schema";
 import { isUuid, type Uuid } from "../uuid";
 import { toEmoji } from "./emoji";
 import { federation } from "./federation";
@@ -21,17 +12,20 @@ export async function hasApprovedFollowFromKeyOwner(
   followingId: Uuid,
 ): Promise<boolean> {
   const found = await db.query.follows.findFirst({
-    where: and(
-      inArray(
-        follows.followerId,
-        db
-          .select({ id: accounts.id })
-          .from(accounts)
-          .where(eq(accounts.iri, keyOwnerId.href)),
-      ),
-      eq(follows.followingId, followingId),
-      isNotNull(follows.approved),
-    ),
+    where: {
+      RAW: (follows, { and, eq, inArray, isNotNull }) =>
+        and(
+          inArray(
+            follows.followerId,
+            db
+              .select({ id: accounts.id })
+              .from(accounts)
+              .where(eq(accounts.iri, keyOwnerId.href)),
+          ),
+          eq(follows.followingId, followingId),
+          isNotNull(follows.approved),
+        )!,
+    },
   });
   return found != null;
 }
@@ -42,22 +36,22 @@ federation.setObjectDispatcher(
   async (ctx, values) => {
     if (!values.id?.match(/^[-a-f0-9]+$/)) return null;
     const owner = await db.query.accountOwners.findFirst({
-      where: like(accountOwners.handle, values.username),
+      where: { handle: { like: values.username } },
       with: { account: true },
     });
     if (owner == null) return null;
     if (!isUuid(values.id)) return null;
     const post = await db.query.posts.findFirst({
-      where: and(
-        eq(posts.id, values.id),
-        eq(posts.accountId, owner.account.id),
-      ),
+      where: {
+        id: { eq: values.id },
+        accountId: { eq: owner.account.id },
+      },
       with: {
         account: { with: { owner: true } },
         replyTarget: true,
         quoteTarget: true,
         media: true,
-        poll: { with: { options: { orderBy: pollOptions.index } } },
+        poll: { with: { options: { orderBy: { index: "asc" } } } },
         mentions: { with: { account: true } },
         replies: { limit: 20 },
       },
@@ -87,7 +81,7 @@ federation.setObjectDispatcher(
   "/emojis/:{shortcode}:",
   async (ctx, { shortcode }) => {
     const emoji = await db.query.customEmojis.findFirst({
-      where: eq(customEmojis.shortcode, shortcode),
+      where: { shortcode: { eq: shortcode } },
     });
     if (emoji == null) return null;
     return toEmoji(ctx, emoji);
@@ -101,16 +95,16 @@ federation.setObjectDispatcher(
     if (!values.id?.match(/^[-a-f0-9]+$/)) return null;
     if (!values.quoteId?.match(/^[-a-f0-9]+$/)) return null;
     const owner = await db.query.accountOwners.findFirst({
-      where: like(accountOwners.handle, values.username),
+      where: { handle: { like: values.username } },
       with: { account: true },
     });
     if (owner == null) return null;
     if (!isUuid(values.id) || !isUuid(values.quoteId)) return null;
     const targetPost = await db.query.posts.findFirst({
-      where: and(
-        eq(posts.id, values.id),
-        eq(posts.accountId, owner.account.id),
-      ),
+      where: {
+        id: { eq: values.id },
+        accountId: { eq: owner.account.id },
+      },
       with: {
         account: { with: { owner: true } },
         mentions: { with: { account: true } },
@@ -133,11 +127,14 @@ federation.setObjectDispatcher(
       if (!found) return null;
     }
     const quotePost = await db.query.posts.findFirst({
-      where: and(
-        eq(posts.id, values.quoteId),
-        eq(posts.quoteTargetId, targetPost.id),
-        or(eq(posts.quoteState, "accepted"), isNull(posts.quoteState)),
-      ),
+      where: {
+        id: { eq: values.quoteId },
+        quoteTargetId: { eq: targetPost.id },
+        OR: [
+          { quoteState: { eq: "accepted" } },
+          { quoteState: { isNull: true } },
+        ],
+      },
     });
     if (quotePost == null) return null;
     return new QuoteAuthorization({
@@ -152,7 +149,7 @@ federation.setObjectDispatcher(
 federation.setObjectDispatcher(Flag, "/reports/{id}", async (ctx, { id }) => {
   if (!isUuid(id)) return null;
   const report = await db.query.reports.findFirst({
-    where: eq(reports.id, id),
+    where: { id: { eq: id } },
     with: {
       account: {
         columns: { iri: true },
@@ -182,10 +179,13 @@ federation.setObjectDispatcher(Flag, "/reports/{id}", async (ctx, { id }) => {
   let targetPosts: { iri: string }[] = [];
   if (report.posts.length > 0) {
     targetPosts = await db.query.posts.findMany({
-      where: and(
-        inArray(posts.id, report.posts),
-        eq(posts.accountId, report.targetAccountId),
-      ),
+      where: {
+        RAW: (posts, { and, eq, inArray }) =>
+          and(
+            inArray(posts.id, report.posts),
+            eq(posts.accountId, report.targetAccountId),
+          )!,
+      },
       columns: {
         iri: true,
       },

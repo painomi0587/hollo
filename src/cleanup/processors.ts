@@ -58,7 +58,7 @@ export async function processThumbnailDeletion(
   const data = item.data as unknown as ThumbnailCleanupItemData;
 
   const medium = await db.query.media.findFirst({
-    where: eq(schema.media.id, data.id),
+    where: { id: { eq: data.id } },
   });
 
   if (medium == null) {

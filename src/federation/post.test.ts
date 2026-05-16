@@ -9,13 +9,13 @@ import {
   QuoteAuthorization,
   type RemoteDocument,
 } from "@fedify/vocab";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanDatabase } from "../../tests/helpers";
 import { createAccount } from "../../tests/helpers/oauth";
 import db from "../db";
-import { accounts, follows, instances, posts, timelinePosts } from "../schema";
+import { accounts, follows, instances, posts } from "../schema";
 import type { Uuid } from "../uuid";
 import { toTemporalInstant } from "./date";
 import { onPostShared } from "./inbox";
@@ -51,7 +51,7 @@ async function seedRemoteAccount(username: string) {
     published: new Date(),
   });
   const account = await db.query.accounts.findFirst({
-    where: eq(accounts.id, id),
+    where: { id: { eq: id } },
     with: { owner: true },
   });
   if (account == null) throw new Error("Failed to seed remote account");
@@ -188,16 +188,19 @@ describe("persistSharingPost", () => {
     );
 
     const sharingPosts = await db.query.posts.findMany({
-      where: and(
-        eq(posts.accountId, sharer.id),
-        eq(posts.sharingId, originalPostId),
-      ),
+      where: {
+        RAW: (posts, { and, eq }) =>
+          and(
+            eq(posts.accountId, sharer.id),
+            eq(posts.sharingId, originalPostId),
+          )!,
+      },
     });
     const timelineRows = await db.query.timelinePosts.findMany({
-      where: eq(timelinePosts.postId, first!.id),
+      where: { postId: { eq: first!.id } },
     });
     const originalPost = await db.query.posts.findFirst({
-      where: eq(posts.id, originalPostId),
+      where: { id: { eq: originalPostId } },
     });
     expect(first).not.toBeNull();
     expect(second?.id).toBe(first?.id);
@@ -237,16 +240,19 @@ describe("persistSharingPost", () => {
     ]);
 
     const sharingPosts = await db.query.posts.findMany({
-      where: and(
-        eq(posts.accountId, sharer.id),
-        eq(posts.sharingId, originalPostId),
-      ),
+      where: {
+        RAW: (posts, { and, eq }) =>
+          and(
+            eq(posts.accountId, sharer.id),
+            eq(posts.sharingId, originalPostId),
+          )!,
+      },
     });
     const timelineRows = await db.query.timelinePosts.findMany({
-      where: eq(timelinePosts.postId, first!.id),
+      where: { postId: { eq: first!.id } },
     });
     const originalPost = await db.query.posts.findFirst({
-      where: eq(posts.id, originalPostId),
+      where: { id: { eq: originalPostId } },
     });
     expect(first).not.toBeNull();
     expect(second?.id).toBe(first?.id);
@@ -376,7 +382,7 @@ describe("persistPost", () => {
     );
 
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, first.id),
+      where: { id: { eq: first.id } },
     });
     const jobs = await db.query.remoteReplyScrapeJobs.findMany();
     expect(post?.repliesCount).toBe(3);
@@ -401,7 +407,9 @@ describe("persistPost", () => {
       "https://hollo.test",
       { account: author },
     );
-    const row = await db.query.posts.findFirst({ where: eq(posts.iri, iri) });
+    const row = await db.query.posts.findFirst({
+      where: { iri: { eq: iri } },
+    });
     const timelineRows = await db.query.timelinePosts.findMany();
 
     expect(result).toBeNull();
@@ -427,7 +435,9 @@ describe("persistPost", () => {
       "https://hollo.test",
       { account: author },
     );
-    const row = await db.query.posts.findFirst({ where: eq(posts.iri, iri) });
+    const row = await db.query.posts.findFirst({
+      where: { iri: { eq: iri } },
+    });
     const timelineRows = await db.query.timelinePosts.findMany();
 
     expect(result).toBeNull();
@@ -491,7 +501,7 @@ describe("toObject", () => {
 
   async function getObjectJsonWithContext(postId: Uuid, ctx: Context<unknown>) {
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
       with: {
         account: { with: { owner: true } },
         replyTarget: true,

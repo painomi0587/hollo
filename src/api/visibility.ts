@@ -23,8 +23,8 @@ export async function getApprovedFollowingAccountIds(
   return rows.map((row) => row.id);
 }
 
-export function postAccountIdInArray(accountIds: Uuid[]) {
-  return sql`${posts.accountId} = ANY(${postgres.array(accountIds, UUID_ARRAY_OID)})`;
+export function postAccountIdInArray(accountIds: Uuid[], table = posts) {
+  return sql`${table.accountId} = ANY(${postgres.array(accountIds, UUID_ARRAY_OID)})`;
 }
 
 export async function getPostVisibilityScope(
@@ -40,25 +40,28 @@ export async function getPostVisibilityScope(
   };
 }
 
-export function buildPostVisibilityConditions(scope: PostVisibilityScope) {
+export function buildPostVisibilityConditions(
+  scope: PostVisibilityScope,
+  table = posts,
+) {
   const { viewerAccountId } = scope;
 
   if (viewerAccountId == null) {
-    return inArray(posts.visibility, ["public", "unlisted"]);
+    return inArray(table.visibility, ["public", "unlisted"]);
   }
 
   const privateAccountIds = [
     ...new Set([viewerAccountId, ...scope.followingAccountIds]),
   ];
   const recipientCondition = or(
-    eq(posts.accountId, viewerAccountId),
+    eq(table.accountId, viewerAccountId),
     exists(
       db
         .select({ postId: mentions.postId })
         .from(mentions)
         .where(
           and(
-            eq(mentions.postId, posts.id),
+            eq(mentions.postId, table.id),
             eq(mentions.accountId, viewerAccountId),
           ),
         ),
@@ -66,11 +69,11 @@ export function buildPostVisibilityConditions(scope: PostVisibilityScope) {
   );
 
   return or(
-    inArray(posts.visibility, ["public", "unlisted"]),
+    inArray(table.visibility, ["public", "unlisted"]),
     and(
-      eq(posts.visibility, "private"),
-      or(postAccountIdInArray(privateAccountIds), recipientCondition),
+      eq(table.visibility, "private"),
+      or(postAccountIdInArray(privateAccountIds, table), recipientCondition),
     ),
-    and(eq(posts.visibility, "direct"), recipientCondition),
+    and(eq(table.visibility, "direct"), recipientCondition),
   );
 }

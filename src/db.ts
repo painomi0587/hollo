@@ -1,13 +1,12 @@
 import { getLogger } from "@logtape/drizzle-orm";
-import type { ExtractTablesWithRelations } from "drizzle-orm";
-import type { PgDatabase, PgTransaction } from "drizzle-orm/pg-core";
 import {
   drizzle,
-  type PostgresJsQueryResultHKT,
+  type PostgresJsDatabase,
+  type PostgresJsTransaction,
 } from "drizzle-orm/postgres-js";
 import createPostgres from "postgres";
 
-import * as schema from "./schema";
+import { relations } from "./relations";
 
 // oxlint-disable-next-line typescript/dot-notation
 const databaseUrl = process.env["DATABASE_URL"];
@@ -21,19 +20,13 @@ export const postgres = createPostgres(databaseUrl, {
   connect_timeout: 5,
   connection: { IntervalStyle: "iso_8601" },
 });
-export const db = drizzle(postgres, { schema, logger: getLogger() });
+export const db = drizzle({ client: postgres, relations, logger: getLogger() });
 
-export type Database = PgDatabase<
-  PostgresJsQueryResultHKT,
-  typeof schema,
-  ExtractTablesWithRelations<typeof schema>
->;
+export type Database = PostgresJsDatabase<typeof relations>;
 
 // This is necessary for passing a transaction into a function:
-export type Transaction = PgTransaction<
-  PostgresJsQueryResultHKT,
-  typeof schema,
-  ExtractTablesWithRelations<typeof schema>
->;
+export type Transaction = PostgresJsTransaction<typeof relations>;
+
+export type DatabaseLike = Database | Transaction;
 
 export default db;

@@ -18,10 +18,10 @@ import {
   accounts,
   bookmarks,
   likes,
-  type Medium,
   media,
   posts,
   reactions,
+  type Medium,
 } from "../schema";
 import { STORAGE_URL_BASE } from "../storage-config";
 

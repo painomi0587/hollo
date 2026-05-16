@@ -1,18 +1,9 @@
 import { zValidator } from "@hono/zod-validator";
-import {
-  and,
-  count,
-  type ExtractTablesWithRelations,
-  eq,
-  max,
-  sql,
-} from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+import { and, count, eq, max, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import db from "../../db";
+import db, { type DatabaseLike } from "../../db";
 import { serializeFeaturedTag } from "../../entities/tag";
 import {
   scopeRequired,
@@ -20,9 +11,8 @@ import {
   withAccountOwner,
   type AccountOwnerVariables,
 } from "../../oauth/middleware";
-import type * as schema from "../../schema";
 import { featuredTags, posts } from "../../schema";
-import { isUuid, type Uuid, uuidv7 } from "../../uuid";
+import { isUuid, uuidv7, type Uuid } from "../../uuid";
 
 const app = new Hono<{ Variables: AccountOwnerVariables }>();
 
@@ -34,7 +24,7 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const tags = await db.query.featuredTags.findMany({
-      where: eq(featuredTags.accountOwnerId, owner.id),
+      where: { accountOwnerId: { eq: owner.id } },
     });
     const stats = await getFeaturedTagStats(db, owner.id);
     return c.json(
@@ -93,11 +83,7 @@ app.delete(
 );
 
 async function getFeaturedTagStats(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ownerId: Uuid,
 ): Promise<Record<string, { posts: number; lastPublished: Date | null }>> {
   const result = await db

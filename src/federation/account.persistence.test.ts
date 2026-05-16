@@ -1,5 +1,4 @@
 import { Person } from "@fedify/vocab";
-import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanDatabase } from "../../tests/helpers";
@@ -214,16 +213,16 @@ describe.sequential("persistAccount canonical handle reassignment", () => {
     );
 
     const localAfter = await db.query.accounts.findFirst({
-      where: eq(Schema.accounts.id, localOwner.id as Uuid),
+      where: { id: { eq: localOwner.id as Uuid } },
     });
     const staleAfter = await db.query.accounts.findFirst({
-      where: eq(Schema.accounts.id, staleAccount.id),
+      where: { id: { eq: staleAccount.id } },
     });
     const stalePosts = await db.query.posts.findMany({
-      where: eq(Schema.posts.accountId, staleAccount.id),
+      where: { accountId: { eq: staleAccount.id } },
     });
     const mentions = await db.query.mentions.findMany({
-      where: eq(Schema.mentions.accountId, staleAccount.id),
+      where: { accountId: { eq: staleAccount.id } },
     });
 
     expect(account?.id).toBe(currentAccount.id);
@@ -261,7 +260,7 @@ describe.sequential("persistAccount canonical handle reassignment", () => {
     );
 
     const staleAfter = await db.query.accounts.findFirst({
-      where: eq(Schema.accounts.id, staleAccount.id),
+      where: { id: { eq: staleAccount.id } },
     });
 
     expect(account?.iri).toBe("https://backend.newsmast.org/users/michael");

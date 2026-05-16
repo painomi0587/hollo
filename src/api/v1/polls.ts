@@ -31,10 +31,10 @@ app.get(
     const owner = c.get("accountOwner");
     const poll = await db.query.polls.findFirst({
       with: {
-        options: { orderBy: pollOptions.index },
-        votes: { where: eq(pollVotes.accountId, owner.id) },
+        options: { orderBy: { index: "asc" } },
+        votes: { where: { accountId: { eq: owner.id } } },
       },
-      where: eq(polls.id, pollId),
+      where: { id: { eq: pollId } },
     });
     if (poll == null) return c.json({ error: "Record not found" }, 404);
     return c.json(serializePoll(poll, owner));
@@ -70,7 +70,7 @@ app.post(
         options: true,
         votes: {
           with: { account: true },
-          where: eq(pollVotes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         posts: {
           with: {
@@ -82,7 +82,7 @@ app.post(
           },
         },
       },
-      where: eq(polls.id, pollId),
+      where: { id: { eq: pollId } },
     });
     if (poll == null) return c.json({ error: "Record not found" }, 404);
     if (poll.expires <= new Date()) {
@@ -140,7 +140,7 @@ app.post(
         options: true,
         votes: {
           with: { account: true },
-          where: eq(pollVotes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         posts: {
           with: {
@@ -152,7 +152,7 @@ app.post(
           },
         },
       },
-      where: eq(polls.id, pollId),
+      where: { id: { eq: pollId } },
     });
     if (poll == null) throw new Error("Record not found");
     const fedCtx = federation.createContext(c.req.raw, undefined);

@@ -1,5 +1,5 @@
 import { getLogger } from "@logtape/logtape";
-import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { db } from "../../db";
@@ -15,12 +15,10 @@ import {
   type AccountOwnerVariables,
 } from "../../oauth/middleware";
 import {
-  accounts,
-  type NotificationType,
   notificationGroups,
   notifications,
   notificationTypeEnum,
-  posts,
+  type NotificationType,
 } from "../../schema";
 import type { Uuid } from "../../uuid";
 
@@ -87,30 +85,32 @@ app.get(
 
     const startTime = performance.now();
 
-    // Query notification groups
-    const conditions = [
-      eq(notificationGroups.accountOwnerId, owner.id),
-      inArray(notificationGroups.type, types),
-    ];
+    const paginationConditions = [];
 
     // Pagination conditions
     if (maxId != null) {
-      conditions.push(lt(notificationGroups.pageMaxId, maxId as Uuid));
+      paginationConditions.push({ pageMaxId: { lt: maxId as Uuid } });
     }
     if (sinceId != null) {
-      conditions.push(gt(notificationGroups.pageMaxId, sinceId as Uuid));
+      paginationConditions.push({ pageMaxId: { gt: sinceId as Uuid } });
     }
     if (minId != null) {
-      conditions.push(gt(notificationGroups.pageMaxId, minId as Uuid));
+      paginationConditions.push({ pageMaxId: { gt: minId as Uuid } });
     }
 
     const groups = await db.query.notificationGroups.findMany({
-      where: and(...conditions),
+      where: {
+        accountOwnerId: { eq: owner.id },
+        type: { in: types },
+        AND: paginationConditions,
+      },
       // Use COALESCE to handle NULL latestPageNotificationAt values
       // (e.g., from older migrations that didn't set this field)
-      orderBy: desc(
-        sql`COALESCE(${notificationGroups.latestPageNotificationAt}, ${notificationGroups.created})`,
-      ),
+      orderBy: (notificationGroups, { desc, sql }) => [
+        desc(
+          sql`COALESCE(${notificationGroups.latestPageNotificationAt}, ${notificationGroups.created})`,
+        ),
+      ],
       limit,
     });
 
@@ -144,22 +144,19 @@ app.get(
     const [accountsData, postsData, notificationsData] = await Promise.all([
       accountIds.size > 0
         ? db.query.accounts.findMany({
-            where: inArray(accounts.id, Array.from(accountIds) as Uuid[]),
+            where: { id: { in: Array.from(accountIds) as Uuid[] } },
             with: { owner: true, successor: true },
           })
         : [],
       postIds.size > 0
         ? db.query.posts.findMany({
-            where: inArray(posts.id, Array.from(postIds) as Uuid[]),
+            where: { id: { in: Array.from(postIds) as Uuid[] } },
             with: getPostRelations(owner.id),
           })
         : [],
       notificationIds.size > 0
         ? db.query.notifications.findMany({
-            where: inArray(
-              notifications.id,
-              Array.from(notificationIds) as Uuid[],
-            ),
+            where: { id: { in: Array.from(notificationIds) as Uuid[] } },
           })
         : [],
     ]);
@@ -342,10 +339,10 @@ app.get(
     const groupKey = c.req.param("group_key");
 
     const group = await db.query.notificationGroups.findFirst({
-      where: and(
-        eq(notificationGroups.groupKey, groupKey),
-        eq(notificationGroups.accountOwnerId, owner.id),
-      ),
+      where: {
+        groupKey: { eq: groupKey },
+        accountOwnerId: { eq: owner.id },
+      },
     });
 
     if (group == null) {
@@ -358,19 +355,19 @@ app.get(
     const [accountsData, postData, mostRecentNotification] = await Promise.all([
       group.sampleAccountIds.length > 0
         ? db.query.accounts.findMany({
-            where: inArray(accounts.id, group.sampleAccountIds),
+            where: { id: { in: group.sampleAccountIds } },
             with: { owner: true, successor: true },
           })
         : [],
       group.targetPostId != null
         ? db.query.posts.findFirst({
-            where: eq(posts.id, group.targetPostId),
+            where: { id: { eq: group.targetPostId } },
             with: getPostRelations(owner.id),
           })
         : null,
       notificationId != null
         ? db.query.notifications.findFirst({
-            where: eq(notifications.id, notificationId),
+            where: { id: { eq: notificationId } },
           })
         : null,
     ]);
@@ -479,10 +476,10 @@ app.get(
     const groupKey = c.req.param("group_key");
 
     const group = await db.query.notificationGroups.findFirst({
-      where: and(
-        eq(notificationGroups.groupKey, groupKey),
-        eq(notificationGroups.accountOwnerId, owner.id),
-      ),
+      where: {
+        groupKey: { eq: groupKey },
+        accountOwnerId: { eq: owner.id },
+      },
     });
 
     if (group == null) {
@@ -491,10 +488,10 @@ app.get(
 
     // Fetch all notifications in this group to get all account IDs
     const notifs = await db.query.notifications.findMany({
-      where: and(
-        eq(notifications.groupKey, groupKey),
-        eq(notifications.accountOwnerId, owner.id),
-      ),
+      where: {
+        groupKey: { eq: groupKey },
+        accountOwnerId: { eq: owner.id },
+      },
     });
 
     const allAccountIds = new Set(
@@ -508,7 +505,7 @@ app.get(
     }
 
     const accountsData = await db.query.accounts.findMany({
-      where: inArray(accounts.id, Array.from(allAccountIds) as Uuid[]),
+      where: { id: { in: Array.from(allAccountIds) as Uuid[] } },
       with: { owner: true, successor: true },
     });
 

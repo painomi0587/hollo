@@ -1,4 +1,3 @@
-import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
@@ -11,7 +10,6 @@ import {
   type Poll,
   type PollOption,
   type Post,
-  posts,
   type Reaction,
 } from "../../schema.ts";
 
@@ -22,20 +20,23 @@ tags.get(async (c) => {
   const handle = c.req.query("handle");
   const hashtag = `#${tag.toLowerCase()}`;
   const postList = await db.query.posts.findMany({
-    where: and(
-      sql`${posts.tags} ? ${hashtag}`,
-      eq(posts.visibility, "public"),
-      handle == null
-        ? undefined
-        : eq(
-            posts.accountId,
-            db
-              .select({ id: accountOwners.id })
-              .from(accountOwners)
-              .where(eq(accountOwners.handle, handle)),
-          ),
-    ),
-    orderBy: desc(posts.id),
+    where: {
+      RAW: (posts, { and, eq, sql }) =>
+        and(
+          sql`${posts.tags} ? ${hashtag}`,
+          eq(posts.visibility, "public"),
+          handle == null
+            ? undefined
+            : eq(
+                posts.accountId,
+                db
+                  .select({ id: accountOwners.id })
+                  .from(accountOwners)
+                  .where(eq(accountOwners.handle, handle)),
+              ),
+        )!,
+    },
+    orderBy: (posts, { desc }) => [desc(posts.id)],
     with: {
       account: true,
       media: true,

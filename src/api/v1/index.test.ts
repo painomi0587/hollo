@@ -11,7 +11,8 @@ import {
 } from "../../../tests/helpers/oauth";
 import db from "../../db";
 import app from "../../index";
-import { accountOwners, accounts } from "../../schema";
+import { accountOwners, accounts, mutes } from "../../schema";
+import { uuidv7 } from "../../uuid";
 
 describe.sequential("/api/v1/preferences", () => {
   let client: Awaited<ReturnType<typeof createOAuthApplication>>;
@@ -104,6 +105,53 @@ describe.sequential("/api/v1/preferences", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     await expect(response.json()).resolves.toEqual({
       error: "This method requires an authenticated user",
+    });
+  });
+});
+
+describe.sequential("/api/v1/mutes", () => {
+  let client: Awaited<ReturnType<typeof createOAuthApplication>>;
+  let account: Awaited<ReturnType<typeof createAccount>>;
+  let mutedAccount: Awaited<ReturnType<typeof createAccount>>;
+
+  beforeEach(async () => {
+    await cleanDatabase();
+
+    account = await createAccount();
+    mutedAccount = await createAccount({ username: "muted" });
+    client = await createOAuthApplication({
+      scopes: ["read:mutes"],
+      confidential: true,
+    });
+  });
+
+  it("returns muted accounts", async () => {
+    expect.assertions(5);
+
+    await db.insert(mutes).values({
+      id: uuidv7(),
+      accountId: account.id,
+      mutedAccountId: mutedAccount.id,
+    });
+
+    const accessToken = await getAccessToken(client, account, ["read:mutes"]);
+    const response = await app.request("/api/v1/mutes", {
+      method: "GET",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+
+    const mutedAccounts = await response.json();
+
+    expect(mutedAccounts).toHaveLength(1);
+    expect(mutedAccounts[0]).toMatchObject({
+      id: mutedAccount.id,
+      username: "muted",
     });
   });
 });

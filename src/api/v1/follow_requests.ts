@@ -19,7 +19,7 @@ import {
   withAccountOwner,
   type AccountOwnerVariables,
 } from "../../oauth/middleware";
-import { accounts, blocks, follows, mutes } from "../../schema";
+import { follows } from "../../schema";
 import { isUuid } from "../../uuid";
 
 const app = new Hono<{ Variables: AccountOwnerVariables }>();
@@ -32,7 +32,10 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const followers = await db.query.follows.findMany({
-      where: and(eq(follows.followingId, owner.id), isNull(follows.approved)),
+      where: {
+        RAW: (follows, { and, eq, isNull }) =>
+          and(eq(follows.followingId, owner.id), isNull(follows.approved))!,
+      },
       with: { follower: { with: { owner: true, successor: true } } },
     });
     return c.json(
@@ -58,7 +61,7 @@ app.post(
     if (!isUuid(followerId)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const follower = await db.query.accounts.findFirst({
-      where: eq(accounts.id, followerId),
+      where: { id: { eq: followerId } },
       with: { owner: true },
     });
     if (follower == null) return c.json({ error: "Record not found" }, 404);
@@ -97,22 +100,22 @@ app.post(
     }
     await updateAccountStats(db, { id: owner.id });
     const follower2 = await db.query.accounts.findFirst({
-      where: eq(accounts.id, followerId),
+      where: { id: { eq: followerId } },
       with: {
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -131,7 +134,7 @@ app.post(
     if (!isUuid(followerId)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const follower = await db.query.accounts.findFirst({
-      where: eq(accounts.id, followerId),
+      where: { id: { eq: followerId } },
       with: { owner: true },
     });
     if (follower == null) return c.json({ error: "Record not found" }, 404);
@@ -168,22 +171,22 @@ app.post(
       );
     }
     const follower2 = await db.query.accounts.findFirst({
-      where: eq(accounts.id, followerId),
+      where: { id: { eq: followerId } },
       with: {
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });

@@ -1,5 +1,4 @@
 import { getLogger } from "@logtape/logtape";
-import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { auth } from "hono/utils/basic-auth";
 import { z } from "zod";
@@ -11,9 +10,6 @@ import {
   type Account,
   type AccountOwner,
   type Application,
-  accessTokens,
-  accountOwners,
-  applications,
   type Scope,
 } from "../schema.ts";
 
@@ -140,19 +136,19 @@ export const clientAuthentication = createMiddleware<{
     clientCredentials[0].authentication === "client_secret_post"
   ) {
     client = await db.query.applications.findFirst({
-      where: and(
-        eq(applications.clientId, clientCredentials[0].client_id),
-        eq(applications.clientSecret, clientCredentials[0].client_secret),
-        eq(applications.confidential, true),
-      ),
+      where: {
+        clientId: { eq: clientCredentials[0].client_id },
+        clientSecret: { eq: clientCredentials[0].client_secret },
+        confidential: { eq: true },
+      },
     });
   } else {
     // client authentication method is none, which only works for non-confidential clients:
     client = await db.query.applications.findFirst({
-      where: and(
-        eq(applications.clientId, clientCredentials[0].client_id),
-        eq(applications.confidential, false),
-      ),
+      where: {
+        clientId: { eq: clientCredentials[0].client_id },
+        confidential: { eq: false },
+      },
     });
   }
 
@@ -190,7 +186,7 @@ export const tokenRequired = createMiddleware<{ Variables: Variables }>(
     const token = match[1];
 
     const accessToken = await db.query.accessTokens.findFirst({
-      where: eq(accessTokens.code, token),
+      where: { code: { eq: token } },
     });
 
     if (accessToken === undefined) {
@@ -214,7 +210,7 @@ export const withAccountOwner = createMiddleware<{
     return c.json({ error: "This method requires an authenticated user" }, 422);
   }
   const owner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountOwnerId),
+    where: { id: { eq: accountOwnerId } },
     with: { account: { with: { successor: true } } },
   });
   if (owner == null) {

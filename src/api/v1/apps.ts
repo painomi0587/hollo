@@ -1,5 +1,4 @@
 import { getLogger } from "@logtape/logtape";
-import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -115,7 +114,7 @@ app.post("/", async (c) => {
 app.get("/verify_credentials", tokenRequired, async (c) => {
   const token = c.get("token");
   const application = await db.query.applications.findFirst({
-    where: eq(applications.id, token.applicationId),
+    where: { id: { eq: token.applicationId } },
   });
   if (application == null) return c.json({ error: "invalid_token" }, 401);
   return c.json({

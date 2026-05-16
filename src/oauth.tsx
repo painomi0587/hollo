@@ -23,7 +23,7 @@ import {
 import { scopesSchema } from "./oauth/validators.ts";
 import { AuthorizationPage } from "./pages/oauth/authorization.tsx";
 import { AuthorizationCodePage } from "./pages/oauth/authorization_code.tsx";
-import { accessGrants, accountOwners, applications } from "./schema.ts";
+import { accessGrants } from "./schema.ts";
 import { uuid } from "./uuid.ts";
 
 const logger = getLogger(["hollo", "oauth"]);
@@ -79,7 +79,7 @@ app.get(
     const data = c.req.valid("query");
 
     const application = await db.query.applications.findFirst({
-      where: eq(applications.clientId, data.client_id),
+      where: { clientId: { eq: data.client_id } },
     });
     if (application == null) {
       return c.json({ error: "invalid_client_id" }, 400);
@@ -142,14 +142,14 @@ app.post(
     const form = c.req.valid("form");
 
     const application = await db.query.applications.findFirst({
-      where: eq(applications.id, form.application_id),
+      where: { id: { eq: form.application_id } },
     });
     if (application == null) {
       return c.notFound();
     }
 
     const accountOwner = await db.query.accountOwners.findFirst({
-      where: eq(accountOwners.id, form.account_id),
+      where: { id: { eq: form.account_id } },
     });
     if (accountOwner == null) {
       return c.notFound();

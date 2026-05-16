@@ -1,22 +1,7 @@
 import * as vocab from "@fedify/vocab";
 import { Block, isActor, lookupObject, Undo } from "@fedify/vocab";
 import { zValidator } from "@hono/zod-validator";
-import {
-  and,
-  count,
-  desc,
-  eq,
-  gt,
-  ilike,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  lte,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, count, eq, ilike } from "drizzle-orm";
 import { Hono } from "hono";
 import mime from "mime";
 import { z } from "zod";
@@ -41,10 +26,10 @@ import {
 } from "../../federation/account";
 import { normalizeHandleForLookup } from "../../instance-host";
 import {
+  type AccountOwnerVariables,
   scopeRequired,
   tokenRequired,
   withAccountOwner,
-  type AccountOwnerVariables,
 } from "../../oauth/middleware";
 import {
   type Account,
@@ -54,7 +39,6 @@ import {
   blocks,
   follows,
   listMembers,
-  lists,
   media,
   mentions,
   mutes,
@@ -273,7 +257,7 @@ app.patch(
       updatedAccounts[0].successorId == null
         ? null
         : ((await db.query.accounts.findFirst({
-            where: eq(accounts.id, updatedAccounts[0].successorId),
+            where: { id: { eq: updatedAccounts[0].successorId } },
           })) ?? null);
     return c.json(
       serializeAccountOwner(
@@ -298,22 +282,22 @@ app.get(
     const accountList =
       ids.length > 0
         ? await db.query.accounts.findMany({
-            where: inArray(accounts.id, ids),
+            where: { id: { in: ids } },
             with: {
               following: {
-                where: eq(follows.followingId, owner.id),
+                where: { followingId: { eq: owner.id } },
               },
               followers: {
-                where: eq(follows.followerId, owner.id),
+                where: { followerId: { eq: owner.id } },
               },
               mutedBy: {
-                where: eq(mutes.accountId, owner.id),
+                where: { accountId: { eq: owner.id } },
               },
               blocks: {
-                where: eq(blocks.blockedAccountId, owner.id),
+                where: { blockedAccountId: { eq: owner.id } },
               },
               blockedBy: {
-                where: eq(blocks.accountId, owner.id),
+                where: { accountId: { eq: owner.id } },
               },
             },
           })
@@ -347,7 +331,7 @@ app.get(
         })
       | null =
       (await db.query.accounts.findFirst({
-        where: eq(accounts.handle, handleLookup),
+        where: { handle: { eq: handleLookup } },
         with: { owner: true, successor: true },
       })) ?? null;
     if (account == null) {
@@ -365,7 +349,7 @@ app.get(
           owner: null,
           successor:
             (await db.query.accounts.findFirst({
-              where: eq(accounts.successorId, loaded.id),
+              where: { successorId: { eq: loaded.id } },
             })) ?? null,
         };
       }
@@ -418,7 +402,7 @@ app.get(
       : `@${normalizeHandle(query.q)}`;
     if (query.resolve && HANDLE_PATTERN.test(query.q) && query.offset < 1) {
       const exactMatch = await db.query.accounts.findFirst({
-        where: ilike(accounts.handle, handleLookup),
+        where: { handle: { ilike: handleLookup } },
       });
       if (exactMatch != null) {
         const fedCtx = federation.createContext(c.req.raw, undefined);
@@ -433,13 +417,16 @@ app.get(
       }
     }
     const accountList = await db.query.accounts.findMany({
-      where: or(
-        ilike(accounts.handle, `%${query.q}%`),
-        ilike(accounts.handle, `%${handleLookup}%`),
-        ilike(accounts.name, `%${query.q}%`),
-      ),
+      where: {
+        RAW: (accounts, { ilike, or }) =>
+          or(
+            ilike(accounts.handle, `%${query.q}%`),
+            ilike(accounts.handle, `%${handleLookup}%`),
+            ilike(accounts.name, `%${query.q}%`),
+          )!,
+      },
       with: { owner: true, successor: true },
-      orderBy: [
+      orderBy: (accounts, { desc }) => [
         desc(ilike(accounts.handle, handleLookup)),
         desc(ilike(accounts.name, query.q)),
         desc(ilike(accounts.handle, `${handleLookup}%`)),
@@ -472,22 +459,25 @@ app.get(
     }[] = [];
     for (const id of ids) {
       const accountList = await db.query.accounts.findMany({
-        where: and(
-          inArray(
-            accounts.id,
-            db
-              .select({ id: follows.followerId })
-              .from(follows)
-              .where(eq(follows.followingId, id)),
-          ),
-          inArray(
-            accounts.id,
-            db
-              .select({ id: follows.followingId })
-              .from(follows)
-              .where(eq(follows.followerId, owner.id)),
-          ),
-        ),
+        where: {
+          RAW: (accounts, { and, eq, inArray }) =>
+            and(
+              inArray(
+                accounts.id,
+                db
+                  .select({ id: follows.followerId })
+                  .from(follows)
+                  .where(eq(follows.followingId, id)),
+              ),
+              inArray(
+                accounts.id,
+                db
+                  .select({ id: follows.followingId })
+                  .from(follows)
+                  .where(eq(follows.followerId, owner.id)),
+              ),
+            )!,
+        },
         with: { owner: true, successor: true },
       });
       result.push({
@@ -507,7 +497,7 @@ app.get("/:id", async (c) => {
   const id = c.req.param("id");
   if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
   const account = await db.query.accounts.findFirst({
-    where: eq(accounts.id, id),
+    where: { id: { eq: id } },
     with: { owner: true, successor: true },
   });
   if (account == null) return c.json({ error: "Record not found" }, 404);
@@ -539,11 +529,11 @@ app.get(
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
     const tokenOwner = c.get("accountOwner");
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         owner: true,
         blocks: {
-          where: eq(blocks.blockedAccountId, tokenOwner.id),
+          where: { blockedAccountId: { eq: tokenOwner.id } },
         },
       },
     });
@@ -584,105 +574,113 @@ app.get(
         and(eq(follows.followerId, tokenOwner.id), eq(follows.followingId, id)),
       );
     const postList = await db.query.posts.findMany({
-      where: and(
-        eq(posts.accountId, id),
-        or(
-          eq(posts.accountId, tokenOwner.id),
-          eq(posts.visibility, "public"),
-          eq(posts.visibility, "unlisted"),
-          following.length > 0 ? eq(posts.visibility, "private") : undefined,
+      where: {
+        RAW: (
+          posts,
+          { and, eq, gt, inArray, isNull, lt, lte, notInArray, or, sql },
+        ) =>
           and(
-            eq(posts.visibility, "direct"),
-            inArray(
-              posts.id,
-              db
-                .select({ id: mentions.postId })
-                .from(mentions)
-                .where(eq(mentions.accountId, tokenOwner.id)),
-            ),
-          ),
-        ),
-        // Hide future posts
-        lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
-        // Hide the posts from the muted accounts:
-        notInArray(
-          posts.accountId,
-          db
-            .select({ accountId: mutes.mutedAccountId })
-            .from(mutes)
-            .where(
+            eq(posts.accountId, id),
+            or(
+              eq(posts.accountId, tokenOwner.id),
+              eq(posts.visibility, "public"),
+              eq(posts.visibility, "unlisted"),
+              following.length > 0
+                ? eq(posts.visibility, "private")
+                : undefined,
               and(
-                eq(mutes.accountId, tokenOwner.id),
-                or(
-                  isNull(mutes.duration),
-                  gt(
-                    sql`${mutes.created} + ${mutes.duration}`,
-                    sql`CURRENT_TIMESTAMP`,
-                  ),
+                eq(posts.visibility, "direct"),
+                inArray(
+                  posts.id,
+                  db
+                    .select({ id: mentions.postId })
+                    .from(mentions)
+                    .where(eq(mentions.accountId, tokenOwner.id)),
                 ),
               ),
             ),
-        ),
-        // Hide the posts from the blocked accounts:
-        notInArray(
-          posts.accountId,
-          db
-            .select({ accountId: blocks.blockedAccountId })
-            .from(blocks)
-            .where(eq(blocks.accountId, tokenOwner.id)),
-        ),
-        // Hide the posts from the accounts who blocked the owner:
-        notInArray(
-          posts.accountId,
-          db
-            .select({ accountId: blocks.accountId })
-            .from(blocks)
-            .where(eq(blocks.blockedAccountId, tokenOwner.id)),
-        ),
-        // Hide the shared posts from the muted accounts:
-        or(
-          isNull(posts.sharingId),
-          notInArray(
-            posts.sharingId,
-            db
-              .select({ id: posts.id })
-              .from(posts)
-              .innerJoin(mutes, eq(mutes.mutedAccountId, posts.accountId))
-              .where(
-                and(
-                  eq(mutes.accountId, tokenOwner.id),
-                  or(
-                    isNull(mutes.duration),
-                    gt(
-                      sql`${mutes.created} + ${mutes.duration}`,
-                      sql`CURRENT_TIMESTAMP`,
+            // Hide future posts
+            lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
+            // Hide the posts from the muted accounts:
+            notInArray(
+              posts.accountId,
+              db
+                .select({ accountId: mutes.mutedAccountId })
+                .from(mutes)
+                .where(
+                  and(
+                    eq(mutes.accountId, tokenOwner.id),
+                    or(
+                      isNull(mutes.duration),
+                      gt(
+                        sql`${mutes.created} + ${mutes.duration}`,
+                        sql`CURRENT_TIMESTAMP`,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ),
-        ),
-        query.pinned === "true"
-          ? inArray(
-              posts.id,
+            ),
+            // Hide the posts from the blocked accounts:
+            notInArray(
+              posts.accountId,
               db
-                .select({ id: pinnedPosts.postId })
-                .from(pinnedPosts)
-                .where(eq(pinnedPosts.accountId, id)),
-            )
-          : undefined,
-        query.exclude_replies === "true"
-          ? isNull(posts.replyTargetId)
-          : undefined,
-        query.only_media === "true"
-          ? inArray(posts.id, db.select({ id: media.postId }).from(media))
-          : undefined,
-        tagged == null ? undefined : sql`${posts.tags} ? ${tagged}`,
-        query.max_id == null ? undefined : lt(posts.id, query.max_id),
-        query.min_id == null ? undefined : gt(posts.id, query.min_id),
-      ),
+                .select({ accountId: blocks.blockedAccountId })
+                .from(blocks)
+                .where(eq(blocks.accountId, tokenOwner.id)),
+            ),
+            // Hide the posts from the accounts who blocked the owner:
+            notInArray(
+              posts.accountId,
+              db
+                .select({ accountId: blocks.accountId })
+                .from(blocks)
+                .where(eq(blocks.blockedAccountId, tokenOwner.id)),
+            ),
+            // Hide the shared posts from the muted accounts:
+            or(
+              isNull(posts.sharingId),
+              notInArray(
+                posts.sharingId,
+                db
+                  .select({ id: posts.id })
+                  .from(posts)
+                  .innerJoin(mutes, eq(mutes.mutedAccountId, posts.accountId))
+                  .where(
+                    and(
+                      eq(mutes.accountId, tokenOwner.id),
+                      or(
+                        isNull(mutes.duration),
+                        gt(
+                          sql`${mutes.created} + ${mutes.duration}`,
+                          sql`CURRENT_TIMESTAMP`,
+                        ),
+                      ),
+                    ),
+                  ),
+              ),
+            ),
+            query.pinned === "true"
+              ? inArray(
+                  posts.id,
+                  db
+                    .select({ id: pinnedPosts.postId })
+                    .from(pinnedPosts)
+                    .where(eq(pinnedPosts.accountId, id)),
+                )
+              : undefined,
+            query.exclude_replies === "true"
+              ? isNull(posts.replyTargetId)
+              : undefined,
+            query.only_media === "true"
+              ? inArray(posts.id, db.select({ id: media.postId }).from(media))
+              : undefined,
+            tagged == null ? undefined : sql`${posts.tags} ? ${tagged}`,
+            query.max_id == null ? undefined : lt(posts.id, query.max_id),
+            query.min_id == null ? undefined : gt(posts.id, query.min_id),
+          )!,
+      },
       with: getPostRelations(tokenOwner.id),
-      orderBy: [desc(posts.published), desc(posts.id)],
+      orderBy: (posts, { desc }) => [desc(posts.published), desc(posts.id)],
       limit: limit + 1,
     });
     let next: URL | undefined;
@@ -711,7 +709,7 @@ app.post(
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const following = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: { owner: true },
     });
     if (following == null) return c.json({ error: "Record not found" }, 404);
@@ -726,22 +724,22 @@ app.post(
       return c.json({ error: "The action is not allowed" }, 403);
     }
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, following.id),
+      where: { id: { eq: following.id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -760,29 +758,29 @@ app.post(
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const following = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: { owner: true },
     });
     if (following == null) return c.json({ error: "Record not found" }, 404);
     const fedCtx = federation.createContext(c.req.raw, undefined);
     await unfollowAccount(db, fedCtx, { ...owner.account, owner }, following);
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -795,8 +793,11 @@ app.get("/:id/followers", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.json({ error: "Record not found" }, 404);
   const followers = await db.query.follows.findMany({
-    where: and(eq(follows.followingId, accountId), isNotNull(follows.approved)),
-    orderBy: desc(follows.approved),
+    where: {
+      RAW: (follows, { and, eq, isNotNull }) =>
+        and(eq(follows.followingId, accountId), isNotNull(follows.approved))!,
+    },
+    orderBy: (follows, { desc }) => [desc(follows.approved)],
     with: { follower: { with: { owner: true, successor: true } } },
   });
   return c.json(
@@ -815,8 +816,11 @@ app.get("/:id/following", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.json({ error: "Record not found" }, 404);
   const followers = await db.query.follows.findMany({
-    where: and(eq(follows.followerId, accountId), isNotNull(follows.approved)),
-    orderBy: desc(follows.approved),
+    where: {
+      RAW: (follows, { and, eq, isNotNull }) =>
+        and(eq(follows.followerId, accountId), isNotNull(follows.approved))!,
+    },
+    orderBy: (follows, { desc }) => [desc(follows.approved)],
     with: { following: { with: { owner: true, successor: true } } },
   });
   return c.json(
@@ -841,16 +845,19 @@ app.get(
     if (!isUuid(accountId)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const listList = await db.query.lists.findMany({
-      where: and(
-        eq(lists.accountOwnerId, owner.id),
-        inArray(
-          lists.id,
-          db
-            .select({ id: listMembers.listId })
-            .from(listMembers)
-            .where(eq(listMembers.accountId, accountId)),
-        ),
-      ),
+      where: {
+        RAW: (lists, { and, eq, inArray }) =>
+          and(
+            eq(lists.accountOwnerId, owner.id),
+            inArray(
+              lists.id,
+              db
+                .select({ id: listMembers.listId })
+                .from(listMembers)
+                .where(eq(listMembers.accountId, accountId)),
+            ),
+          )!,
+      },
     });
     return c.json(listList.map(serializeList));
   },
@@ -874,11 +881,11 @@ app.post(
     const owner = c.get("accountOwner");
     const { notifications, duration } = c.req.valid("json");
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         owner: true,
-        mutes: { where: eq(mutes.accountId, owner.id) },
-        following: { where: eq(follows.followingId, owner.id) },
+        mutes: { where: { accountId: { eq: owner.id } } },
+        following: { where: { followingId: { eq: owner.id } } },
       },
     });
     if (account == null) return c.json({ error: "Record not found" }, 404);
@@ -906,22 +913,22 @@ app.post(
         },
       });
     const result = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -943,22 +950,22 @@ app.post(
       .delete(mutes)
       .where(and(eq(mutes.accountId, owner.id), eq(mutes.mutedAccountId, id)));
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -977,29 +984,29 @@ app.post(
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const acct = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: { owner: true },
     });
     if (acct == null) return c.json({ error: "Record not found" }, 404);
     const fedCtx = federation.createContext(c.req.raw, undefined);
     await blockAccount(db, fedCtx, owner, acct);
     const result = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -1018,7 +1025,7 @@ app.post(
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const acct = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: { owner: true },
     });
     if (acct == null) return c.json({ error: "Record not found" }, 404);
@@ -1052,22 +1059,22 @@ app.post(
       );
     }
     const result = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });

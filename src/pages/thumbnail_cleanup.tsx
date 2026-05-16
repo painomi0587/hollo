@@ -1,5 +1,5 @@
 import { getLogger } from "@logtape/logtape";
-import { and, count, eq, ilike, inArray, not, notExists } from "drizzle-orm";
+import { and, count, eq, ilike, not, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { countProxyCacheBinKeys } from "../cleanup/processors";
@@ -45,13 +45,16 @@ data.get("/", async (c) => {
   const activeJob =
     cleanupJobId && isUuid(cleanupJobId)
       ? await db.query.cleanupJobs.findFirst({
-          where: and(eq(cleanupJobs.id, cleanupJobId)),
+          where: { id: { eq: cleanupJobId } },
         })
       : await db.query.cleanupJobs.findFirst({
-          where: and(
-            inArray(cleanupJobs.status, ["pending", "processing"]),
-            inArray(cleanupJobs.category, ["cleanup_thumbnails"]),
-          ),
+          where: {
+            RAW: (cleanupJobs, { and, inArray }) =>
+              and(
+                inArray(cleanupJobs.status, ["pending", "processing"]),
+                inArray(cleanupJobs.category, ["cleanup_thumbnails"]),
+              )!,
+          },
           orderBy: (cleanupJobs, { desc }) => [desc(cleanupJobs.created)],
         });
 
@@ -619,7 +622,7 @@ data.post("/clean/:jobId/cancel", async (c) => {
 
   // Verify job exists
   const job = await db.query.cleanupJobs.findFirst({
-    where: eq(cleanupJobs.id, jobId),
+    where: { id: { eq: jobId } },
   });
 
   if (!job) return c.notFound();

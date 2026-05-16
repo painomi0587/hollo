@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 import { stripQuoteInlineFallbacks } from "../html";
 import { proxyUrl } from "../media-proxy";
@@ -8,11 +8,8 @@ import {
   type AccountOwner,
   type Application,
   type Bookmark,
-  bookmarks,
   type Follow,
-  follows,
   type Like,
-  likes,
   type Medium,
   type Mention,
   type PinnedPost,
@@ -22,9 +19,6 @@ import {
   type Post,
   type QuoteApprovalPolicy,
   type QuoteState,
-  pollOptions,
-  pollVotes,
-  posts,
   type Reaction,
 } from "../schema";
 import type { Uuid } from "../uuid";
@@ -84,9 +78,24 @@ function getViewerFollowerRelation(ownerId: Uuid | undefined | null) {
   return {
     where:
       ownerId == null
-        ? sql`false`
-        : and(eq(follows.followerId, ownerId), isNotNull(follows.approved)),
+        ? { RAW: () => sql`false` }
+        : {
+            followerId: { eq: ownerId },
+            approved: { isNotNull: true as const },
+          },
   };
+}
+
+function accountIdWhere(ownerId: Uuid | undefined | null) {
+  return ownerId == null
+    ? { RAW: () => sql`false` }
+    : { accountId: { eq: ownerId } };
+}
+
+function accountOwnerIdWhere(ownerId: Uuid | undefined | null) {
+  return ownerId == null
+    ? { RAW: () => sql`false` }
+    : { accountOwnerId: { eq: ownerId } };
 }
 
 export function getPostRelations(ownerId: Uuid | undefined | null) {
@@ -123,12 +132,9 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
             media: true,
             poll: {
               with: {
-                options: { orderBy: pollOptions.index },
+                options: { orderBy: { index: "asc" } },
                 votes: {
-                  where:
-                    ownerId == null
-                      ? sql`false`
-                      : eq(pollVotes.accountId, ownerId),
+                  where: accountIdWhere(ownerId),
                 },
               },
             },
@@ -136,19 +142,14 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
               with: { account: { with: { owner: true, successor: true } } },
             },
             likes: {
-              where:
-                ownerId == null ? sql`false` : eq(likes.accountId, ownerId),
+              where: accountIdWhere(ownerId),
             },
             reactions: { with: { account: { with: { successor: true } } } },
             shares: {
-              where:
-                ownerId == null ? sql`false` : eq(posts.accountId, ownerId),
+              where: accountIdWhere(ownerId),
             },
             bookmarks: {
-              where:
-                ownerId == null
-                  ? sql`false`
-                  : eq(bookmarks.accountOwnerId, ownerId),
+              where: accountOwnerIdWhere(ownerId),
             },
             pin: true,
           },
@@ -156,10 +157,9 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
         media: true,
         poll: {
           with: {
-            options: { orderBy: pollOptions.index },
+            options: { orderBy: { index: "asc" } },
             votes: {
-              where:
-                ownerId == null ? sql`false` : eq(pollVotes.accountId, ownerId),
+              where: accountIdWhere(ownerId),
             },
           },
         },
@@ -167,17 +167,14 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
           with: { account: { with: { owner: true, successor: true } } },
         },
         likes: {
-          where: ownerId == null ? sql`false` : eq(likes.accountId, ownerId),
+          where: accountIdWhere(ownerId),
         },
         reactions: { with: { account: { with: { successor: true } } } },
         shares: {
-          where: ownerId == null ? sql`false` : eq(posts.accountId, ownerId),
+          where: accountIdWhere(ownerId),
         },
         bookmarks: {
-          where:
-            ownerId == null
-              ? sql`false`
-              : eq(bookmarks.accountOwnerId, ownerId),
+          where: accountOwnerIdWhere(ownerId),
         },
         pin: true,
       },
@@ -195,10 +192,9 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
         media: true,
         poll: {
           with: {
-            options: { orderBy: pollOptions.index },
+            options: { orderBy: { index: "asc" } },
             votes: {
-              where:
-                ownerId == null ? sql`false` : eq(pollVotes.accountId, ownerId),
+              where: accountIdWhere(ownerId),
             },
           },
         },
@@ -206,17 +202,14 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
           with: { account: { with: { owner: true, successor: true } } },
         },
         likes: {
-          where: ownerId == null ? sql`false` : eq(likes.accountId, ownerId),
+          where: accountIdWhere(ownerId),
         },
         reactions: { with: { account: { with: { successor: true } } } },
         shares: {
-          where: ownerId == null ? sql`false` : eq(posts.accountId, ownerId),
+          where: accountIdWhere(ownerId),
         },
         bookmarks: {
-          where:
-            ownerId == null
-              ? sql`false`
-              : eq(bookmarks.accountOwnerId, ownerId),
+          where: accountOwnerIdWhere(ownerId),
         },
         pin: true,
       },
@@ -224,24 +217,22 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
     media: true,
     poll: {
       with: {
-        options: { orderBy: pollOptions.index },
+        options: { orderBy: { index: "asc" } },
         votes: {
-          where:
-            ownerId == null ? sql`false` : eq(pollVotes.accountId, ownerId),
+          where: accountIdWhere(ownerId),
         },
       },
     },
     mentions: { with: { account: { with: { owner: true, successor: true } } } },
     likes: {
-      where: ownerId == null ? sql`false` : eq(likes.accountId, ownerId),
+      where: accountIdWhere(ownerId),
     },
     reactions: { with: { account: { with: { successor: true } } } },
     shares: {
-      where: ownerId == null ? sql`false` : eq(posts.accountId, ownerId),
+      where: accountIdWhere(ownerId),
     },
     bookmarks: {
-      where:
-        ownerId == null ? sql`false` : eq(bookmarks.accountOwnerId, ownerId),
+      where: accountOwnerIdWhere(ownerId),
     },
     pin: true,
   } as const;

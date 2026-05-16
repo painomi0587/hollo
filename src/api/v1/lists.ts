@@ -25,8 +25,8 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const listList = await db.query.lists.findMany({
-      where: eq(lists.accountOwnerId, owner.id),
-      orderBy: lists.id,
+      where: { accountOwnerId: { eq: owner.id } },
+      orderBy: (lists) => [lists.id],
     });
     return c.json(listList.map(serializeList));
   },
@@ -71,7 +71,10 @@ app.get(
     if (!isUuid(listId)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const list = await db.query.lists.findFirst({
-      where: and(eq(lists.accountOwnerId, owner.id), eq(lists.id, listId)),
+      where: {
+        RAW: (lists, { and, eq }) =>
+          and(eq(lists.accountOwnerId, owner.id), eq(lists.id, listId))!,
+      },
     });
     if (list == null) return c.json({ error: "Record not found" }, 404);
     return c.json(serializeList(list));
@@ -131,14 +134,17 @@ app.get(
     if (!isUuid(listId)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const list = await db.query.lists.findFirst({
-      where: and(eq(lists.accountOwnerId, owner.id), eq(lists.id, listId)),
+      where: {
+        RAW: (lists, { and, eq }) =>
+          and(eq(lists.accountOwnerId, owner.id), eq(lists.id, listId))!,
+      },
     });
     if (list == null) return c.json({ error: "Record not found" }, 404);
     // TODO: pagination
     const members = await db.query.listMembers.findMany({
       with: { account: { with: { successor: true } } },
-      where: eq(listMembers.listId, list.id),
-      orderBy: listMembers.accountId,
+      where: { listId: { eq: list.id } },
+      orderBy: (listMembers) => [listMembers.accountId],
     });
     return c.json(members.map((m) => serializeAccount(m.account, c.req.url)));
   },
@@ -159,7 +165,10 @@ app.post(
     if (!isUuid(listId)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const list = await db.query.lists.findFirst({
-      where: and(eq(lists.accountOwnerId, owner.id), eq(lists.id, listId)),
+      where: {
+        RAW: (lists, { and, eq }) =>
+          and(eq(lists.accountOwnerId, owner.id), eq(lists.id, listId))!,
+      },
     });
     if (list == null) return c.json({ error: "Record not found" }, 404);
     const accountIds = c.req.valid("json").account_ids;
@@ -181,7 +190,10 @@ app.delete(
     if (!isUuid(listId)) return c.json({ error: "Record not found" }, 404);
     const owner = c.get("accountOwner");
     const list = await db.query.lists.findFirst({
-      where: and(eq(lists.accountOwnerId, owner.id), eq(lists.id, listId)),
+      where: {
+        RAW: (lists, { and, eq }) =>
+          and(eq(lists.accountOwnerId, owner.id), eq(lists.id, listId))!,
+      },
     });
     if (list == null) return c.json({ error: "Record not found" }, 404);
     const accountIds = c.req.valid("json").account_ids;

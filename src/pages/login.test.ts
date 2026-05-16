@@ -130,7 +130,7 @@ describe("login passkeys", () => {
       expect(total).toBe(64);
       // The oldest seeded row is the one that got dropped.
       const evicted = await db.query.passkeyLoginChallenges.findFirst({
-        where: eq(passkeyLoginChallenges.id, "seeded-00"),
+        where: { id: { eq: "seeded-00" } },
       });
       expect(evicted).toBeUndefined();
     });
@@ -271,7 +271,7 @@ describe("login passkeys", () => {
 
       // counter and lastUsed are updated on the row.
       const updated = await db.query.passkeys.findFirst({
-        where: eq(passkeys.id, "cred-id-login"),
+        where: { id: { eq: "cred-id-login" } },
       });
       expect(updated?.counter).toBe(12);
       expect(updated?.lastUsed).not.toBeNull();
@@ -314,7 +314,7 @@ describe("login passkeys", () => {
       );
       expect(response.status).toBe(400);
       const row = await db.query.passkeys.findFirst({
-        where: eq(passkeys.id, "cred-id-login"),
+        where: { id: { eq: "cred-id-login" } },
       });
       expect(row?.counter).toBe(5);
       expect(row?.lastUsed).toBeNull();

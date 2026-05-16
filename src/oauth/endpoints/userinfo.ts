@@ -1,8 +1,6 @@
-import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { db } from "../../db";
-import { accountOwners } from "../../schema";
 import { scopeRequired, tokenRequired, type Variables } from "../middleware";
 
 const app = new Hono<{ Variables: Variables }>();
@@ -21,7 +19,7 @@ app.on(
       );
     }
     const accountOwner = await db.query.accountOwners.findFirst({
-      where: eq(accountOwners.id, accountOwnerId),
+      where: { id: { eq: accountOwnerId } },
       with: { account: { with: { successor: true } } },
     });
     if (accountOwner == null) {

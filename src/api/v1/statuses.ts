@@ -10,18 +10,7 @@ import {
   Undo,
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
-import {
-  and,
-  desc,
-  eq,
-  gt,
-  isNotNull,
-  isNull,
-  lt,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, gt, isNull, notInArray, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import type { TypedResponse } from "hono/types";
 import { z } from "zod";
@@ -49,23 +38,20 @@ import { requestBody } from "../../helpers";
 import { isLocalHost } from "../../instance-host";
 import { getAccessToken } from "../../oauth/helpers";
 import {
+  type AccountOwnerVariables,
   scopeRequired,
   tokenRequired,
   withAccountOwner,
-  type AccountOwnerVariables,
 } from "../../oauth/middleware";
 import { normalizeHandle } from "../../patterns";
 import { fetchPreviewCard, type PreviewCard } from "../../previewcard";
 import {
-  accountOwners,
   blocks,
   bookmarks,
-  customEmojis,
-  follows,
   type Like,
   likes,
-  type Mention,
   media,
+  type Mention,
   mentions,
   mutes,
   type NewBookmark,
@@ -73,8 +59,8 @@ import {
   type NewPinnedPost,
   type NewPollOption,
   type NewPost,
-  type Poll,
   pinnedPosts,
+  type Poll,
   pollOptions,
   polls,
   posts,
@@ -112,12 +98,15 @@ function getReactionOrderingKey(
  * Builds mute and block conditions for authenticated users.
  * Returns undefined for unauthenticated users (no mute/block filtering).
  */
-function buildMuteAndBlockConditions(viewerAccountId: Uuid | null | undefined) {
+function buildMuteAndBlockConditions(
+  viewerAccountId: Uuid | null | undefined,
+  table = posts,
+) {
   if (viewerAccountId == null) return undefined;
 
   return and(
     notInArray(
-      posts.accountId,
+      table.accountId,
       db
         .select({ accountId: mutes.mutedAccountId })
         .from(mutes)
@@ -135,14 +124,14 @@ function buildMuteAndBlockConditions(viewerAccountId: Uuid | null | undefined) {
         ),
     ),
     notInArray(
-      posts.accountId,
+      table.accountId,
       db
         .select({ accountId: blocks.blockedAccountId })
         .from(blocks)
         .where(eq(blocks.accountId, viewerAccountId)),
     ),
     notInArray(
-      posts.accountId,
+      table.accountId,
       db
         .select({ accountId: blocks.accountId })
         .from(blocks)
@@ -162,27 +151,33 @@ async function isApprovedFollower(
   followingId: Uuid,
 ): Promise<boolean> {
   const follow = await db.query.follows.findFirst({
-    where: and(
-      eq(follows.followerId, followerId),
-      eq(follows.followingId, followingId),
-      isNotNull(follows.approved),
-    ),
+    where: {
+      RAW: (follows, { and, eq, isNotNull }) =>
+        and(
+          eq(follows.followerId, followerId),
+          eq(follows.followingId, followingId),
+          isNotNull(follows.approved),
+        )!,
+    },
   });
   return follow != null;
 }
 
 async function isBlockedBetween(accountId: Uuid, otherAccountId: Uuid) {
   const block = await db.query.blocks.findFirst({
-    where: or(
-      and(
-        eq(blocks.accountId, accountId),
-        eq(blocks.blockedAccountId, otherAccountId),
-      ),
-      and(
-        eq(blocks.accountId, otherAccountId),
-        eq(blocks.blockedAccountId, accountId),
-      ),
-    ),
+    where: {
+      RAW: (blocks, { and, eq, or }) =>
+        or(
+          and(
+            eq(blocks.accountId, accountId),
+            eq(blocks.blockedAccountId, otherAccountId),
+          ),
+          and(
+            eq(blocks.accountId, otherAccountId),
+            eq(blocks.blockedAccountId, accountId),
+          ),
+        )!,
+    },
   });
   return block != null;
 }
@@ -202,10 +197,13 @@ async function validateQuoteTarget(
 > {
   const visibilityScope = await getPostVisibilityScope(owner.id);
   const quoteTarget = await db.query.posts.findFirst({
-    where: and(
-      eq(posts.id, quoteTargetId),
-      buildPostVisibilityConditions(visibilityScope),
-    ),
+    where: {
+      RAW: (posts, { and, eq }) =>
+        and(
+          eq(posts.id, quoteTargetId),
+          buildPostVisibilityConditions(visibilityScope, posts),
+        )!,
+    },
   });
   if (quoteTarget == null) {
     return { ok: false, status: 404, error: "Quote target not found" };
@@ -304,11 +302,14 @@ app.post(
     const idempotencyKey = c.req.header("Idempotency-Key");
     if (idempotencyKey != null) {
       const post = await db.query.posts.findFirst({
-        where: and(
-          eq(posts.accountId, owner.id),
-          eq(posts.idempotenceKey, idempotencyKey),
-          gt(posts.published, sql`CURRENT_TIMESTAMP - INTERVAL '1 hour'`),
-        ),
+        where: {
+          RAW: (posts, { and, eq, gt, sql }) =>
+            and(
+              eq(posts.accountId, owner.id),
+              eq(posts.idempotenceKey, idempotencyKey),
+              gt(posts.published, sql`CURRENT_TIMESTAMP - INTERVAL '1 hour'`),
+            )!,
+        },
         with: getPostRelations(owner.id),
       });
       if (post != null) return c.json(serializePost(post, owner, c.req.url));
@@ -394,7 +395,7 @@ app.post(
         quoteTarget.accountId === owner.id
           ? owner
           : await db.query.accountOwners.findFirst({
-              where: eq(accountOwners.id, quoteTarget.accountId),
+              where: { id: { eq: quoteTarget.accountId } },
             });
       quoteState =
         localQuoteTargetOwner == null && quoteTarget.quoteApprovalPolicy != null
@@ -499,12 +500,12 @@ app.post(
           insertedRows[0].replyTargetId == null
             ? null
             : ((await db.query.posts.findFirst({
-                where: eq(posts.id, insertedRows[0].replyTargetId),
+                where: { id: { eq: insertedRows[0].replyTargetId } },
               })) ?? null),
       });
     });
     const post = (await db.query.posts.findFirst({
-      where: eq(posts.id, id),
+      where: { id: { eq: id } },
       with: getPostRelations(owner.id),
     }))!;
     const activity = toCreate(post, fedCtx);
@@ -610,7 +611,7 @@ app.put(
       previewCard = await fetchPreviewCard(content.previewLink);
     }
     const existingPost = await db.query.posts.findFirst({
-      where: and(eq(posts.id, id), eq(posts.accountId, owner.id)),
+      where: { id: { eq: id }, accountId: { eq: owner.id } },
     });
     if (existingPost == null) {
       return c.json({ error: "Record not found" }, 404);
@@ -648,7 +649,7 @@ app.put(
       }
     });
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, id),
+      where: { id: { eq: id } },
       with: getPostRelations(owner.id),
     });
     const activity = toUpdate(post!, fedCtx);
@@ -697,7 +698,7 @@ app.put(
     }
 
     const post = await db.query.posts.findFirst({
-      where: and(eq(posts.id, id), eq(posts.accountId, owner.id)),
+      where: { id: { eq: id }, accountId: { eq: owner.id } },
     });
     if (post == null) return c.json({ error: "Record not found" }, 404);
 
@@ -710,7 +711,7 @@ app.put(
       .where(and(eq(posts.id, id), eq(posts.accountId, owner.id)));
 
     const updatedPost = await db.query.posts.findFirst({
-      where: eq(posts.id, id),
+      where: { id: { eq: id } },
       with: getPostRelations(owner.id),
     });
     if (updatedPost == null) return c.json({ error: "Record not found" }, 404);
@@ -755,10 +756,13 @@ app.get("/:id", async (c) => {
 
   const visibilityScope = await getPostVisibilityScope(owner?.id);
   const post = await db.query.posts.findFirst({
-    where: and(
-      eq(posts.id, id),
-      buildPostVisibilityConditions(visibilityScope),
-    ),
+    where: {
+      RAW: (posts, { and, eq }) =>
+        and(
+          eq(posts.id, id),
+          buildPostVisibilityConditions(visibilityScope, posts),
+        )!,
+    },
     with: getPostRelations(owner?.id),
   });
 
@@ -776,7 +780,7 @@ app.delete(
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, id),
+      where: { id: { eq: id } },
       with: getPostRelations(owner.id),
     });
     if (post == null) return c.json({ error: "Record not found" }, 404);
@@ -838,7 +842,7 @@ app.get(
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, id),
+      where: { id: { eq: id } },
     });
     if (post == null) return c.json({ error: "Record not found" }, 404);
     return c.json({
@@ -860,22 +864,29 @@ app.get("/:id/context", async (c) => {
 
   const visibilityScope = await getPostVisibilityScope(owner?.id);
   const post = await db.query.posts.findFirst({
-    where: and(
-      eq(posts.id, id),
-      buildPostVisibilityConditions(visibilityScope),
-    ),
+    where: {
+      RAW: (posts, { and, eq }) =>
+        and(
+          eq(posts.id, id),
+          buildPostVisibilityConditions(visibilityScope, posts),
+        )!,
+    },
     with: getPostRelations(owner?.id),
   });
   if (post == null) return c.json({ error: "Record not found" }, 404);
   const ancestors: (typeof post)[] = [];
   let p: typeof post | undefined = post;
   while (p.replyTargetId != null) {
+    const replyTargetId: Uuid = p.replyTargetId;
     p = await db.query.posts.findFirst({
-      where: and(
-        eq(posts.id, p.replyTargetId),
-        buildPostVisibilityConditions(visibilityScope),
-        buildMuteAndBlockConditions(owner?.id),
-      ),
+      where: {
+        RAW: (posts, { and, eq }) =>
+          and(
+            eq(posts.id, replyTargetId),
+            buildPostVisibilityConditions(visibilityScope, posts),
+            buildMuteAndBlockConditions(owner?.id, posts),
+          )!,
+      },
       with: getPostRelations(owner?.id),
     });
     if (p == null) break;
@@ -887,11 +898,14 @@ app.get("/:id/context", async (c) => {
     const p = ps.shift();
     if (p == null) break;
     const replies = await db.query.posts.findMany({
-      where: and(
-        eq(posts.replyTargetId, p.id),
-        buildPostVisibilityConditions(visibilityScope),
-        buildMuteAndBlockConditions(owner?.id),
-      ),
+      where: {
+        RAW: (posts, { and, eq }) =>
+          and(
+            eq(posts.replyTargetId, p.id),
+            buildPostVisibilityConditions(visibilityScope, posts),
+            buildMuteAndBlockConditions(owner?.id, posts),
+          )!,
+      },
       with: getPostRelations(owner?.id),
     });
     descendants.push(...replies);
@@ -926,7 +940,7 @@ app.post(
       return c.json({ error: "Record not found" }, 404);
     }
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
       with: getPostRelations(owner.id),
     });
     if (post == null) {
@@ -971,7 +985,7 @@ app.post(
     if (result.length < 1) return c.json({ error: "Record not found" }, 404);
     const like = result[0];
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
       with: getPostRelations(owner.id),
     });
     if (post == null) {
@@ -1015,7 +1029,7 @@ app.get(
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
     const likeList = await db.query.likes.findMany({
-      where: eq(likes.postId, id),
+      where: { postId: { eq: id } },
       with: { account: { with: { owner: true, successor: true } } },
     });
     return c.json(
@@ -1060,7 +1074,7 @@ app.post(
     }
     const visibility = data.visibility;
     const originalPost = await db.query.posts.findFirst({
-      where: eq(posts.id, originalPostId),
+      where: { id: { eq: originalPostId } },
       with: { account: true, mentions: true },
     });
     if (
@@ -1104,7 +1118,7 @@ app.post(
       });
     });
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, id),
+      where: { id: { eq: id } },
       with: getPostRelations(owner.id),
     });
     const orderingKey = getPostOrderingKey(post!.iri);
@@ -1134,10 +1148,13 @@ app.post(
       return c.json({ error: "Record not found" }, 404);
     }
     const postList = await db.query.posts.findMany({
-      where: and(
-        eq(posts.accountId, owner.id),
-        eq(posts.sharingId, originalPostId),
-      ),
+      where: {
+        RAW: (posts, { and, eq }) =>
+          and(
+            eq(posts.accountId, owner.id),
+            eq(posts.sharingId, originalPostId),
+          )!,
+      },
       with: {
         account: true,
         sharing: {
@@ -1175,7 +1192,7 @@ app.post(
       );
     }
     const originalPost = await db.query.posts.findFirst({
-      where: eq(posts.id, originalPostId),
+      where: { id: { eq: originalPostId } },
       with: getPostRelations(owner.id),
     });
     return c.json(serializePost(originalPost!, owner, c.req.url));
@@ -1203,7 +1220,7 @@ app.get(
           },
         },
       },
-      where: eq(posts.id, id),
+      where: { id: { eq: id } },
     });
     if (post == null) return c.json({ error: "Record not found" }, 404);
     return c.json(
@@ -1237,7 +1254,7 @@ app.post(
       return c.json({ error: "Record not found" }, 404);
     }
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
       with: getPostRelations(owner.id),
     });
     return c.json(serializePost(post!, owner, c.req.url));
@@ -1266,7 +1283,7 @@ app.post(
       return c.json({ error: "Record not found" }, 404);
     }
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
       with: getPostRelations(owner.id),
     });
     return c.json(serializePost(post!, owner, c.req.url));
@@ -1283,7 +1300,7 @@ app.post(
     const postId = c.req.param("id");
     if (!isUuid(postId)) return c.json({ error: "Record not found" }, 404);
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
     });
     if (post == null) {
       return c.json({ error: "Record not found" }, 404);
@@ -1322,7 +1339,7 @@ app.post(
       },
     );
     const resultPost = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
       with: getPostRelations(owner.id),
     });
     return c.json(serializePost(resultPost!, owner, c.req.url));
@@ -1351,7 +1368,7 @@ app.post(
       return c.json({ error: "Record not found" }, 404);
     }
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
       with: getPostRelations(owner.id),
     });
     const fedCtx = federation.createContext(c.req.raw, undefined);
@@ -1401,12 +1418,15 @@ async function addEmojiReaction(
     const [shortcode, domain] = emoji.split("@", 2);
     const reactionList = await db.query.reactions.findMany({
       with: { account: true },
-      where: and(
-        eq(reactions.postId, postId),
-        eq(reactions.emoji, `:${shortcode}:`),
-        isNotNull(reactions.customEmoji),
-        isNotNull(reactions.emojiIri),
-      ),
+      where: {
+        RAW: (reactions, { and, eq, isNotNull }) =>
+          and(
+            eq(reactions.postId, postId),
+            eq(reactions.emoji, `:${shortcode}:`),
+            isNotNull(reactions.customEmoji),
+            isNotNull(reactions.emojiIri),
+          )!,
+      },
     });
     for (const reaction of reactionList) {
       if (
@@ -1433,7 +1453,7 @@ async function addEmojiReaction(
     if (emojiCode === "") return c.notFound();
   } else {
     const customEmoji = await db.query.customEmojis.findFirst({
-      where: eq(customEmojis.shortcode, emoji),
+      where: { shortcode: { eq: emoji } },
     });
     if (customEmoji == null) {
       if (!/^[\p{Emoji}]+$/u.test(emoji)) return c.notFound();
@@ -1466,7 +1486,7 @@ async function addEmojiReaction(
     }
   }
   const post = await db.query.posts.findFirst({
-    where: eq(posts.id, postId),
+    where: { id: { eq: postId } },
     with: getPostRelations(owner.id),
   });
   if (post == null) return c.notFound();
@@ -1557,7 +1577,7 @@ async function removeEmojiReaction(
   if (deleted.length < 1) return c.notFound();
   const [reaction] = deleted;
   const post = await db.query.posts.findFirst({
-    where: eq(posts.id, postId),
+    where: { id: { eq: postId } },
     with: getPostRelations(owner.id),
   });
   if (post == null) return c.notFound();
@@ -1655,10 +1675,13 @@ app.get("/:id/quotes", async (c) => {
 
   const visibilityScope = await getPostVisibilityScope(owner?.id);
   const post = await db.query.posts.findFirst({
-    where: and(
-      eq(posts.id, id),
-      buildPostVisibilityConditions(visibilityScope),
-    ),
+    where: {
+      RAW: (posts, { and, eq }) =>
+        and(
+          eq(posts.id, id),
+          buildPostVisibilityConditions(visibilityScope, posts),
+        )!,
+    },
   });
   if (post == null) return c.json({ error: "Record not found" }, 404);
 
@@ -1672,17 +1695,20 @@ app.get("/:id/quotes", async (c) => {
   const query = queryResult.data;
 
   const quotes = await db.query.posts.findMany({
-    where: and(
-      eq(posts.quoteTargetId, id),
-      or(eq(posts.quoteState, "accepted"), isNull(posts.quoteState)),
-      isNull(posts.sharingId),
-      buildPostVisibilityConditions(visibilityScope),
-      buildMuteAndBlockConditions(owner?.id),
-      query.max_id != null ? lt(posts.id, query.max_id) : undefined,
-      query.since_id != null ? gt(posts.id, query.since_id) : undefined,
-    ),
+    where: {
+      RAW: (posts, { and, eq, gt, isNull, lt, or }) =>
+        and(
+          eq(posts.quoteTargetId, id),
+          or(eq(posts.quoteState, "accepted"), isNull(posts.quoteState)),
+          isNull(posts.sharingId),
+          buildPostVisibilityConditions(visibilityScope, posts),
+          buildMuteAndBlockConditions(owner?.id, posts),
+          query.max_id != null ? lt(posts.id, query.max_id) : undefined,
+          query.since_id != null ? gt(posts.id, query.since_id) : undefined,
+        )!,
+    },
     with: getPostRelations(owner?.id),
-    orderBy: [desc(posts.id)],
+    orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: query.limit,
   });
 
@@ -1711,7 +1737,7 @@ app.post(
     }
 
     const targetPost = await db.query.posts.findFirst({
-      where: eq(posts.id, id),
+      where: { id: { eq: id } },
     });
     if (targetPost == null) {
       return c.json({ error: "Record not found" }, 404);
@@ -1721,7 +1747,10 @@ app.post(
     }
 
     const quotingPost = await db.query.posts.findFirst({
-      where: and(eq(posts.id, quotingStatusId), eq(posts.quoteTargetId, id)),
+      where: {
+        RAW: (posts, { and, eq }) =>
+          and(eq(posts.id, quotingStatusId), eq(posts.quoteTargetId, id))!,
+      },
       with: { account: { with: { owner: true } } },
     });
     if (quotingPost == null) {
@@ -1785,7 +1814,7 @@ app.post(
     }
 
     const updatedPost = await db.query.posts.findFirst({
-      where: eq(posts.id, quotingStatusId),
+      where: { id: { eq: quotingStatusId } },
       with: getPostRelations(owner.id),
     });
     if (updatedPost == null) {

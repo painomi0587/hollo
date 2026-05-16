@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { type Context, Hono } from "hono";
+import { Hono, type Context } from "hono";
 import mime from "mime";
 
 import { db } from "../../db";
@@ -90,7 +90,7 @@ app.get("/:id", async (c) => {
   const mediumId = c.req.param("id");
   if (!isUuid(mediumId)) return c.json({ error: "Not found" }, 404);
   const medium = await db.query.media.findFirst({
-    where: eq(media.id, mediumId),
+    where: { id: { eq: mediumId } },
   });
   if (medium == null) return c.json({ error: "Not found" }, 404);
   return c.json(serializeMedium(medium, c.req.url));

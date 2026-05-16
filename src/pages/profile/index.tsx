@@ -1,4 +1,4 @@
-import { and, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, eq, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import xss from "xss";
 
@@ -9,14 +9,11 @@ import { db } from "../../db.ts";
 import {
   type Account,
   type AccountOwner,
-  accountOwners,
   type FeaturedTag,
-  featuredTags,
   type Medium,
   type Poll,
   type PollOption,
   type Post,
-  pinnedPosts,
   posts,
   type Reaction,
 } from "../../schema.ts";
@@ -33,7 +30,7 @@ profile.get<"/:handle">(async (c) => {
   let handle = c.req.param("handle");
   if (handle.startsWith("@")) handle = handle.substring(1);
   const owner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.handle, handle),
+    where: { handle: { eq: handle } },
     with: { account: true },
   });
   if (owner == null) return c.notFound();
@@ -66,11 +63,14 @@ profile.get<"/:handle">(async (c) => {
     return c.notFound();
   }
   const postList = await db.query.posts.findMany({
-    where: and(
-      eq(posts.accountId, owner.id),
-      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
-    ),
-    orderBy: desc(posts.id),
+    where: {
+      RAW: (posts, { and, eq, or }) =>
+        and(
+          eq(posts.accountId, owner.id),
+          or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+        )!,
+    },
+    orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
     with: {
@@ -111,8 +111,8 @@ profile.get<"/:handle">(async (c) => {
   const pinnedPostList =
     cont == null
       ? await db.query.pinnedPosts.findMany({
-          where: and(eq(pinnedPosts.accountId, owner.id)),
-          orderBy: desc(pinnedPosts.index),
+          where: { accountId: { eq: owner.id } },
+          orderBy: (pinnedPosts, { desc }) => [desc(pinnedPosts.index)],
           with: {
             post: {
               with: {
@@ -154,7 +154,7 @@ profile.get<"/:handle">(async (c) => {
         })
       : [];
   const featuredTagList = await db.query.featuredTags.findMany({
-    where: eq(featuredTags.accountOwnerId, owner.id),
+    where: { accountOwnerId: { eq: owner.id } },
   });
   const atomUrl = new URL(c.req.url);
   atomUrl.pathname += "/atom.xml";
@@ -186,7 +186,7 @@ profile.get("/tagged/:tag", async (c) => {
   if (handle == null || tag == null) return c.notFound();
   if (handle.startsWith("@")) handle = handle.substring(1);
   const owner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.handle, handle),
+    where: { handle: { eq: handle } },
     with: { account: true },
   });
   if (owner == null) return c.notFound();
@@ -218,12 +218,15 @@ profile.get("/tagged/:tag", async (c) => {
     return c.notFound();
   }
   const postList = await db.query.posts.findMany({
-    where: and(
-      eq(posts.accountId, owner.id),
-      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
-      sql`${posts.tags} ? ${hashtag}`,
-    ),
-    orderBy: desc(posts.id),
+    where: {
+      RAW: (posts, { and, eq, or, sql }) =>
+        and(
+          eq(posts.accountId, owner.id),
+          or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+          sql`${posts.tags} ? ${hashtag}`,
+        )!,
+    },
+    orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
     with: {
@@ -262,7 +265,7 @@ profile.get("/tagged/:tag", async (c) => {
     },
   });
   const featuredTagList = await db.query.featuredTags.findMany({
-    where: eq(featuredTags.accountOwnerId, owner.id),
+    where: { accountOwnerId: { eq: owner.id } },
   });
   const newerUrl = page > 1 ? `?page=${page - 1}` : undefined;
   const olderUrl =
@@ -466,17 +469,20 @@ profile.get("/atom.xml", async (c) => {
   if (handle == null) return c.notFound();
   if (handle.startsWith("@")) handle = handle.substring(1);
   const owner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.handle, handle),
+    where: { handle: { eq: handle } },
     with: { account: true },
   });
   if (owner == null) return c.notFound();
   const postList = await db.query.posts.findMany({
     with: { account: true },
-    where: and(
-      eq(posts.accountId, owner.id),
-      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
-    ),
-    orderBy: desc(posts.published),
+    where: {
+      RAW: (posts, { and, eq, or }) =>
+        and(
+          eq(posts.accountId, owner.id),
+          or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+        )!,
+    },
+    orderBy: (posts, { desc }) => [desc(posts.published)],
     limit: 100,
   });
   const canonicalUrl = new URL(c.req.url);

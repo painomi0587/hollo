@@ -7,17 +7,7 @@ import {
 } from "@fedify/vocab";
 import { zValidator } from "@hono/zod-validator";
 import { getLogger } from "@logtape/logtape";
-import {
-  and,
-  desc,
-  eq,
-  ilike,
-  inArray,
-  isNull,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -34,7 +24,7 @@ import {
   type AccountOwnerVariables,
 } from "../../oauth/middleware";
 import { HANDLE_PATTERN } from "../../patterns";
-import { type Account, accounts, posts } from "../../schema";
+import { type Account } from "../../schema";
 import { buildSearchFilter, parseSearchQuery } from "../../search";
 import { uuid } from "../../uuid";
 import { postMedia } from "../v1/media";
@@ -103,22 +93,28 @@ app.get(
       query.offset < 1
         ? await db.query.accounts.findMany({
             with: { successor: true },
-            where: or(
-              eq(accounts.iri, q),
-              eq(accounts.url, q),
-              eq(accounts.handle, q),
-              eq(accounts.handle, `@${q}`),
-            ),
+            where: {
+              RAW: (accounts, { eq, or }) =>
+                or(
+                  eq(accounts.iri, q),
+                  eq(accounts.url, q),
+                  eq(accounts.handle, q),
+                  eq(accounts.handle, `@${q}`),
+                )!,
+            },
           })
         : [];
     const statuses =
       query.offset < 1
         ? await db.query.posts.findMany({
-            where: and(
-              or(eq(posts.iri, q), eq(posts.url, q)),
-              isNull(posts.sharingId),
-              lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
-            ),
+            where: {
+              RAW: (posts, { and, eq, isNull, lte, or, sql }) =>
+                and(
+                  or(eq(posts.iri, q), eq(posts.url, q)),
+                  isNull(posts.sharingId),
+                  lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
+                )!,
+            },
             with: getPostRelations(owner.id),
           })
         : [];
@@ -146,7 +142,7 @@ app.get(
     }
     if (query.type == null || query.type === "accounts") {
       const hits = await db.query.accounts.findMany({
-        where: ilike(accounts.handle, `%${q}%`),
+        where: { handle: { ilike: `%${q}%` } },
         limit: query.limit,
         offset: query.offset,
       });
@@ -168,7 +164,7 @@ app.get(
             a.successorId == null
               ? null
               : ((await db.query.accounts.findFirst({
-                  where: eq(accounts.id, a.successorId),
+                  where: { id: { eq: a.successorId } },
                 })) ?? null),
         });
       }
@@ -179,16 +175,19 @@ app.get(
       if (!isUrlQuery) {
         // Parse search query with advanced operators
         const searchAst = parseSearchQuery(q);
-        const searchFilter = searchAst
-          ? buildSearchFilter(searchAst)
-          : sql`TRUE`;
-
-        let filter = and(searchFilter, isNull(posts.sharingId))!;
-        if (query.account_id != null) {
-          filter = and(filter, eq(posts.accountId, query.account_id))!;
-        }
         const hits = await db.query.posts.findMany({
-          where: filter,
+          where: {
+            RAW: (posts, { and, eq, isNull, sql }) => {
+              const searchFilter = searchAst
+                ? buildSearchFilter(searchAst, posts)
+                : sql`TRUE`;
+              let filter = and(searchFilter, isNull(posts.sharingId))!;
+              if (query.account_id != null) {
+                filter = and(filter, eq(posts.accountId, query.account_id))!;
+              }
+              return filter;
+            },
+          },
           limit: query.limit,
           offset: query.offset,
         });
@@ -196,13 +195,12 @@ app.get(
           hits == null || hits.length < 1
             ? []
             : await db.query.posts.findMany({
-                where: inArray(
-                  posts.id,
+                where: {
                   // oxlint-disable-next-line typescript/dot-notation
-                  hits.map((hit) => hit["id"]),
-                ),
+                  id: { in: hits.map((hit) => hit["id"]) },
+                },
                 with: getPostRelations(owner.id),
-                orderBy: [
+                orderBy: (posts, { desc }) => [
                   desc(eq(posts.iri, q)),
                   desc(eq(posts.url, q)),
                   desc(posts.published),
@@ -227,7 +225,7 @@ app.get(
           if (!statuses.some((s) => s.id === resolvedPost.id)) {
             // Fetch with relations
             const fullPost = await db.query.posts.findFirst({
-              where: eq(posts.id, resolvedPost.id),
+              where: { id: { eq: resolvedPost.id } },
               with: getPostRelations(owner.id),
             });
             if (fullPost != null) statuses.push(fullPost);

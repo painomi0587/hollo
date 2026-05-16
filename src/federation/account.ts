@@ -18,19 +18,9 @@ import {
 } from "@fedify/vocab";
 import { lookupWebFinger } from "@fedify/webfinger";
 import { getLogger } from "@logtape/logtape";
-import {
-  and,
-  count,
-  type ExtractTablesWithRelations,
-  eq,
-  inArray,
-  isNotNull,
-  ne,
-  sql,
-} from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
+import type { DatabaseLike } from "../db";
 import type { NewPinnedPost, Post } from "../schema";
 import * as schema from "../schema";
 import { type Uuid, uuidv7 } from "../uuid";
@@ -139,11 +129,7 @@ async function verifyCanonicalHandleOwnership(
 }
 
 async function deleteRemoteAccountForHandleReassignment(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: schema.Account,
 ): Promise<void> {
   const affectedFollowings = await db
@@ -194,11 +180,7 @@ export function getBlockOrderingKey(
 }
 
 export async function persistAccount(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   actor: Actor,
   baseUrl: string | URL,
   options: PersistAccountOptions = {},
@@ -214,7 +196,7 @@ export async function persistAccount(
   const actorId = actor.id;
   const existingAccount = await db.query.accounts.findFirst({
     with: { owner: true },
-    where: eq(schema.accounts.iri, actorId.href),
+    where: { iri: { eq: actorId.href } },
   });
   if (options.skipUpdate && existingAccount != null) return existingAccount;
   if (existingAccount?.owner != null) return existingAccount;
@@ -227,10 +209,10 @@ export async function persistAccount(
   }
   const conflictingAccount = await db.query.accounts.findFirst({
     with: { owner: true },
-    where: and(
-      eq(schema.accounts.handle, handle),
-      ne(schema.accounts.iri, actorId.href),
-    ),
+    where: {
+      RAW: (accounts, { and, eq, ne }) =>
+        and(eq(accounts.handle, handle), ne(accounts.iri, actorId.href))!,
+    },
   });
   if (conflictingAccount?.owner != null) {
     const error = new AccountHandleConflictError(
@@ -362,7 +344,7 @@ export async function persistAccount(
   });
   const account = await db.query.accounts.findFirst({
     with: { owner: true },
-    where: eq(schema.accounts.iri, actorId.href),
+    where: { iri: { eq: actorId.href } },
   });
   if (account == null) return null;
   const [{ posts }] = await db
@@ -397,11 +379,7 @@ export async function persistAccount(
 }
 
 export async function persistAccountPosts(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: schema.Account & { owner: schema.AccountOwner | null },
   fetchPosts: number,
   baseUrl: URL | string,
@@ -441,17 +419,13 @@ export async function persistAccountPosts(
 }
 
 export async function persistAccountByIri(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   iri: string,
   baseUrl: URL | string,
   options: PersistAccountOptions = {},
 ): Promise<schema.Account | null> {
   const account = await db.query.accounts.findFirst({
-    where: eq(schema.accounts.iri, iri),
+    where: { iri: { eq: iri } },
   });
   if (account != null) return account;
   const actor = await lookupObject(iri, options);
@@ -460,11 +434,7 @@ export async function persistAccountByIri(
 }
 
 export async function updateAccountStats(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: { id: Uuid } | { iri: string },
 ): Promise<void> {
   const id =
@@ -517,11 +487,7 @@ export async function updateAccountStats(
 }
 
 export async function followAccount(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ctx: Context<unknown>,
   follower: schema.Account & { owner: schema.AccountOwner | null },
   following: schema.Account & { owner: schema.AccountOwner | null },
@@ -577,11 +543,7 @@ export async function followAccount(
 }
 
 export async function unfollowAccount(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ctx: Context<unknown>,
   follower: schema.Account & { owner: schema.AccountOwner | null },
   following: schema.Account & { owner: schema.AccountOwner | null },
@@ -630,11 +592,7 @@ export async function unfollowAccount(
 }
 
 export async function removeFollower(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ctx: Context<unknown>,
   following: schema.Account & { owner: schema.AccountOwner | null },
   follower: schema.Account & { owner: schema.AccountOwner | null },
@@ -683,11 +641,7 @@ export async function removeFollower(
 }
 
 export async function blockAccount(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ctx: Context<unknown>,
   blocker: schema.AccountOwner & { account: schema.Account },
   blockee: schema.Account & { owner: schema.AccountOwner | null },
@@ -756,11 +710,7 @@ export function isActorStale(account: schema.Account): boolean {
  * @param options Document loader options
  */
 export function refreshActorAsync(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: schema.Account,
   baseUrl: URL | string,
   options: Omit<PersistAccountOptions, "handleConflictPolicy"> = {},
@@ -788,11 +738,7 @@ export function refreshActorAsync(
  * @param options Document loader options
  */
 export function refreshActorIfStale(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: schema.Account,
   baseUrl: URL | string,
   options: {

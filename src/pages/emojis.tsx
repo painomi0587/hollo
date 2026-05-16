@@ -1,5 +1,5 @@
 import { getLogger } from "@logtape/logtape";
-import { desc, inArray, isNotNull, ne } from "drizzle-orm";
+import { inArray, isNotNull } from "drizzle-orm";
 import { Hono } from "hono";
 import mime from "mime";
 
@@ -7,7 +7,7 @@ import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import { loginRequired } from "../login";
 import { proxyUrl } from "../media-proxy";
-import { accounts, customEmojis, posts, reactions } from "../schema";
+import { customEmojis } from "../schema";
 
 const logger = getLogger(["hollo", "pages", "emojis"]);
 
@@ -17,7 +17,10 @@ emojis.use(loginRequired);
 
 emojis.get("/", async (c) => {
   const emojis = await db.query.customEmojis.findMany({
-    orderBy: [customEmojis.category, desc(customEmojis.created)],
+    orderBy: (customEmojis, { desc }) => [
+      customEmojis.category,
+      desc(customEmojis.created),
+    ],
   });
 
   return c.html(
@@ -331,19 +334,19 @@ emojis.post("/delete", async (c) => {
 emojis.get("/import", async (c) => {
   const postList = await db.query.posts.findMany({
     with: { account: true },
-    where: ne(posts.emojis, {}),
-    orderBy: desc(posts.updated),
+    where: { emojis: { ne: {} } },
+    orderBy: (posts, { desc }) => [desc(posts.updated)],
     limit: 500,
   });
   const reactionList = await db.query.reactions.findMany({
     with: { account: true },
-    where: isNotNull(reactions.customEmoji),
-    orderBy: desc(reactions.created),
+    where: { customEmoji: { isNotNull: true } },
+    orderBy: (reactions, { desc }) => [desc(reactions.created)],
     limit: 500,
   });
   const accountList = await db.query.accounts.findMany({
-    where: ne(accounts.emojis, {}),
-    orderBy: desc(accounts.updated),
+    where: { emojis: { ne: {} } },
+    orderBy: (accounts, { desc }) => [desc(accounts.updated)],
     limit: 500,
   });
   const customEmojis = await db.query.customEmojis.findMany();

@@ -24,7 +24,7 @@ app.get("/:id", async (c) => {
     return c.json(serializeTag(tag, null, c.req.url));
   }
   const owner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountOwnerId),
+    where: { id: { eq: accountOwnerId } },
   });
   return c.json(serializeTag(tag, owner, c.req.url));
 });

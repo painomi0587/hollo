@@ -26,7 +26,7 @@ import {
   type Update,
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
-import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "../db";
 import {
@@ -50,9 +50,8 @@ import {
   likes,
   type NewLike,
   type NewPinnedPost,
-  type Post,
   pinnedPosts,
-  pollOptions,
+  type Post,
   posts,
   reactions,
 } from "../schema";
@@ -102,7 +101,7 @@ async function resolveReactionTarget(
     const postId = parsed.values["id"];
     if (isUuid(postId)) {
       const post = await db.query.posts.findFirst({
-        where: eq(posts.id, postId),
+        where: { id: { eq: postId } },
         with: { account: { with: { owner: true } } },
       });
       if (post != null) {
@@ -117,7 +116,7 @@ async function resolveReactionTarget(
   }
 
   const post = await db.query.posts.findFirst({
-    where: eq(posts.iri, objectId.href),
+    where: { iri: { eq: objectId.href } },
     with: { account: { with: { owner: true } } },
   });
   if (post == null) {
@@ -171,7 +170,7 @@ export async function onFollowed(
     return;
   }
   const following = await db.query.accounts.findFirst({
-    where: eq(accounts.iri, object.id.href),
+    where: { iri: { eq: object.id.href } },
     with: { owner: true },
   });
   if (following?.owner == null) {
@@ -188,10 +187,13 @@ export async function onFollowed(
   let approves = !following.protected;
   if (approves) {
     const block = await db.query.blocks.findFirst({
-      where: and(
-        eq(blocks.accountId, following.id),
-        eq(blocks.blockedAccountId, follower.id),
-      ),
+      where: {
+        RAW: (blocks, { and, eq }) =>
+          and(
+            eq(blocks.accountId, following.id),
+            eq(blocks.blockedAccountId, follower.id),
+          )!,
+      },
     });
     approves = block == null;
   }
@@ -425,7 +427,7 @@ async function updateQuoteRequestState(
   quoteAuthorizationIri: string | null,
 ): Promise<boolean> {
   const quote = await db.query.posts.findFirst({
-    where: eq(posts.iri, request.quoteIri),
+    where: { iri: { eq: request.quoteIri } },
     with: { quoteTarget: { with: { account: true } } },
   });
   if (quote == null) return false;
@@ -434,7 +436,7 @@ async function updateQuoteRequestState(
     request.targetIri == null
       ? quote.quoteTarget
       : await db.query.posts.findFirst({
-          where: eq(posts.iri, request.targetIri),
+          where: { iri: { eq: request.targetIri } },
           with: { account: true },
         });
   if (target == null) return false;
@@ -475,7 +477,7 @@ async function sendQuoteUpdate(
   quoteIri: string,
 ): Promise<void> {
   const quote = await db.query.posts.findFirst({
-    where: eq(posts.iri, quoteIri),
+    where: { iri: { eq: quoteIri } },
     with: {
       account: { with: { owner: true } },
       replyTarget: true,
@@ -566,11 +568,11 @@ export async function onQuoteAuthorizationDeleted(
       ? quoteIri == null
         ? null
         : await db.query.posts.findFirst({
-            where: eq(posts.iri, quoteIri),
+            where: { iri: { eq: quoteIri } },
             with: { quoteTarget: { with: { account: true } } },
           })
       : await db.query.posts.findFirst({
-          where: eq(posts.quoteAuthorizationIri, authorizationIri),
+          where: { quoteAuthorizationIri: { eq: authorizationIri } },
           with: { quoteTarget: { with: { account: true } } },
         });
   if (quote == null) return;
@@ -612,27 +614,33 @@ async function canAutomaticallyAcceptQuoteRequest(
     return false;
   }
   const block = await db.query.blocks.findFirst({
-    where: or(
-      and(
-        eq(blocks.accountId, target.accountId),
-        eq(blocks.blockedAccountId, quote.accountId),
-      ),
-      and(
-        eq(blocks.accountId, quote.accountId),
-        eq(blocks.blockedAccountId, target.accountId),
-      ),
-    ),
+    where: {
+      RAW: (blocks, { and, eq, or }) =>
+        or(
+          and(
+            eq(blocks.accountId, target.accountId),
+            eq(blocks.blockedAccountId, quote.accountId),
+          ),
+          and(
+            eq(blocks.accountId, quote.accountId),
+            eq(blocks.blockedAccountId, target.accountId),
+          ),
+        )!,
+    },
   });
   if (block != null) return false;
   const policy = target.quoteApprovalPolicy ?? "public";
   if (policy === "public") return true;
   if (policy === "nobody") return false;
   const follow = await db.query.follows.findFirst({
-    where: and(
-      eq(follows.followerId, quote.accountId),
-      eq(follows.followingId, target.accountId),
-      isNotNull(follows.approved),
-    ),
+    where: {
+      RAW: (follows, { and, eq, isNotNull }) =>
+        and(
+          eq(follows.followerId, quote.accountId),
+          eq(follows.followingId, target.accountId),
+          isNotNull(follows.approved),
+        )!,
+    },
   });
   return follow != null;
 }
@@ -643,7 +651,7 @@ export async function onQuoteRequested(
 ): Promise<void> {
   if (request.objectId == null) return;
   const target = await db.query.posts.findFirst({
-    where: eq(posts.iri, request.objectId.href),
+    where: { iri: { eq: request.objectId.href } },
     with: { account: { with: { owner: true } } },
   });
   if (target?.account.owner == null) return;
@@ -658,7 +666,7 @@ export async function onQuoteRequested(
     instrument.id == null
       ? null
       : await db.query.posts.findFirst({
-          where: eq(posts.iri, instrument.id.href),
+          where: { iri: { eq: instrument.id.href } },
         });
   if (existingQuote?.quoteState === "revoked") return;
   const persistedQuote = await persistPost(
@@ -760,7 +768,7 @@ export async function onBlocked(
   if (block.objectId == null || object?.type !== "actor") return;
   const blocked = await db.query.accountOwners.findFirst({
     with: { account: true },
-    where: eq(accountOwners.handle, object.identifier),
+    where: { handle: { eq: object.identifier } },
   });
   if (blocked == null) return;
   const blockerAccount = await persistAccount(
@@ -870,7 +878,7 @@ export async function onPostCreated(
     // attached status's in_reply_to_account_id.
     if (post.replyTargetId != null) {
       const replyTarget = await db.query.posts.findFirst({
-        where: eq(posts.id, post.replyTargetId),
+        where: { id: { eq: post.replyTargetId } },
         with: {
           account: { with: { owner: true } },
         },
@@ -887,10 +895,13 @@ export async function onPostCreated(
     // Skip the reply target author since they already got a reply mention.
     if (post.mentions.length > 0) {
       const mentionedAccountsWithOwners = await db.query.accounts.findMany({
-        where: inArray(
-          accounts.id,
-          post.mentions.map((m) => m.accountId),
-        ),
+        where: {
+          RAW: (accounts, { inArray }) =>
+            inArray(
+              accounts.id,
+              post.mentions.map((m) => m.accountId),
+            ),
+        },
         with: { owner: true },
       });
 
@@ -907,7 +918,7 @@ export async function onPostCreated(
       (post.quoteState == null || post.quoteState === "accepted")
     ) {
       const quoteTarget = await db.query.posts.findFirst({
-        where: eq(posts.id, post.quoteTargetId),
+        where: { id: { eq: post.quoteTargetId } },
         with: {
           account: { with: { owner: true } },
         },
@@ -924,7 +935,7 @@ export async function onPostCreated(
     (post.visibility === "public" || post.visibility === "unlisted")
   ) {
     const replyTarget = await db.query.posts.findFirst({
-      where: eq(posts.id, post.replyTargetId),
+      where: { id: { eq: post.replyTargetId } },
       with: {
         account: { with: { owner: true } },
         replyTarget: true,
@@ -970,7 +981,7 @@ export async function onPostUpdated(
   // Get post ID before update to find quote posts
   const existingPost = object.id
     ? await db.query.posts.findFirst({
-        where: eq(posts.iri, object.id.href),
+        where: { iri: { eq: object.id.href } },
       })
     : null;
 
@@ -986,10 +997,13 @@ export async function onPostUpdated(
   // Create quoted_update notifications for users who quoted this post
   if (existingPost != null) {
     const quotePosts = await db.query.posts.findMany({
-      where: and(
-        eq(posts.quoteTargetId, existingPost.id),
-        or(eq(posts.quoteState, "accepted"), isNull(posts.quoteState)),
-      ),
+      where: {
+        RAW: (posts, { and, eq, isNull, or }) =>
+          and(
+            eq(posts.quoteTargetId, existingPost.id),
+            or(eq(posts.quoteState, "accepted"), isNull(posts.quoteState)),
+          )!,
+      },
       with: {
         account: { with: { owner: true } },
       },
@@ -1078,7 +1092,7 @@ export async function onPostUnshared(
       with: {
         account: { with: { owner: true } },
       },
-      where: eq(posts.iri, originalPost.href),
+      where: { iri: { eq: originalPost.href } },
     });
     if (original == null) return null;
     const deleted = await tx
@@ -1118,7 +1132,7 @@ export async function onPostPinned(
   const object = await add.getObject();
   if (!isPost(object)) return;
   const accountList = await db.query.accounts.findMany({
-    where: eq(accounts.featuredUrl, add.targetId.href),
+    where: { featuredUrl: { eq: add.targetId.href } },
   });
   const post = await persistPost(
     db,
@@ -1143,7 +1157,7 @@ export async function onPostUnpinned(
   const object = await remove.getObject();
   if (!isPost(object)) return;
   const accountList = await db.query.accounts.findMany({
-    where: eq(accounts.featuredUrl, remove.targetId.href),
+    where: { featuredUrl: { eq: remove.targetId.href } },
   });
   const post = await persistPost(
     db,
@@ -1409,14 +1423,14 @@ export async function onVoted(
       media: true,
       poll: {
         with: {
-          options: { orderBy: pollOptions.index },
+          options: { orderBy: { index: "asc" } },
           votes: { with: { account: true } },
         },
       },
       mentions: { with: { account: true } },
       replies: { limit: 20 },
     },
-    where: eq(posts.pollId, vote.pollId),
+    where: { pollId: { eq: vote.pollId } },
   });
   if (post?.account.owner == null || post.poll == null) return;
   const orderingKey = `post:${post.iri}`;
@@ -1477,7 +1491,7 @@ export async function onAccountMoved(
   if (tgt == null) return;
   const followers = await db.query.follows.findMany({
     with: { follower: { with: { owner: true } } },
-    where: eq(follows.followingId, obj.id),
+    where: { followingId: { eq: obj.id } },
   });
   for (const follower of followers) {
     if (follower.follower.owner == null) continue;

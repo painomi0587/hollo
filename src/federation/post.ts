@@ -28,56 +28,43 @@ import {
   Video,
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
-import {
-  and,
-  count,
-  type ExtractTablesWithRelations,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  isNull,
-  or,
-  sql,
-} from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+import { and, count, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { escape } from "es-toolkit";
 import mime from "mime";
 // @ts-expect-error: No type definitions available
 import { isSSRFSafeURL } from "ssrfcheck";
 
+import type { DatabaseLike } from "../db";
 import { extractPreviewLink } from "../html";
 import { makeVideoScreenshot, type Thumbnail, uploadThumbnail } from "../media";
 import { REMOTE_MEDIA_THUMBNAILS } from "../media-proxy";
 import { fetchPreviewCard } from "../previewcard";
-import type * as schema from "../schema";
 import {
   type Account,
   type AccountOwner,
   accountOwners,
   likes,
+  media,
   type Medium,
   type Mention,
-  media,
   mentions,
   type NewMedium,
   type NewPost,
   type Poll,
   type PollOption,
-  type PollVote,
-  type Post,
-  type QuoteApprovalPolicy,
   pollOptions,
   polls,
+  type PollVote,
   pollVotes,
+  type Post,
   posts,
+  type QuoteApprovalPolicy,
 } from "../schema";
 import { type Uuid, uuidv7 } from "../uuid";
 import {
-  type PersistAccountOptions,
   persistAccount,
   persistAccountByIri,
+  type PersistAccountOptions,
 } from "./account";
 import { toDate, toTemporalInstant } from "./date";
 import { toEmoji } from "./emoji";
@@ -161,11 +148,7 @@ async function getVerifiedQuoteAuthorizationIri(
 }
 
 export async function persistPost(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   object: ASPost,
   baseUrl: URL | string,
   options: PersistAccountOptions & {
@@ -183,7 +166,7 @@ export async function persistPost(
   if (object.id == null) return null;
   const existingPost = await db.query.posts.findFirst({
     with: { account: { with: { owner: true } }, mentions: true },
-    where: eq(posts.iri, object.id.href),
+    where: { iri: { eq: object.id.href } },
   });
   if (options.skipUpdate && existingPost != null) return existingPost;
   if (existingPost != null && existingPost.account.owner != null) {
@@ -291,7 +274,7 @@ export async function persistPost(
   if (objectLink != null) {
     quoteTargetIri = objectLink.href;
     const found = await db.query.posts.findFirst({
-      where: eq(posts.iri, objectLink.href),
+      where: { iri: { eq: objectLink.href } },
       with: { account: true },
     });
     if (found != null) {
@@ -406,7 +389,7 @@ export async function persistPost(
       setWhere: eq(posts.iri, object.id.href),
     });
   let post = await db.query.posts.findFirst({
-    where: eq(posts.iri, object.id.href),
+    where: { iri: { eq: object.id.href } },
   });
   if (post == null) return null;
   if (object instanceof Question) {
@@ -621,7 +604,7 @@ export async function persistPost(
     } satisfies NewMedium);
   }
   post = await db.query.posts.findFirst({
-    where: eq(posts.iri, object.id.href),
+    where: { iri: { eq: object.id.href } },
     with: { account: true, media: true },
   });
   if (post == null) return null;
@@ -646,11 +629,7 @@ export async function persistPost(
 }
 
 export async function persistSharingPost(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   announce: Announce,
   object: ASPost,
   baseUrl: URL | string,
@@ -664,7 +643,7 @@ export async function persistSharingPost(
       account: { with: { owner: true } },
       sharing: { with: { account: { with: { owner: true } } } },
     },
-    where: eq(posts.iri, announce.id.href),
+    where: { iri: { eq: announce.id.href } },
   });
   if (existingPost != null) return { ...existingPost, isNew: false };
   const actor = await announce.getActor(options);
@@ -687,10 +666,13 @@ export async function persistSharingPost(
       account: { with: { owner: true } },
       sharing: { with: { account: { with: { owner: true } } } },
     },
-    where: and(
-      eq(posts.accountId, account.id),
-      eq(posts.sharingId, originalPost.id),
-    ),
+    where: {
+      RAW: (posts, { and, eq }) =>
+        and(
+          eq(posts.accountId, account.id),
+          eq(posts.sharingId, originalPost.id),
+        )!,
+    },
   });
   if (existingSharingPost != null) {
     return { ...existingSharingPost, isNew: false };
@@ -731,10 +713,13 @@ export async function persistSharingPost(
         account: { with: { owner: true } },
         sharing: { with: { account: { with: { owner: true } } } },
       },
-      where: and(
-        eq(posts.accountId, account.id),
-        eq(posts.sharingId, originalPost.id),
-      ),
+      where: {
+        RAW: (posts, { and, eq }) =>
+          and(
+            eq(posts.accountId, account.id),
+            eq(posts.sharingId, originalPost.id),
+          )!,
+      },
     });
     return conflictedPost == null ? null : { ...conflictedPost, isNew: false };
   }
@@ -752,11 +737,7 @@ export async function persistSharingPost(
 }
 
 export async function persistPollVote(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   object: Note,
   baseUrl: URL | string,
   options: PersistAccountOptions & {
@@ -770,15 +751,19 @@ export async function persistPollVote(
   ) {
     return null;
   }
+  const replyTargetId = object.replyTargetId;
   const post = await db.query.posts.findFirst({
     with: {
-      poll: { with: { options: { orderBy: pollOptions.index } } },
+      poll: { with: { options: { orderBy: { index: "asc" } } } },
     },
-    where: and(
-      eq(posts.iri, object.replyTargetId.href),
-      eq(posts.type, "Question"),
-      isNotNull(posts.pollId),
-    ),
+    where: {
+      RAW: (posts, { and, eq, isNotNull }) =>
+        and(
+          eq(posts.iri, replyTargetId.href),
+          eq(posts.type, "Question"),
+          isNotNull(posts.pollId),
+        )!,
+    },
   });
   if (post == null) return null;
   const poll = post.poll;
@@ -851,11 +836,7 @@ export async function persistPollVote(
 }
 
 export async function updatePostStats(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   { id }: { id: Uuid },
 ): Promise<void> {
   const repliesCount = db

@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -11,7 +11,7 @@ import {
   withAccountOwner,
   type AccountOwnerVariables,
 } from "../../oauth/middleware";
-import { type MarkerType, markers, type NewMarker } from "../../schema";
+import { markers, type MarkerType, type NewMarker } from "../../schema";
 
 const app = new Hono<{ Variables: AccountOwnerVariables }>();
 
@@ -23,7 +23,7 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const markerList = await db.query.markers.findMany({
-      where: eq(markers.accountOwnerId, owner.id),
+      where: { accountOwnerId: { eq: owner.id } },
     });
     return c.json(serializeMarkers(markerList));
   },
@@ -69,7 +69,7 @@ app.post(
       }
     });
     const markerList = await db.query.markers.findMany({
-      where: eq(markers.accountOwnerId, owner.id),
+      where: { accountOwnerId: { eq: owner.id } },
     });
     return c.json(serializeMarkers(markerList));
   },

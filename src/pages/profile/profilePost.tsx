@@ -1,4 +1,3 @@
-import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
@@ -7,12 +6,10 @@ import db from "../../db.ts";
 import {
   type Account,
   type AccountOwner,
-  accountOwners,
   type Medium,
   type Poll,
   type PollOption,
   type Post,
-  posts,
   type Reaction,
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
@@ -25,15 +22,18 @@ profilePost.get<"/:handle{@[^/]+}/:id{[-a-f0-9]+}">(async (c) => {
   if (!isUuid(postId)) return c.notFound();
   if (handle.startsWith("@")) handle = handle.substring(1);
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.handle, handle),
+    where: { handle: { eq: handle } },
   });
   if (accountOwner == null) return c.notFound();
   const post = await db.query.posts.findFirst({
-    where: and(
-      eq(posts.accountId, accountOwner.id),
-      eq(posts.id, postId),
-      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
-    ),
+    where: {
+      RAW: (posts, { and, eq, or }) =>
+        and(
+          eq(posts.accountId, accountOwner.id),
+          eq(posts.id, postId),
+          or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+        )!,
+    },
     with: {
       account: true,
       media: true,
@@ -67,8 +67,8 @@ profilePost.get<"/:handle{@[^/]+}/:id{[-a-f0-9]+}">(async (c) => {
         },
       },
       replies: {
-        where: inArray(posts.visibility, ["public", "unlisted"]),
-        orderBy: desc(posts.published),
+        where: { visibility: { in: ["public", "unlisted"] } },
+        orderBy: (posts, { desc }) => [desc(posts.published)],
         limit: 20,
         with: {
           account: true,

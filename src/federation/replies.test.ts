@@ -54,7 +54,7 @@ async function seedRemotePost() {
   });
 
   const post = await db.query.posts.findFirst({
-    where: eq(posts.id, postId),
+    where: { id: { eq: postId } },
   });
   if (post == null) throw new Error("Failed to seed post");
   return post;
@@ -158,7 +158,7 @@ describe("enqueueRemoteReplyScrape", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.repliesIri, repliesIri.href),
+      where: { repliesIri: { eq: repliesIri.href } },
     });
     expect(job?.status).toBe("pending");
     expect(job?.attempts).toBe(0);
@@ -192,7 +192,7 @@ describe("enqueueRemoteReplyScrape", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.repliesIri, repliesIri.href),
+      where: { repliesIri: { eq: repliesIri.href } },
     });
     expect(job?.status).toBe("completed");
     expect(job?.attempts).toBe(2);

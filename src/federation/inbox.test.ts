@@ -9,27 +9,20 @@ import {
   Reject,
   Update,
 } from "@fedify/vocab";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanDatabase } from "../../tests/helpers";
 import { createAccount } from "../../tests/helpers/oauth";
 import db from "../db";
-import {
-  accounts,
-  blocks,
-  follows,
-  instances,
-  notifications,
-  posts,
-} from "../schema";
+import { accounts, blocks, follows, instances, posts } from "../schema";
 import type { Uuid } from "../uuid";
 import {
   onFollowAccepted,
   onFollowRejected,
   onQuoteAuthorizationDeleted,
-  onQuoteRequested,
   onQuoteRequestAccepted,
+  onQuoteRequested,
   onQuoteRequestRejected,
 } from "./inbox";
 
@@ -44,10 +37,10 @@ async function seedFollow(): Promise<SeededFollow> {
   const followerOwner = await createAccount({ username: "follower" });
   const followingOwner = await createAccount({ username: "following" });
   const follower = await db.query.accounts.findFirst({
-    where: eq(accounts.id, followerOwner.id as Uuid),
+    where: { id: { eq: followerOwner.id as Uuid } },
   });
   const following = await db.query.accounts.findFirst({
-    where: eq(accounts.id, followingOwner.id as Uuid),
+    where: { id: { eq: followingOwner.id as Uuid } },
   });
   if (follower == null || following == null) {
     throw new Error("Failed to seed accounts");
@@ -102,10 +95,13 @@ describe("onFollowAccepted", () => {
     await onFollowAccepted(ctx, accept);
 
     const follow = await db.query.follows.findFirst({
-      where: and(
-        eq(follows.followerId, seeded.followerId),
-        eq(follows.followingId, seeded.followingId),
-      ),
+      where: {
+        RAW: (follows, { and, eq }) =>
+          and(
+            eq(follows.followerId, seeded.followerId),
+            eq(follows.followingId, seeded.followingId),
+          )!,
+      },
     });
     expect(follow).toBeDefined();
     expect(follow?.approved).not.toBeNull();
@@ -117,7 +113,7 @@ describe("onFollowAccepted", () => {
     const seeded = await seedFollow();
 
     const followerBefore = await db.query.accounts.findFirst({
-      where: eq(accounts.id, seeded.followerId),
+      where: { id: { eq: seeded.followerId } },
     });
     expect(followerBefore?.followingCount).toBe(0);
 
@@ -145,7 +141,7 @@ describe("onFollowAccepted", () => {
     await onFollowAccepted(ctx, accept);
 
     const followerAfter = await db.query.accounts.findFirst({
-      where: eq(accounts.id, seeded.followerId),
+      where: { id: { eq: seeded.followerId } },
     });
     expect(followerAfter?.followingCount).toBe(1);
   });
@@ -181,10 +177,13 @@ describe("onFollowRejected", () => {
     await onFollowRejected(ctx, reject);
 
     const follow = await db.query.follows.findFirst({
-      where: and(
-        eq(follows.followerId, seeded.followerId),
-        eq(follows.followingId, seeded.followingId),
-      ),
+      where: {
+        RAW: (follows, { and, eq }) =>
+          and(
+            eq(follows.followerId, seeded.followerId),
+            eq(follows.followingId, seeded.followingId),
+          )!,
+      },
     });
     expect(follow).toBeUndefined();
   });
@@ -288,10 +287,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequestAccepted(requestCtx, accept);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("accepted");
     expect(quote?.quoteAuthorizationIri).toBe(authorizationIri);
@@ -313,10 +312,10 @@ describe("quote request lifecycle", () => {
     const accepted = await onQuoteRequestAccepted(ctx, accept);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(accepted).toBe(false);
     expect(quote?.quoteState).toBe("pending");
@@ -376,10 +375,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequestAccepted(requestCtx, accept);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("accepted");
     expect(quote?.quoteAuthorizationIri).toBe(authorizationIri);
@@ -408,10 +407,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequestAccepted(requestCtx, accept);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("accepted");
     expect(quote?.quoteAuthorizationIri).toBe(authorizationIri);
@@ -440,10 +439,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequestRejected(ctx, reject);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("pending");
     expect(quote?.quoteAuthorizationIri).toBeNull();
@@ -465,10 +464,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequestRejected(ctx, reject);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("rejected");
     expect(quoted?.quotesCount).toBe(0);
@@ -486,10 +485,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequestRejected(ctx, reject);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("rejected");
     expect(quoted?.quotesCount).toBe(0);
@@ -510,10 +509,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequestRejected(ctx, reject);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("rejected");
     expect(quoted?.quotesCount).toBe(0);
@@ -555,10 +554,10 @@ describe("quote request lifecycle", () => {
     );
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("revoked");
     expect(quoted?.quotesCount).toBe(0);
@@ -601,7 +600,7 @@ describe("quote request lifecycle", () => {
     );
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     expect(quote?.quoteState).toBe("revoked");
     expect(sendActivity).toHaveBeenCalledOnce();
@@ -646,10 +645,10 @@ describe("quote request lifecycle", () => {
     );
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("revoked");
     expect(quoted?.quotesCount).toBe(0);
@@ -687,10 +686,10 @@ describe("quote request lifecycle", () => {
     );
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotePostId),
+      where: { id: { eq: seeded.quotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, seeded.quotedPostId),
+      where: { id: { eq: seeded.quotedPostId } },
     });
     expect(quote?.quoteState).toBe("accepted");
     expect(quote?.quoteAuthorizationIri).toBe(authorizationIri);
@@ -742,10 +741,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, quotedPostId),
+      where: { id: { eq: quotedPostId } },
     });
     expect(quote?.quoteState).toBe("accepted");
     expect(quote?.quoteTargetId).toBe(quotedPostId);
@@ -814,10 +813,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.id, localQuotePostId),
+      where: { id: { eq: localQuotePostId } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, quotedPostId),
+      where: { id: { eq: quotedPostId } },
     });
     expect(quote?.quoteState).toBe("unauthorized");
     expect(quote?.quoteAuthorizationIri).toBeNull();
@@ -871,17 +870,20 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
       with: { account: true },
     });
     if (quote == null) throw new Error("Failed to persist quote");
     const notification = await db.query.notifications.findFirst({
-      where: and(
-        eq(notifications.type, "quote"),
-        eq(notifications.accountOwnerId, author.id as Uuid),
-        eq(notifications.actorAccountId, quote.accountId),
-        eq(notifications.targetPostId, quote.id),
-      ),
+      where: {
+        RAW: (notifications, { and, eq }) =>
+          and(
+            eq(notifications.type, "quote"),
+            eq(notifications.accountOwnerId, author.id as Uuid),
+            eq(notifications.actorAccountId, quote.accountId),
+            eq(notifications.targetPostId, quote.id),
+          )!,
+      },
     });
 
     expect(quote.quoteState).toBe("accepted");
@@ -937,10 +939,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, quotedPostId),
+      where: { id: { eq: quotedPostId } },
     });
     expect(quote?.quoteState).toBe("accepted");
     expect(quote?.quoteAuthorizationIri).toBe(
@@ -1027,13 +1029,13 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, newRequest);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     const oldPost = await db.query.posts.findFirst({
-      where: eq(posts.id, oldPostId),
+      where: { id: { eq: oldPostId } },
     });
     const newPost = await db.query.posts.findFirst({
-      where: eq(posts.id, newPostId),
+      where: { id: { eq: newPostId } },
     });
     expect(quote?.quoteTargetId).toBe(newPostId);
     expect(quote?.quoteState).toBe("accepted");
@@ -1089,7 +1091,7 @@ describe("quote request lifecycle", () => {
 
     await onQuoteRequested(requestCtx, request);
     const acceptedQuote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     if (acceptedQuote == null) throw new Error("Failed to persist quote");
     await db
@@ -1109,10 +1111,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, quotedPostId),
+      where: { id: { eq: quotedPostId } },
     });
     expect(quote?.quoteState).toBe("revoked");
     expect(quote?.quoteAuthorizationIri).toBeNull();
@@ -1173,10 +1175,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, quotedPostId),
+      where: { id: { eq: quotedPostId } },
     });
     expect(quote?.quoteState).toBe("rejected");
     expect(quote?.quoteAuthorizationIri).toBeNull();
@@ -1250,10 +1252,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, quotedPostId),
+      where: { id: { eq: quotedPostId } },
     });
     expect(quote?.quoteState).toBe("rejected");
     expect(quote?.quoteAuthorizationIri).toBeNull();
@@ -1306,10 +1308,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, quotedPostId),
+      where: { id: { eq: quotedPostId } },
     });
     expect(quote).toBeUndefined();
     expect(quoted?.quotesCount).toBe(0);
@@ -1376,10 +1378,10 @@ describe("quote request lifecycle", () => {
     await onQuoteRequested(requestCtx, request);
 
     const quote = await db.query.posts.findFirst({
-      where: eq(posts.iri, quotePostIri),
+      where: { iri: { eq: quotePostIri } },
     });
     const quoted = await db.query.posts.findFirst({
-      where: eq(posts.id, quotedPostId),
+      where: { id: { eq: quotedPostId } },
     });
     expect(quote?.quoteTargetIri).toBe(otherPostIri);
     expect(quote?.quoteState).toBe("unauthorized");

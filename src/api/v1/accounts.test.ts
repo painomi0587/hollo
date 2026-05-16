@@ -178,7 +178,7 @@ describe.sequential("/api/v1/accounts/update_credentials", () => {
     expect(credentialAccount.source.fields).toEqual([]);
 
     const updatedAccount = await db.query.accountOwners.findFirst({
-      where: eq(accountOwners.id, account.id),
+      where: { id: { eq: account.id } },
       with: { account: true },
     });
     expect(updatedAccount?.fields).toEqual({});

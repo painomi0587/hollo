@@ -1,5 +1,6 @@
-import "./logging";
 import { join, relative } from "node:path";
+
+import "./logging";
 
 import { federation } from "@fedify/hono";
 import { serveStatic } from "@hono/node-server/serve-static";
