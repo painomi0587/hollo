@@ -1,6 +1,6 @@
 import { and, eq, exists, inArray, isNotNull, or, sql } from "drizzle-orm";
 
-import { db, postgres } from "../db";
+import { db, postgres, type DatabaseLike } from "../db";
 import { follows, mentions, posts } from "../schema";
 import type { Uuid } from "../uuid";
 
@@ -14,8 +14,9 @@ export type PostVisibilityScope = {
 
 export async function getApprovedFollowingAccountIds(
   accountId: Uuid,
+  database: DatabaseLike = db,
 ): Promise<Uuid[]> {
-  const rows = await db
+  const rows = await database
     .select({ id: follows.followingId })
     .from(follows)
     .where(and(eq(follows.followerId, accountId), isNotNull(follows.approved)));

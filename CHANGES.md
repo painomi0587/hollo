@@ -270,10 +270,16 @@ To be released.
  -  Optimized Mastodon-compatible timeline loading after the Drizzle ORM
     upgrade.  Home, list, public, and hashtag timelines now use a smaller
     relation graph that avoids fetching columns and nested relations that are
-    not needed for timeline status serialization.  This reduces the size and
-    cost of the SQL generated for large timelines, especially list timelines
-    on instances with many stored posts, without changing the API response
-    format.
+    not needed for timeline status serialization.  They also fetch matching
+    post IDs first, then hydrate only those posts with the timeline status
+    projection, so empty cursor checks and heavily filtered timelines avoid
+    running the relation-heavy query at all.  The ID selection and hydration
+    run in the same read-only repeatable-read snapshot, preserving timeline
+    eligibility consistency while reducing the size and cost of the SQL
+    generated for large timelines, especially list timelines on instances
+    with many stored posts, without changing the API response format.  Timeline
+    `limit` query parameters are now capped at 1000 to keep these queries
+    bounded even when clients request unusually large pages.
 
  -  Fixed a performance bug that caused profile page queries to take
     hundreds of seconds on a cold PostgreSQL buffer cache and trigger a

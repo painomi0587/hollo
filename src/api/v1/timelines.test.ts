@@ -21,6 +21,17 @@ import {
 } from "../../schema";
 import type { Uuid } from "../../uuid";
 import { uuidv7 } from "../../uuid";
+import { timelineQuerySchema } from "./timelines";
+
+describe("timelineQuerySchema", () => {
+  it("caps large limits and keeps the lower bound at one", () => {
+    expect.assertions(3);
+
+    expect(timelineQuerySchema.parse({}).limit).toBe(20);
+    expect(timelineQuerySchema.parse({ limit: "0" }).limit).toBe(1);
+    expect(timelineQuerySchema.parse({ limit: "100000" }).limit).toBe(1000);
+  });
+});
 
 describe.sequential("/api/v1/timelines/list/:list_id", () => {
   let owner: Awaited<ReturnType<typeof createAccount>>;
