@@ -6,6 +6,45 @@ Version 0.9.0
 
 To be released.
 
+ -  Upgraded Drizzle ORM to 1.0.0-rc.2 and migrated Hollo's relational
+    query definitions to the new relations API.  This has no intended
+    user-facing behavior changes, but the first migration after upgrading
+    may need one extra database permission check.  Drizzle 1 upgrades its
+    own migration log table, `drizzle.__drizzle_migrations`, by adding
+    `name` and `applied_at` columns.  PostgreSQL only allows that `ALTER TABLE`
+    when the migration is run by the table owner.
+
+    If `pnpm run migrate` fails with
+    `must be owner of table __drizzle_migrations`, first check which role
+    owns Drizzle's migration log table:
+
+    ~~~~ sql
+    SELECT
+      n.nspname AS schema,
+      c.relname AS table_name,
+      pg_get_userbyid(c.relowner) AS owner
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'drizzle'
+      AND c.relname = '__drizzle_migrations';
+    ~~~~
+
+    If the owner is not the same role Hollo uses in `DATABASE_URL`, run
+    the following SQL as the current table owner or a database admin,
+    replacing `hollo` with your Hollo database user:
+
+    ~~~~ sql
+    ALTER SCHEMA drizzle OWNER TO hollo;
+    ALTER TABLE drizzle.__drizzle_migrations OWNER TO hollo;
+    ALTER SEQUENCE IF EXISTS drizzle.__drizzle_migrations_id_seq
+      OWNER TO hollo;
+    ~~~~
+
+    Then run `pnpm run migrate` again with Hollo's normal `DATABASE_URL`.
+    If your database provider does not allow ownership transfers, run this
+    one migration once with the database role that already owns
+    `drizzle.__drizzle_migrations`.
+
  -  Added passkey (WebAuthn) authentication.  The admin *Auth* page now
     has a “Passkeys” section for enrolling and managing passkeys, and
     the public login page presents a “Sign in with passkey” button
