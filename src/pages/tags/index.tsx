@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
-import { Post as PostView } from "../../components/Post.tsx";
+import { type PostAccount, Post as PostView } from "../../components/Post.tsx";
 import { db } from "../../db.ts";
 import {
-  type Account,
   accountOwners,
   type Medium,
   type Poll,
@@ -38,34 +37,34 @@ tags.get(async (c) => {
     },
     orderBy: (posts, { desc }) => [desc(posts.id)],
     with: {
-      account: true,
+      account: { with: { owner: true } },
       media: true,
       poll: { with: { options: true } },
       sharing: {
         with: {
-          account: true,
+          account: { with: { owner: true } },
           media: true,
           poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
+          replyTarget: { with: { account: { with: { owner: true } } } },
           quoteTarget: {
             with: {
-              account: true,
+              account: { with: { owner: true } },
               media: true,
               poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
+              replyTarget: { with: { account: { with: { owner: true } } } },
               reactions: true,
             },
           },
           reactions: true,
         },
       },
-      replyTarget: { with: { account: true } },
+      replyTarget: { with: { account: { with: { owner: true } } } },
       quoteTarget: {
         with: {
-          account: true,
+          account: { with: { owner: true } },
           media: true,
           poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
+          replyTarget: { with: { account: { with: { owner: true } } } },
           reactions: true,
         },
       },
@@ -78,34 +77,34 @@ tags.get(async (c) => {
 interface TagPageProps {
   readonly tag: string;
   readonly posts: (Post & {
-    account: Account;
+    account: PostAccount;
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     sharing:
       | (Post & {
-          account: Account;
+          account: PostAccount;
           media: Medium[];
           poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
+          replyTarget: (Post & { account: PostAccount }) | null;
           quoteTarget:
             | (Post & {
-                account: Account;
+                account: PostAccount;
                 media: Medium[];
                 poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: Account }) | null;
+                replyTarget: (Post & { account: PostAccount }) | null;
                 reactions: Reaction[];
               })
             | null;
           reactions: Reaction[];
         })
       | null;
-    replyTarget: (Post & { account: Account }) | null;
+    replyTarget: (Post & { account: PostAccount }) | null;
     quoteTarget:
       | (Post & {
-          account: Account;
+          account: PostAccount;
           media: Medium[];
           poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
+          replyTarget: (Post & { account: PostAccount }) | null;
           reactions: Reaction[];
         })
       | null;
