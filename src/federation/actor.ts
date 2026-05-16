@@ -1,4 +1,3 @@
-import { importJwk } from "@fedify/fedify";
 import {
   Emoji,
   Endpoints,
@@ -13,6 +12,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { uniq } from "es-toolkit";
 
 import { db } from "../db";
+import { importHolloJwk } from "../jwk";
 import { follows, likes, posts } from "../schema";
 import { toTemporalInstant } from "./date";
 import { federation } from "./federation";
@@ -86,12 +86,12 @@ federation
     if (owner == null) return [];
     return [
       {
-        privateKey: await importJwk(owner.rsaPrivateKeyJwk, "private"),
-        publicKey: await importJwk(owner.rsaPublicKeyJwk, "public"),
+        privateKey: await importHolloJwk(owner.rsaPrivateKeyJwk, "private"),
+        publicKey: await importHolloJwk(owner.rsaPublicKeyJwk, "public"),
       },
       {
-        privateKey: await importJwk(owner.ed25519PrivateKeyJwk, "private"),
-        publicKey: await importJwk(owner.ed25519PublicKeyJwk, "public"),
+        privateKey: await importHolloJwk(owner.ed25519PrivateKeyJwk, "private"),
+        publicKey: await importHolloJwk(owner.ed25519PublicKeyJwk, "public"),
       },
     ];
   });

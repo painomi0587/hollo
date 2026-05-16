@@ -221,29 +221,55 @@ export type ThemeColor = (typeof themeColorEnum.enumValues)[number];
 
 export const THEME_COLORS: readonly ThemeColor[] = themeColorEnum.enumValues;
 
-export const accountOwners = pgTable("account_owners", {
-  id: uuid("id")
-    .$type<Uuid>()
-    .primaryKey()
-    .references(() => accounts.id, { onDelete: "cascade" }),
-  handle: text("handle").notNull().unique(),
-  rsaPrivateKeyJwk: jsonb("rsa_private_key_jwk").$type<JsonWebKey>().notNull(),
-  rsaPublicKeyJwk: jsonb("rsa_public_key_jwk").$type<JsonWebKey>().notNull(),
-  ed25519PrivateKeyJwk: jsonb("ed25519_private_key_jwk")
-    .$type<JsonWebKey>()
-    .notNull(),
-  ed25519PublicKeyJwk: jsonb("ed25519_public_key_jwk")
-    .$type<JsonWebKey>()
-    .notNull(),
-  fields: json("fields").notNull().default({}).$type<Record<string, string>>(),
-  bio: text("bio"),
-  followedTags: text("followed_tags").array().notNull().default([]),
-  visibility: postVisibilityEnum("visibility").notNull().default("public"),
-  language: text("language").notNull().default("en"),
-  discoverable: boolean().notNull().default(false),
-  expandSpoilers: boolean("expand_spoilers").notNull().default(false),
-  themeColor: themeColorEnum("theme_color").notNull(),
-});
+export const accountOwners = pgTable(
+  "account_owners",
+  {
+    id: uuid("id")
+      .$type<Uuid>()
+      .primaryKey()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    handle: text("handle").notNull().unique(),
+    rsaPrivateKeyJwk: jsonb("rsa_private_key_jwk")
+      .$type<JsonWebKey>()
+      .notNull(),
+    rsaPublicKeyJwk: jsonb("rsa_public_key_jwk").$type<JsonWebKey>().notNull(),
+    ed25519PrivateKeyJwk: jsonb("ed25519_private_key_jwk")
+      .$type<JsonWebKey>()
+      .notNull(),
+    ed25519PublicKeyJwk: jsonb("ed25519_public_key_jwk")
+      .$type<JsonWebKey>()
+      .notNull(),
+    fields: json("fields")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
+    bio: text("bio"),
+    followedTags: text("followed_tags").array().notNull().default([]),
+    visibility: postVisibilityEnum("visibility").notNull().default("public"),
+    language: text("language").notNull().default("en"),
+    discoverable: boolean().notNull().default(false),
+    expandSpoilers: boolean("expand_spoilers").notNull().default(false),
+    themeColor: themeColorEnum("theme_color").notNull(),
+  },
+  (table) => [
+    check(
+      "ck_account_owners_rsa_private_key_jwk_object",
+      sql`jsonb_typeof(${table.rsaPrivateKeyJwk}) = 'object'`,
+    ),
+    check(
+      "ck_account_owners_rsa_public_key_jwk_object",
+      sql`jsonb_typeof(${table.rsaPublicKeyJwk}) = 'object'`,
+    ),
+    check(
+      "ck_account_owners_ed25519_private_key_jwk_object",
+      sql`jsonb_typeof(${table.ed25519PrivateKeyJwk}) = 'object'`,
+    ),
+    check(
+      "ck_account_owners_ed25519_public_key_jwk_object",
+      sql`jsonb_typeof(${table.ed25519PublicKeyJwk}) = 'object'`,
+    ),
+  ],
+);
 
 export type AccountOwner = typeof accountOwners.$inferSelect;
 export type NewAccountOwner = typeof accountOwners.$inferInsert;
