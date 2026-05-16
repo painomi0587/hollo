@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import { db } from "../../db";
-import { getPostRelations, serializePost } from "../../entities/status";
+import { getTimelinePostRelations, serializePost } from "../../entities/status";
 import {
   TIMELINE_INBOX_LIMIT,
   TIMELINE_INBOXES,
@@ -213,7 +213,7 @@ app.get(
             lowerBound == null ? undefined : gt(posts.id, lowerBound),
           )!,
       },
-      with: getPostRelations(owner.id),
+      with: getTimelinePostRelations(owner.id),
       orderBy: (posts, { asc, desc }) => [
         useMinId ? asc(posts.id) : desc(posts.id),
       ],
@@ -358,7 +358,7 @@ app.get(
               ),
             )!,
         },
-        with: getPostRelations(owner.id),
+        with: getTimelinePostRelations(owner.id),
         orderBy: (posts, { asc, desc }) => [
           useMinId ? asc(posts.id) : desc(posts.id),
         ],
@@ -519,7 +519,7 @@ app.get(
               lowerBound == null ? undefined : gt(posts.id, lowerBound),
             )!,
         },
-        with: getPostRelations(owner.id),
+        with: getTimelinePostRelations(owner.id),
         orderBy: (posts, { asc, desc }) => [
           useMinId ? asc(posts.id) : desc(posts.id),
         ],
@@ -673,7 +673,7 @@ app.get(
               ),
             )!,
         },
-        with: getPostRelations(owner.id),
+        with: getTimelinePostRelations(owner.id),
         orderBy: (posts, { asc, desc }) => [
           useMinId ? asc(posts.id) : desc(posts.id),
         ],
@@ -814,7 +814,7 @@ app.get(
               lowerBound == null ? undefined : gt(posts.id, lowerBound),
             )!,
         },
-        with: getPostRelations(owner.id),
+        with: getTimelinePostRelations(owner.id),
         orderBy: (posts, { asc, desc }) => [
           useMinId ? asc(posts.id) : desc(posts.id),
         ],
@@ -920,7 +920,7 @@ app.get(
             lowerBound == null ? undefined : gt(posts.id, lowerBound),
           )!,
       },
-      with: getPostRelations(owner.id),
+      with: getTimelinePostRelations(owner.id),
       orderBy: (posts, { asc, desc }) => [
         useMinId ? asc(posts.id) : desc(posts.id),
       ],

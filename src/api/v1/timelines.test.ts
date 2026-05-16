@@ -141,6 +141,75 @@ describe.sequential("/api/v1/timelines/list/:list_id", () => {
     expect(json[0].mentions[0].acct).toBe("mentioned@remote.test");
     expect(json[0].media_attachments[0].type).toBe("unknown");
   });
+
+  it("returns an empty list page above the newest post", async () => {
+    expect.assertions(4);
+
+    const listId = uuidv7();
+    const authorId = crypto.randomUUID() as Uuid;
+    const postId = uuidv7();
+
+    await db
+      .insert(instances)
+      .values({ host: "remote.test" })
+      .onConflictDoNothing();
+
+    await db.insert(lists).values({
+      id: listId,
+      accountOwnerId: owner.id,
+      title: "Remote list",
+      repliesPolicy: "list",
+      exclusive: false,
+    });
+
+    await db.insert(accounts).values({
+      id: authorId,
+      iri: "https://remote.test/users/author",
+      instanceHost: "remote.test",
+      type: "Person",
+      name: "Remote author",
+      emojis: {},
+      handle: "@author@remote.test",
+      bioHtml: "",
+      url: "https://remote.test/@author",
+      protected: false,
+      inboxUrl: "https://remote.test/users/author/inbox",
+    });
+
+    await db.insert(listMembers).values({
+      listId,
+      accountId: authorId,
+    });
+
+    await db.insert(posts).values({
+      id: postId,
+      iri: `https://remote.test/notes/${postId}`,
+      type: "Note",
+      accountId: authorId,
+      visibility: "public",
+      content: "Newest list post",
+      contentHtml: "<p>Newest list post</p>",
+      published: new Date(),
+    });
+
+    const response = await app.request(
+      `/api/v1/timelines/list/${listId}?since_id=${postId}`,
+      {
+        method: "GET",
+        headers: {
+          authorization: bearerAuthorization(accessToken),
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Link")).toBeNull();
+
+    const json = await response.json();
+
+    expect(Array.isArray(json)).toBe(true);
+    expect(json).toHaveLength(0);
+  });
 });
 describe.sequential("/api/v1/timelines/home", () => {
   let owner: Awaited<ReturnType<typeof createAccount>>;
@@ -316,6 +385,99 @@ describe.sequential("/api/v1/timelines/home", () => {
     expect(json[0].quote_id).toBe(quotedPostId);
     expect(json[0].quote.state).toBe("accepted");
     expect(json[0].quote.quoted_status.id).toBe(quotedPostId);
+  });
+
+  it("serializes boosted quoted posts in timeline responses", async () => {
+    expect.assertions(9);
+
+    const authorId = crypto.randomUUID() as Uuid;
+    const quotedPostId = uuidv7();
+    const quotePostId = uuidv7();
+    const boostPostId = uuidv7();
+
+    await db
+      .insert(instances)
+      .values({ host: "remote.test" })
+      .onConflictDoNothing();
+
+    await db.insert(accounts).values({
+      id: authorId,
+      iri: "https://remote.test/users/author",
+      instanceHost: "remote.test",
+      type: "Person",
+      name: "Remote author",
+      emojis: {},
+      handle: "@author@remote.test",
+      bioHtml: "",
+      url: "https://remote.test/@author",
+      protected: false,
+      inboxUrl: "https://remote.test/users/author/inbox",
+    });
+
+    await db.insert(follows).values({
+      iri: "https://hollo.test/follows/author",
+      followingId: authorId,
+      followerId: owner.id,
+      approved: new Date(),
+    });
+
+    await db.insert(posts).values([
+      {
+        id: quotedPostId,
+        iri: `https://remote.test/notes/${quotedPostId}`,
+        type: "Note",
+        accountId: authorId,
+        visibility: "public",
+        content: "Quoted post",
+        contentHtml: "<p>Quoted post</p>",
+        published: new Date(),
+      },
+      {
+        id: quotePostId,
+        iri: `https://remote.test/notes/${quotePostId}`,
+        type: "Note",
+        accountId: authorId,
+        quoteTargetId: quotedPostId,
+        visibility: "public",
+        content: "Quote post",
+        contentHtml:
+          "<p>Quote post</p>" +
+          `<p class="quote-inline">RE: <a href="https://remote.test/notes/${quotedPostId}">` +
+          `https://remote.test/notes/${quotedPostId}</a></p>`,
+        published: new Date(),
+      },
+      {
+        id: boostPostId,
+        iri: `https://hollo.test/@timeline-owner/${boostPostId}`,
+        type: "Note",
+        accountId: owner.id,
+        sharingId: quotePostId,
+        visibility: "public",
+        content: null,
+        contentHtml: null,
+        published: new Date(),
+      },
+    ]);
+
+    const response = await app.request("/api/v1/timelines/home", {
+      method: "GET",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+      },
+    });
+
+    expect(response.status).toBe(200);
+
+    const json = await response.json();
+
+    expect(Array.isArray(json)).toBe(true);
+    expect(json[0].id).toBe(boostPostId);
+    expect(json[0].quote_id).toBeNull();
+    expect(json[0].quote).toBeNull();
+    expect(json[0].reblog.id).toBe(quotePostId);
+    expect(json[0].reblog.content).toBe("<p>Quote post</p>");
+    expect(json[0].reblog.quote_id).toBe(quotedPostId);
+    expect(json[0].reblog.quote.quoted_status.id).toBe(quotedPostId);
   });
 
   it("keeps quote-inline fallback content without a structured quote", async () => {

@@ -1,9 +1,9 @@
 import type { Poll, PollOption, PollVote } from "../schema";
 
 export function serializePoll(
-  poll: Poll & {
-    options: PollOption[];
-    votes: PollVote[];
+  poll: Pick<Poll, "id" | "expires" | "multiple" | "votersCount"> & {
+    options: Pick<PollOption, "index" | "title" | "votesCount">[];
+    votes: Pick<PollVote, "accountId" | "optionIndex">[];
   },
   currentAccountOwner: { id: string } | undefined | null,
   // oxlint-disable-next-line typescript/no-explicit-any
@@ -35,7 +35,9 @@ export function serializePoll(
 }
 
 // oxlint-disable-next-line typescript/no-explicit-any
-export function serializePollOption(option: PollOption): Record<string, any> {
+export function serializePollOption(
+  option: Pick<PollOption, "title" | "votesCount">,
+): Record<string, any> {
   return {
     title: option.title,
     votes_count: option.votesCount,

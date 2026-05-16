@@ -267,6 +267,14 @@ To be released.
     `rel="next"` entry, so clients no longer have to guess which cursor
     parameter to use.  [[#479], [#482]]
 
+ -  Optimized Mastodon-compatible timeline loading after the Drizzle ORM
+    upgrade.  Home, list, public, and hashtag timelines now use a smaller
+    relation graph that avoids fetching columns and nested relations that are
+    not needed for timeline status serialization.  This reduces the size and
+    cost of the SQL generated for large timelines, especially list timelines
+    on instances with many stored posts, without changing the API response
+    format.
+
  -  Fixed a performance bug that caused profile page queries to take
     hundreds of seconds on a cold PostgreSQL buffer cache and trigger a
     thundering herd that exhausted the connection pool.  Two root

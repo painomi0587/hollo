@@ -33,8 +33,44 @@ type StatusAccount = Account & {
   followers?: Follow[];
 };
 
+type StatusApplication = Pick<Application, "name" | "website">;
+type StatusReplyTarget = Pick<Post, "accountId">;
+type StatusPoll = Pick<Poll, "id" | "expires" | "multiple" | "votersCount"> & {
+  options: Pick<PollOption, "index" | "title" | "votesCount">[];
+  votes: Pick<PollVote, "accountId" | "optionIndex">[];
+};
+type StatusMention = Mention & {
+  account: Pick<Account, "handle" | "url" | "iri"> & {
+    owner?: Pick<AccountOwner, "id"> | null;
+    successor?: Account | null;
+  };
+};
+type StatusReaction = Reaction & {
+  account: Pick<Account, "id" | "handle">;
+};
+type StatusLike = Pick<Like, "accountId">;
+type StatusShare = Pick<Post, "accountId">;
+type StatusBookmark = Pick<Bookmark, "accountOwnerId">;
+type StatusPin = Pick<PinnedPost, "accountId">;
+
+export type SerializablePost = Post & {
+  account: StatusAccount;
+  application: StatusApplication | null;
+  replyTarget: StatusReplyTarget | null;
+  sharing?: SerializablePost | null;
+  quoteTarget?: SerializablePost | null;
+  media: Medium[];
+  poll: StatusPoll | null;
+  mentions: StatusMention[];
+  likes: StatusLike[];
+  reactions: StatusReaction[];
+  shares: StatusShare[];
+  bookmarks: StatusBookmark[];
+  pin: StatusPin | null;
+};
+
 function getEffectiveQuoteState(
-  post: Post & { quoteTarget: Post | null },
+  post: Post & { quoteTarget?: Post | null },
 ): QuoteState | "deleted" | null {
   const state =
     post.quoteState ?? (post.quoteTargetId == null ? null : "accepted");
@@ -98,6 +134,96 @@ function accountOwnerIdWhere(ownerId: Uuid | undefined | null) {
     : { accountOwnerId: { eq: ownerId } };
 }
 
+function getPollRelations(ownerId: Uuid | undefined | null) {
+  return {
+    with: {
+      options: { orderBy: { index: "asc" } },
+      votes: {
+        where: accountIdWhere(ownerId),
+      },
+    },
+  } as const;
+}
+
+function getTimelinePollRelations(ownerId: Uuid | undefined | null) {
+  return {
+    columns: {
+      id: true,
+      expires: true,
+      multiple: true,
+      votersCount: true,
+    },
+    with: {
+      options: {
+        columns: { index: true, title: true, votesCount: true },
+        orderBy: { index: "asc" },
+      },
+      votes: {
+        columns: { accountId: true, optionIndex: true },
+        where: accountIdWhere(ownerId),
+      },
+    },
+  } as const;
+}
+
+function getTimelinePostRelationsBase(ownerId: Uuid | undefined | null) {
+  return {
+    account: {
+      with: {
+        successor: true,
+        followers: getViewerFollowerRelation(ownerId),
+      },
+    },
+    application: {
+      columns: { name: true, website: true },
+    },
+    replyTarget: {
+      columns: { accountId: true },
+    },
+    media: true,
+    poll: getTimelinePollRelations(ownerId),
+    mentions: {
+      with: {
+        account: {
+          columns: { handle: true, url: true, iri: true },
+          with: { owner: { columns: { id: true } } },
+        },
+      },
+    },
+    likes: {
+      columns: { accountId: true },
+      where: accountIdWhere(ownerId),
+    },
+    reactions: {
+      with: {
+        account: {
+          columns: { id: true, handle: true },
+        },
+      },
+    },
+    shares: {
+      columns: { accountId: true },
+      where: accountIdWhere(ownerId),
+    },
+    bookmarks: {
+      columns: { accountOwnerId: true },
+      where: accountOwnerIdWhere(ownerId),
+    },
+    pin: {
+      columns: { accountId: true },
+    },
+  } as const;
+}
+
+function getTimelineNestedPostRelations(ownerId: Uuid | undefined | null) {
+  return {
+    ...getTimelinePostRelationsBase(ownerId),
+    quoteTarget: {
+      with: getTimelinePostRelationsBase(ownerId),
+    },
+  } as const;
+}
+
 export function getPostRelations(ownerId: Uuid | undefined | null) {
   return {
     account: {
@@ -130,14 +256,7 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
             application: true,
             replyTarget: true,
             media: true,
-            poll: {
-              with: {
-                options: { orderBy: { index: "asc" } },
-                votes: {
-                  where: accountIdWhere(ownerId),
-                },
-              },
-            },
+            poll: getPollRelations(ownerId),
             mentions: {
               with: { account: { with: { owner: true, successor: true } } },
             },
@@ -155,14 +274,7 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
           },
         },
         media: true,
-        poll: {
-          with: {
-            options: { orderBy: { index: "asc" } },
-            votes: {
-              where: accountIdWhere(ownerId),
-            },
-          },
-        },
+        poll: getPollRelations(ownerId),
         mentions: {
           with: { account: { with: { owner: true, successor: true } } },
         },
@@ -190,14 +302,7 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
         application: true,
         replyTarget: true,
         media: true,
-        poll: {
-          with: {
-            options: { orderBy: { index: "asc" } },
-            votes: {
-              where: accountIdWhere(ownerId),
-            },
-          },
-        },
+        poll: getPollRelations(ownerId),
         mentions: {
           with: { account: { with: { owner: true, successor: true } } },
         },
@@ -215,14 +320,7 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
       },
     },
     media: true,
-    poll: {
-      with: {
-        options: { orderBy: { index: "asc" } },
-        votes: {
-          where: accountIdWhere(ownerId),
-        },
-      },
-    },
+    poll: getPollRelations(ownerId),
     mentions: { with: { account: { with: { owner: true, successor: true } } } },
     likes: {
       where: accountIdWhere(ownerId),
@@ -238,95 +336,20 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
   } as const;
 }
 
+export function getTimelinePostRelations(ownerId: Uuid | undefined | null) {
+  return {
+    ...getTimelinePostRelationsBase(ownerId),
+    sharing: {
+      with: getTimelineNestedPostRelations(ownerId),
+    },
+    quoteTarget: {
+      with: getTimelinePostRelationsBase(ownerId),
+    },
+  } as const;
+}
+
 export function serializePost(
-  post: Post & {
-    account: StatusAccount;
-    application: Application | null;
-    replyTarget: Post | null;
-    sharing:
-      | (Post & {
-          account: StatusAccount;
-          application: Application | null;
-          replyTarget: Post | null;
-          quoteTarget:
-            | (Post & {
-                account: StatusAccount;
-                application: Application | null;
-                replyTarget: Post | null;
-                media: Medium[];
-                poll:
-                  | (Poll & { options: PollOption[]; votes: PollVote[] })
-                  | null;
-                mentions: (Mention & {
-                  account: Account & {
-                    owner: AccountOwner | null;
-                    successor: Account | null;
-                  };
-                })[];
-                likes: Like[];
-                reactions: (Reaction & {
-                  account: Account & { successor: Account | null };
-                })[];
-                shares: Post[];
-                bookmarks: Bookmark[];
-                pin: PinnedPost | null;
-              })
-            | null;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[]; votes: PollVote[] }) | null;
-          mentions: (Mention & {
-            account: Account & {
-              owner: AccountOwner | null;
-              successor: Account | null;
-            };
-          })[];
-          likes: Like[];
-          reactions: (Reaction & {
-            account: Account & { successor: Account | null };
-          })[];
-          shares: Post[];
-          bookmarks: Bookmark[];
-          pin: PinnedPost | null;
-        })
-      | null;
-    quoteTarget:
-      | (Post & {
-          account: StatusAccount;
-          application: Application | null;
-          replyTarget: Post | null;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[]; votes: PollVote[] }) | null;
-          mentions: (Mention & {
-            account: Account & {
-              owner: AccountOwner | null;
-              successor: Account | null;
-            };
-          })[];
-          likes: Like[];
-          reactions: (Reaction & {
-            account: Account & { successor: Account | null };
-          })[];
-          shares: Post[];
-          bookmarks: Bookmark[];
-          pin: PinnedPost | null;
-        })
-      | null;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[]; votes: PollVote[] }) | null;
-    mentions: (Mention & {
-      account: Account & {
-        owner: AccountOwner | null;
-        successor: Account | null;
-      };
-    })[];
-    likes: Like[];
-    reactions: (Reaction & {
-      account: Account & { successor: Account | null };
-    })[];
-    shares: Post[];
-    bookmarks: Bookmark[];
-    pin: PinnedPost | null;
-  },
+  post: SerializablePost,
   currentAccountOwner: { id: string } | undefined | null,
   baseUrl: URL | string,
   // oxlint-disable-next-line typescript/no-explicit-any

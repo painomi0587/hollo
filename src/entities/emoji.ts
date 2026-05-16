@@ -34,7 +34,7 @@ export function serializeEmoji(
 }
 
 export function serializeReaction(
-  reaction: Reaction & { account: Account },
+  reaction: Reaction & { account: Pick<Account, "id" | "handle"> },
   currentAccountOwner: { id: string } | undefined | null,
   baseUrl: URL | string,
 ): Record<string, unknown> {
@@ -43,7 +43,7 @@ export function serializeReaction(
 }
 
 export function serializeReactions(
-  reactions: (Reaction & { account: Account })[],
+  reactions: (Reaction & { account: Pick<Account, "id" | "handle"> })[],
   currentAccountOwner: { id: string } | undefined | null,
   baseUrl: URL | string,
 ): Record<string, unknown>[] {
