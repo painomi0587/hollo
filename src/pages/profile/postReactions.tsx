@@ -18,6 +18,7 @@ import {
   reactions,
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
+import { summarizePostForTitle } from "./summary.ts";
 
 const PAGE_SIZE = 100;
 
@@ -424,11 +425,7 @@ function ReactionListPage({
   olderUrl,
   children,
 }: ReactionListPageProps) {
-  const summary =
-    post.summary ??
-    ((post.content ?? "").length > 30
-      ? `${(post.content ?? "").substring(0, 30)}…`
-      : (post.content ?? ""));
+  const summary = summarizePostForTitle(post);
   return (
     <Layout
       title={`${pageTitle}: ${summary} — ${post.account.name}`}

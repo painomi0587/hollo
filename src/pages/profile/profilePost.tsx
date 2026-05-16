@@ -12,6 +12,7 @@ import {
   type Reaction,
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
+import { summarizePostForTitle } from "./summary.ts";
 
 const profilePost = new Hono();
 
@@ -195,11 +196,7 @@ interface PostPageProps {
 }
 
 function PostPage({ post, accountOwner, baseUrl }: PostPageProps) {
-  const summary =
-    post.summary ??
-    ((post.content ?? "").length > 30
-      ? `${(post.content ?? "").substring(0, 30)}…`
-      : (post.content ?? ""));
+  const summary = summarizePostForTitle(post);
   return (
     <Layout
       title={`${summary} — ${post.account.name}`}
