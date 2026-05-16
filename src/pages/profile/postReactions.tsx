@@ -5,6 +5,7 @@ import { Layout } from "../../components/Layout.tsx";
 import { type PostAccount, Post as PostView } from "../../components/Post.tsx";
 import { PublicAccountList } from "../../components/PublicAccountList.tsx";
 import db from "../../db.ts";
+import { proxyUrl } from "../../media-proxy.ts";
 import {
   type AccountOwner,
   likes,
@@ -265,6 +266,24 @@ postReactions.get("/reactions/:emoji", async (c) => {
   });
 
   const { newerUrl, olderUrl } = paginationUrls(page, page * PAGE_SIZE < total);
+  const customEmojiUrl = rows.find((r) => r.customEmoji != null)?.customEmoji;
+  const proxiedEmojiUrl =
+    customEmojiUrl == null ? null : proxyUrl(customEmojiUrl, c.req.url);
+  const emojiNode =
+    proxiedEmojiUrl == null ? (
+      <span>{emoji}</span>
+    ) : (
+      <img
+        src={proxiedEmojiUrl}
+        alt={emoji}
+        title={emoji}
+        class="inline h-4 align-text-bottom"
+      />
+    );
+  const headingPrefix =
+    total === 1
+      ? "1 reaction with "
+      : `${numberFormatter.format(total)} reactions with `;
 
   return c.html(
     <ReactionListPage
@@ -272,9 +291,10 @@ postReactions.get("/reactions/:emoji", async (c) => {
       post={post}
       pageTitle={`Reacted ${emoji} by`}
       heading={
-        total === 1
-          ? `1 reaction with ${emoji}`
-          : `${numberFormatter.format(total)} reactions with ${emoji}`
+        <>
+          {headingPrefix}
+          {emojiNode}
+        </>
       }
       baseUrl={c.req.url}
       newerUrl={newerUrl}
@@ -387,7 +407,7 @@ interface ReactionListPageProps {
   readonly accountOwner: AccountOwner;
   readonly post: FeaturedPost;
   readonly pageTitle: string;
-  readonly heading: string;
+  readonly heading: unknown;
   readonly baseUrl: URL | string;
   readonly newerUrl?: string;
   readonly olderUrl?: string;
