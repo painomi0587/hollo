@@ -14,41 +14,43 @@ import type {
 
 export type PostAccount = Account & { owner?: AccountOwner | null };
 
+export type PostForView = DbPost & {
+  account: PostAccount;
+  media: DbMedium[];
+  poll: (DbPoll & { options: PollOption[] }) | null;
+  sharing:
+    | (DbPost & {
+        account: PostAccount;
+        media: DbMedium[];
+        poll: (DbPoll & { options: PollOption[] }) | null;
+        replyTarget: (DbPost & { account: PostAccount }) | null;
+        quoteTarget:
+          | (DbPost & {
+              account: PostAccount;
+              media: DbMedium[];
+              poll: (DbPoll & { options: PollOption[] }) | null;
+              replyTarget: (DbPost & { account: PostAccount }) | null;
+              reactions: Reaction[];
+            })
+          | null;
+        reactions: Reaction[];
+      })
+    | null;
+  replyTarget: (DbPost & { account: PostAccount }) | null;
+  quoteTarget:
+    | (DbPost & {
+        account: PostAccount;
+        media: DbMedium[];
+        poll: (DbPoll & { options: PollOption[] }) | null;
+        replyTarget: (DbPost & { account: PostAccount }) | null;
+        reactions: Reaction[];
+      })
+    | null;
+  reactions: Reaction[];
+};
+
 export interface PostProps {
-  readonly post: DbPost & {
-    account: PostAccount;
-    media: DbMedium[];
-    poll: (DbPoll & { options: PollOption[] }) | null;
-    sharing:
-      | (DbPost & {
-          account: PostAccount;
-          media: DbMedium[];
-          poll: (DbPoll & { options: PollOption[] }) | null;
-          replyTarget: (DbPost & { account: PostAccount }) | null;
-          quoteTarget:
-            | (DbPost & {
-                account: PostAccount;
-                media: DbMedium[];
-                poll: (DbPoll & { options: PollOption[] }) | null;
-                replyTarget: (DbPost & { account: PostAccount }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (DbPost & { account: PostAccount }) | null;
-    quoteTarget:
-      | (DbPost & {
-          account: PostAccount;
-          media: DbMedium[];
-          poll: (DbPoll & { options: PollOption[] }) | null;
-          replyTarget: (DbPost & { account: PostAccount }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  };
+  readonly post: PostForView;
   readonly shared?: Date;
   readonly pinned?: boolean;
   readonly quoted?: boolean;

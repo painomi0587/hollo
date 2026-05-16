@@ -2,21 +2,11 @@ import { and, count, eq, isNull, or } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
-import { type PostAccount, Post as PostView } from "../../components/Post.tsx";
+import { type PostForView, Post as PostView } from "../../components/Post.tsx";
 import { PublicAccountList } from "../../components/PublicAccountList.tsx";
 import db from "../../db.ts";
 import { proxyUrl } from "../../media-proxy.ts";
-import {
-  type AccountOwner,
-  likes,
-  type Medium,
-  type Poll,
-  type PollOption,
-  type Post,
-  posts,
-  type Reaction,
-  reactions,
-} from "../../schema.ts";
+import { type AccountOwner, likes, posts, reactions } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
 import { summarizePostForTitle } from "./summary.ts";
 
@@ -24,44 +14,9 @@ const PAGE_SIZE = 100;
 
 const postReactions = new Hono();
 
-type FeaturedPost = Post & {
-  account: PostAccount;
-  media: Medium[];
-  poll: (Poll & { options: PollOption[] }) | null;
-  sharing:
-    | (Post & {
-        account: PostAccount;
-        media: Medium[];
-        poll: (Poll & { options: PollOption[] }) | null;
-        replyTarget: (Post & { account: PostAccount }) | null;
-        quoteTarget:
-          | (Post & {
-              account: PostAccount;
-              media: Medium[];
-              poll: (Poll & { options: PollOption[] }) | null;
-              replyTarget: (Post & { account: PostAccount }) | null;
-              reactions: Reaction[];
-            })
-          | null;
-        reactions: Reaction[];
-      })
-    | null;
-  replyTarget: (Post & { account: PostAccount }) | null;
-  quoteTarget:
-    | (Post & {
-        account: PostAccount;
-        media: Medium[];
-        poll: (Poll & { options: PollOption[] }) | null;
-        replyTarget: (Post & { account: PostAccount }) | null;
-        reactions: Reaction[];
-      })
-    | null;
-  reactions: Reaction[];
-};
-
 async function loadLocalPost(c: Context): Promise<{
   accountOwner: AccountOwner;
-  post: FeaturedPost;
+  post: PostForView;
 } | null> {
   let handle = c.req.param("handle");
   const postId = c.req.param("id");
@@ -406,7 +361,7 @@ postReactions.get("/quotes", async (c) => {
 
 interface ReactionListPageProps {
   readonly accountOwner: AccountOwner;
-  readonly post: FeaturedPost;
+  readonly post: PostForView;
   readonly pageTitle: string;
   readonly heading: unknown;
   readonly baseUrl: URL | string;
