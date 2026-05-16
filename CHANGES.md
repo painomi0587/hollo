@@ -45,6 +45,16 @@ To be released.
     one migration once with the database role that already owns
     `drizzle.__drizzle_migrations`.
 
+ -  Cancel running PostgreSQL queries when the corresponding `GET` or `HEAD`
+    request is aborted, such as when a client disconnects or quickly switches
+    away from a timeline column.  Hollo now tracks the underlying postgres.js
+    query handles used by Drizzle and calls PostgreSQL cancellation for
+    in-flight queries tied to the aborted read-only request.  This reduces
+    wasted database work and helps keep the connection pool available under
+    repeated client-side aborts.  The existing `statement_timeout`
+    recommendation remains useful as a backstop for queries that cannot be tied
+    to a safe HTTP request.
+
  -  Added passkey (WebAuthn) authentication.  The admin *Auth* page now
     has a “Passkeys” section for enrolling and managing passkeys, and
     the public login page presents a “Sign in with passkey” button

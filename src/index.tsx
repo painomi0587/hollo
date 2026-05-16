@@ -9,6 +9,10 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import api from "./api";
+import {
+  isRequestAbortError,
+  postgresQueryCancellationMiddleware,
+} from "./db-cancel";
 import fedi from "./federation";
 import image from "./image";
 import oauth from "./oauth";
@@ -20,9 +24,12 @@ import { DRIVE_DISK, FS_STORAGE_PATH } from "./storage-config";
 const app = new Hono();
 
 app.onError((err, _) => {
+  if (isRequestAbortError(err)) return new Response(null, { status: 499 });
   captureException(err);
   throw err;
 });
+
+app.use("*", postgresQueryCancellationMiddleware());
 
 if (DRIVE_DISK === "fs") {
   app.use(

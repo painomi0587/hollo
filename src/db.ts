@@ -6,20 +6,23 @@ import {
 } from "drizzle-orm/postgres-js";
 import createPostgres from "postgres";
 
+import { wrapPostgresClient } from "./db-cancel";
 import { relations } from "./relations";
 
 // oxlint-disable-next-line typescript/dot-notation
 const databaseUrl = process.env["DATABASE_URL"];
 if (databaseUrl == null) throw new Error("DATABASE_URL must be defined");
 
-export const postgres = createPostgres(databaseUrl, {
-  // The pool size needs to exceed the ParallelMessageQueue concurrency (10)
-  // to leave headroom for HTTP handlers and KV store queries.  The default
-  // of 10 can cause connection starvation under federation load.
-  max: 20,
-  connect_timeout: 5,
-  connection: { IntervalStyle: "iso_8601" },
-});
+export const postgres = wrapPostgresClient(
+  createPostgres(databaseUrl, {
+    // The pool size needs to exceed the ParallelMessageQueue concurrency (10)
+    // to leave headroom for HTTP handlers and KV store queries.  The default
+    // of 10 can cause connection starvation under federation load.
+    max: 20,
+    connect_timeout: 5,
+    connection: { IntervalStyle: "iso_8601" },
+  }),
+);
 export const db = drizzle({ client: postgres, relations, logger: getLogger() });
 
 export type Database = PostgresJsDatabase<typeof relations>;
