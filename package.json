@@ -86,6 +86,7 @@
     "@fedify/lint": "^2.2.1",
     "@reporters/github": "^1.12.0",
     "@types/fluent-ffmpeg": "^2.1.28",
+    "@types/adm-zip": "^0.5.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.5.0",
     "@types/qrcode": "^1.5.6",
