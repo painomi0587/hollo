@@ -244,7 +244,7 @@ To be released.
     the profile feed and post permalink page, the per-post like, share,
     quote, and reaction-emoji indicators now link into these pages for
     local posts; remote posts continue to display the counts as plain
-    text.
+    text.  [[#490]]
 
  -  Added avatar and header image upload to the admin account creation and
     editing forms, with drag-and-drop support and in-page image preview.
@@ -382,6 +382,7 @@ To be released.
 [#487]: https://github.com/fedify-dev/hollo/pull/487
 [#488]: https://github.com/fedify-dev/hollo/issues/488
 [#489]: https://github.com/fedify-dev/hollo/issues/489
+[#490]: https://github.com/fedify-dev/hollo/pull/490
 
 
 Version 0.8.4
