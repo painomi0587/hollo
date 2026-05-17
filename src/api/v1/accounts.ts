@@ -825,7 +825,7 @@ app.get("/:id/following", async (c) => {
   if (localOwner != null && !localOwner.followingListPublic) {
     return c.json([]);
   }
-  const followers = await db.query.follows.findMany({
+  const following = await db.query.follows.findMany({
     where: {
       RAW: (follows, { and, eq, isNotNull }) =>
         and(eq(follows.followerId, accountId), isNotNull(follows.approved))!,
@@ -834,7 +834,7 @@ app.get("/:id/following", async (c) => {
     with: { following: { with: { owner: true, successor: true } } },
   });
   return c.json(
-    followers.map((f) =>
+    following.map((f) =>
       f.following.owner == null
         ? serializeAccount(f.following, c.req.url)
         : serializeAccountOwner(
