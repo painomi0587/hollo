@@ -92,11 +92,14 @@ async function renderFollowsPage(c: Context, kind: Kind) {
       : or(ilike(accounts.name, pattern), ilike(accounts.handle, pattern)),
   );
 
-  const [{ total }] = await db
-    .select({ total: count() })
-    .from(follows)
-    .innerJoin(accounts, eq(otherColumn, accounts.id))
-    .where(where);
+  const [{ total }] =
+    pattern == null
+      ? await db.select({ total: count() }).from(follows).where(where)
+      : await db
+          .select({ total: count() })
+          .from(follows)
+          .innerJoin(accounts, eq(otherColumn, accounts.id))
+          .where(where);
 
   if (page > 1 && total === 0) return c.notFound();
   const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
