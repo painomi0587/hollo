@@ -10,6 +10,7 @@ export interface NewAccountPageProps {
     protected?: boolean;
     discoverable?: boolean;
     expandSpoilers?: boolean;
+    followingListPublic?: boolean;
     language?: string;
     visibility?: PostVisibility;
     themeColor?: ThemeColor;

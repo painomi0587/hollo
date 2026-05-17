@@ -37,6 +37,7 @@ export interface AccountFormProps {
     protected?: boolean;
     discoverable?: boolean;
     expandSpoilers?: boolean;
+    followingListPublic?: boolean;
     language?: string;
     visibility?: PostVisibility;
     themeColor?: ThemeColor;
@@ -196,6 +197,12 @@ for(var i=0;i<rows.length;i++){
           checked={props.values?.expandSpoilers}
           label="Expand content warnings by default"
           hint="Some clients, like Phanpy, use this server preference."
+        />
+        <CheckboxField
+          name="followingListPublic"
+          checked={props.values?.followingListPublic}
+          label="Make following list public"
+          hint="Show the list of accounts you follow on your public profile."
         />
       </FieldSection>
 

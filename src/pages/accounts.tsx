@@ -127,6 +127,7 @@ accounts.post("/", async (c) => {
   const protected_ = form.get("protected") != null;
   const discoverable = form.get("discoverable") != null;
   const expandSpoilers = form.get("expandSpoilers") != null;
+  const followingListPublic = form.get("followingListPublic") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -147,6 +148,7 @@ accounts.post("/", async (c) => {
           protected: protected_,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           language,
           visibility,
           themeColor,
@@ -183,6 +185,7 @@ accounts.post("/", async (c) => {
           protected: protected_,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           language,
           visibility,
           themeColor,
@@ -210,6 +213,7 @@ accounts.post("/", async (c) => {
           protected: protected_,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           language,
           visibility,
           themeColor,
@@ -320,6 +324,7 @@ accounts.post("/", async (c) => {
           themeColor,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           fields: rawFieldsRecord,
         })
         .returning();
@@ -399,6 +404,7 @@ accounts.get("/new", (c) => {
         themeColor: "azure",
         news: true,
         expandSpoilers: false,
+        followingListPublic: false,
       }}
       officialAccount={HOLLO_OFFICIAL_ACCOUNT}
       host={getInstanceHost(new URL(c.req.url))}
@@ -484,6 +490,9 @@ function AccountPage(props: AccountPageProps) {
             props.values?.discoverable ?? props.accountOwner.discoverable,
           expandSpoilers:
             props.values?.expandSpoilers ?? props.accountOwner.expandSpoilers,
+          followingListPublic:
+            props.values?.followingListPublic ??
+            props.accountOwner.followingListPublic,
           language: props.values?.language ?? props.accountOwner.language,
           visibility: props.values?.visibility ?? props.accountOwner.visibility,
           themeColor: props.values?.themeColor ?? props.accountOwner.themeColor,
@@ -521,6 +530,7 @@ accounts.post("/:id", async (c) => {
   const protected_ = form.get("protected") != null;
   const discoverable = form.get("discoverable") != null;
   const expandSpoilers = form.get("expandSpoilers") != null;
+  const followingListPublic = form.get("followingListPublic") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -542,6 +552,7 @@ accounts.post("/:id", async (c) => {
           protected: protected_,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           language,
           visibility,
           themeColor,
@@ -574,6 +585,7 @@ accounts.post("/:id", async (c) => {
           protected: protected_,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           language,
           visibility,
           themeColor,
@@ -604,6 +616,7 @@ accounts.post("/:id", async (c) => {
           protected: protected_,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           language,
           visibility,
           themeColor,
@@ -704,6 +717,7 @@ accounts.post("/:id", async (c) => {
           themeColor,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           fields: updateRawFieldsRecord,
         })
         .where(eq(accountOwners.id, accountId));
