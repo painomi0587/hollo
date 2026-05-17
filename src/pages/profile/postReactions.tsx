@@ -222,7 +222,9 @@ postReactions.get("/reactions/:emoji", async (c) => {
   });
 
   const { newerUrl, olderUrl } = paginationUrls(page, page * PAGE_SIZE < total);
-  const customEmojiUrl = rows.find((r) => r.customEmoji != null)?.customEmoji;
+  const customEmojiUrl = post.reactions.find(
+    (r) => r.emoji === emoji && r.customEmoji != null,
+  )?.customEmoji;
   const proxiedEmojiUrl =
     customEmojiUrl == null ? null : proxyUrl(customEmojiUrl, c.req.url);
   const emojiNode =
