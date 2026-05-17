@@ -107,7 +107,7 @@ async function renderFollowsPage(c: Context, kind: Kind) {
     .from(follows)
     .innerJoin(accounts, eq(otherColumn, accounts.id))
     .where(where)
-    .orderBy(desc(follows.approved))
+    .orderBy(desc(follows.approved), desc(otherColumn))
     .limit(PAGE_SIZE)
     .offset((page - 1) * PAGE_SIZE);
 
