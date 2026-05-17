@@ -3,6 +3,7 @@ import {
   Announce,
   InteractionPolicy,
   InteractionRule,
+  Mention,
   Note,
   Person,
   PUBLIC_COLLECTION,
@@ -487,6 +488,51 @@ describe("persistPost", () => {
 
     expect(result).not.toBeNull();
     expect(result?.published).toEqual(preEpochDate);
+  });
+
+  it("does not treat remote mention profile links as preview-card links", async () => {
+    expect.assertions(3);
+    const author = await seedRemoteAccount("author");
+    const mentioned = await seedRemoteAccount("mentioned");
+    const mentionedProfileUrl = "https://remote.test/users/mentioned";
+    await db
+      .update(accounts)
+      .set({ url: mentionedProfileUrl })
+      .where(eq(accounts.id, mentioned.id));
+
+    const result = await persistPost(
+      db,
+      new Note({
+        id: new URL("https://remote.test/@author/posts/mention-only"),
+        attribution: createPerson(author),
+        content:
+          `<p><a href="${mentionedProfileUrl}">` +
+          "@<bdi>mentioned@remote.test</bdi></a> hello</p>",
+        tags: [
+          new Mention({
+            href: new URL(mentioned.iri),
+            name: mentioned.handle,
+          }),
+        ],
+        to: PUBLIC_COLLECTION,
+      }),
+      "https://hollo.test",
+      { account: author },
+    );
+    if (result == null) throw new Error("Failed to persist post");
+
+    const post = await db.query.posts.findFirst({
+      where: { id: { eq: result.id } },
+    });
+    const mentionRows = await db.query.mentions.findMany({
+      where: { postId: { eq: result.id } },
+    });
+
+    expect(result).not.toBeNull();
+    expect(post?.previewCard).toBeNull();
+    expect(mentionRows).toEqual([
+      { accountId: mentioned.id, postId: result.id },
+    ]);
   });
 });
 

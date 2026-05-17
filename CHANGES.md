@@ -177,6 +177,12 @@ To be released.
     to 10 custom fields via `fields_attributes[0]` through
     `fields_attributes[9]`.
 
+ -  Fixed preview card generation for remote posts whose content only links to
+    mentioned accounts.  Hollo now excludes ActivityPub `Mention` targets from
+    remote preview-card link detection even when the source server, such as
+    NodeBB, emits plain profile links in the post HTML instead of links marked
+    with a `mention` class.
+
  -  Fixed a bug in `PATCH /api/v1/accounts/update_credentials` where
     submitting any credential update (e.g. `display_name`) without
     `fields_attributes` would silently wipe all existing custom profile

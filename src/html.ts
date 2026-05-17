@@ -11,10 +11,28 @@ async function getCheerio() {
   return await cheerioPromise;
 }
 
-export async function extractPreviewLink(html: string): Promise<string | null> {
+export async function extractPreviewLink(
+  html: string,
+  ignoredLinks: Iterable<string> = [],
+): Promise<string | null> {
   const cheerio = await getCheerio();
   const $ = cheerio.load(html);
-  return $("a[href]:not([rel=tag]):not(.mention):last").attr("href") ?? null;
+  const ignored = new Set([...ignoredLinks].map(normalizeLink));
+  const links = $("a[href]:not([rel=tag]):not(.mention)").toArray().reverse();
+  for (const link of links) {
+    const href = $(link).attr("href");
+    if (href == null || ignored.has(normalizeLink(href))) continue;
+    return href;
+  }
+  return null;
+}
+
+function normalizeLink(link: string): string {
+  try {
+    return new URL(link).href;
+  } catch {
+    return link;
+  }
 }
 
 export async function extractText(html: string | null): Promise<string | null> {

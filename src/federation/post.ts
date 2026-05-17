@@ -236,6 +236,8 @@ export async function persistPost(
   }
   const tags: Record<string, string> = {};
   const emojis: Record<string, string> = {};
+  const mentionedAccounts = new Map<Uuid, Account>();
+  const previewLinkExclusions = new Set<string>();
   let objectLink: URL | null = null; // FEP-e232
   for await (const tag of object.getTags(options)) {
     if (tag instanceof Hashtag && tag.name != null && tag.href != null) {
@@ -249,6 +251,21 @@ export async function persistPost(
         href = icon.url.href.href;
       } else href = icon.url.href;
       emojis[tag.name.toString()] = href;
+    } else if (tag instanceof vocab.Mention && tag.href != null) {
+      previewLinkExclusions.add(tag.href.href);
+      if (tag.name == null) continue;
+      const account = await persistAccountByIri(
+        db,
+        tag.href.href,
+        baseUrl,
+        options,
+      );
+      if (account == null) continue;
+      mentionedAccounts.set(account.id, account);
+      // Some servers, including NodeBB, put plain profile links in content
+      // HTML and carry the real mention semantics only in ActivityStreams tags.
+      previewLinkExclusions.add(account.iri);
+      if (account.url != null) previewLinkExclusions.add(account.url);
     } else if (
       objectLink == null &&
       tag instanceof Link &&
@@ -309,7 +326,10 @@ export async function persistPost(
   const previewLink =
     object.content == null
       ? null
-      : await extractPreviewLink(object.content.toString());
+      : await extractPreviewLink(
+          object.content.toString(),
+          previewLinkExclusions,
+        );
   const previewCard =
     previewLink == null ? null : await fetchPreviewCard(previewLink);
   const quoteAuthorizationIri = await getVerifiedQuoteAuthorizationIri(
@@ -470,27 +490,18 @@ export async function persistPost(
   }
   const mentionRows: Mention[] = [];
   await db.delete(mentions).where(eq(mentions.postId, post.id));
-  for await (const tag of object.getTags(options)) {
-    if (tag instanceof vocab.Mention && tag.name != null && tag.href != null) {
-      const account = await persistAccountByIri(
-        db,
-        tag.href.href,
-        baseUrl,
-        options,
-      );
-      if (account == null) continue;
-      const result = await db
-        .insert(mentions)
-        .values({
-          accountId: account.id,
-          postId: post.id,
-        })
-        .onConflictDoNothing({
-          target: [mentions.accountId, mentions.postId],
-        })
-        .returning();
-      mentionRows.push(...result);
-    }
+  for (const account of mentionedAccounts.values()) {
+    const result = await db
+      .insert(mentions)
+      .values({
+        accountId: account.id,
+        postId: post.id,
+      })
+      .onConflictDoNothing({
+        target: [mentions.accountId, mentions.postId],
+      })
+      .returning();
+    mentionRows.push(...result);
   }
   await db.delete(media).where(eq(media.postId, post.id));
   for await (const attachment of object.getAttachments(options)) {
