@@ -98,7 +98,7 @@ To be released.
     origin.  This sidesteps CORS configurations on remote object stores
     and prevents the visitor's browser from talking directly to the
     source server.  Controlled by a new `MEDIA_PROXY` environment
-    variable with three levels:  [[#481], [#483]]
+    variable with three levels:  [[#481], [#483], [#493]]
 
      -  `off` (default): the Mastodon API and web UI hand the original
         remote URL to clients, matching the historical behaviour.
@@ -404,6 +404,7 @@ To be released.
 [#489]: https://github.com/fedify-dev/hollo/issues/489
 [#490]: https://github.com/fedify-dev/hollo/pull/490
 [#491]: https://github.com/fedify-dev/hollo/pull/491
+[#493]: https://github.com/fedify-dev/hollo/pull/493
 
 
 Version 0.8.4
