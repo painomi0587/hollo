@@ -114,9 +114,10 @@ To be released.
         to the configured storage backend as `proxy/<sha256>.bin`, with
         a content-type sidecar alongside it at `proxy/<sha256>.json`.
         Subsequent requests skip the upstream fetch.  Remote actor avatars
-        are also prefetched into this same cache when the actor is stored
-        or refreshed, so stale upstream avatar files can keep rendering
-        after Hollo has seen them once.  The admin dashboard at
+        for accounts with an approved follow relationship to the local
+        account are also prefetched into this same cache when the actor is
+        stored or refreshed, so stale upstream avatar files can keep
+        rendering after Hollo has seen them once.  The admin dashboard at
         */thumbnail\_cleanup* can purge the cache on demand.
 
     `MEDIA_PROXY` also accepts the Boolean synonyms `true`/`on`/`1`

@@ -21,6 +21,27 @@ async function waitFor(condition: () => Promise<boolean>): Promise<void> {
   }
 }
 
+function getFetchMockCalls(): Parameters<typeof fetch>[] {
+  return (
+    globalThis.fetch as unknown as {
+      mock: { calls: Parameters<typeof fetch>[] };
+    }
+  ).mock.calls;
+}
+
+function isFetchCallForUrl(
+  [input]: Parameters<typeof fetch>,
+  url: string,
+): boolean {
+  const requestUrl =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+  return requestUrl === url;
+}
+
 async function createRemoteAccount(params: {
   iri: string;
   handle: string;
@@ -326,7 +347,36 @@ describe.sequential("persistAccount remote avatar cache", () => {
     drive.restore();
   });
 
-  it("prefetches the remote avatar into the proxy cache in cache mode", async () => {
+  it("does not prefetch unrelated remote avatars in cache mode", async () => {
+    expect.assertions(3);
+
+    const avatarUrl = "https://remote.test/users/michael/avatar.webp";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 })),
+    );
+
+    const account = await persistAccount(
+      db,
+      createRemotePerson(
+        "https://remote.test/users/michael",
+        "michael",
+        avatarUrl,
+      ),
+      "https://hollo.test",
+      { mediaProxyMode: "cache" },
+    );
+
+    const key = proxyCacheKeyForUrl(avatarUrl);
+
+    expect(account?.avatarUrl).toBe(avatarUrl);
+    expect(
+      getFetchMockCalls().some((call) => isFetchCallForUrl(call, avatarUrl)),
+    ).toBe(false);
+    expect(await drive.use().exists(`${key}.bin`)).toBe(false);
+  });
+
+  it("prefetches a related remote avatar into the proxy cache in cache mode", async () => {
     expect.assertions(6);
 
     const avatarUrl = "https://remote.test/users/michael/avatar.webp";
@@ -351,6 +401,26 @@ describe.sequential("persistAccount remote avatar cache", () => {
       }),
     );
 
+    const initialAccount = await persistAccount(
+      db,
+      createRemotePerson(
+        "https://remote.test/users/michael",
+        "michael",
+        avatarUrl,
+      ),
+      "https://hollo.test",
+      { mediaProxyMode: "cache" },
+    );
+    if (initialAccount == null) throw new Error("Expected remote account");
+
+    const localAccount = await createAccount();
+    await db.insert(Schema.follows).values({
+      iri: "https://hollo.test/#follows/remote-michael",
+      followingId: initialAccount.id,
+      followerId: localAccount.id,
+      approved: new Date(),
+    });
+
     const account = await persistAccount(
       db,
       createRemotePerson(
@@ -367,8 +437,8 @@ describe.sequential("persistAccount remote avatar cache", () => {
 
     expect(account?.avatarUrl).toBe(avatarUrl);
     expect(await disk.exists(`${key}.bin`)).toBe(false);
-    await waitFor(
-      async () => vi.mocked(globalThis.fetch).mock.calls.length > 0,
+    await waitFor(async () =>
+      getFetchMockCalls().some((call) => isFetchCallForUrl(call, avatarUrl)),
     );
     expect(globalThis.fetch).toHaveBeenCalledWith(
       avatarUrl,

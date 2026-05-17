@@ -57,6 +57,7 @@ export const REFRESH_ACTORS_ON_INTERACTION =
   refreshOnInteractionEnv === "yes";
 
 export type PersistAccountHandleConflictPolicy = "throw" | "skip";
+export type AvatarCachePrefetchPolicy = "always" | "related" | "never";
 
 export class AccountHandleConflictError extends Error {
   readonly actorIri: string;
@@ -93,6 +94,7 @@ export type PersistAccountOptions = {
   skipUpdate?: boolean;
   handleConflictPolicy?: PersistAccountHandleConflictPolicy;
   mediaProxyMode?: MediaProxyMode;
+  avatarCachePrefetch?: AvatarCachePrefetchPolicy;
 };
 
 function getAcctUri(handle: string): string {
@@ -166,6 +168,56 @@ function skipAccountConflict(error: AccountHandleConflictError): void {
       reason: error.reason,
     },
   );
+}
+
+async function hasApprovedLocalFollowRelationship(
+  db: DatabaseLike,
+  accountId: Uuid,
+): Promise<boolean> {
+  const followedByLocal = await db
+    .select({ iri: schema.follows.iri })
+    .from(schema.follows)
+    .innerJoin(
+      schema.accountOwners,
+      eq(schema.follows.followerId, schema.accountOwners.id),
+    )
+    .where(
+      and(
+        eq(schema.follows.followingId, accountId),
+        isNotNull(schema.follows.approved),
+      ),
+    )
+    .limit(1);
+  if (followedByLocal.length > 0) return true;
+
+  const followingLocal = await db
+    .select({ iri: schema.follows.iri })
+    .from(schema.follows)
+    .innerJoin(
+      schema.accountOwners,
+      eq(schema.follows.followingId, schema.accountOwners.id),
+    )
+    .where(
+      and(
+        eq(schema.follows.followerId, accountId),
+        isNotNull(schema.follows.approved),
+      ),
+    )
+    .limit(1);
+  return followingLocal.length > 0;
+}
+
+async function shouldPrefetchAvatar(
+  db: DatabaseLike,
+  account: schema.Account & { owner: schema.AccountOwner | null },
+  mode: MediaProxyMode,
+  avatarUrl: string | null | undefined,
+  policy: AvatarCachePrefetchPolicy,
+): Promise<boolean> {
+  if (mode !== "cache" || avatarUrl == null) return false;
+  if (account.owner != null || policy === "never") return false;
+  if (policy === "always") return true;
+  return await hasApprovedLocalFollowRelationship(db, account.id);
 }
 
 export function getFollowOrderingKey(
@@ -350,12 +402,20 @@ export async function persistAccount(
     where: { iri: { eq: actorId.href } },
   });
   if (account == null) return null;
-  // This is cache warming only.  Account persistence should not wait for a
-  // slow remote avatar CDN after the database row has already been stored.
-  scheduleProxyCachePrefetchForMode(
-    options.mediaProxyMode ?? MEDIA_PROXY,
-    values.avatarUrl,
-  );
+  const mediaProxyMode = options.mediaProxyMode ?? MEDIA_PROXY;
+  if (
+    await shouldPrefetchAvatar(
+      db,
+      account,
+      mediaProxyMode,
+      values.avatarUrl,
+      options.avatarCachePrefetch ?? "related",
+    )
+  ) {
+    // This is cache warming only.  Account persistence should not wait for a
+    // slow remote avatar CDN after the database row has already been stored.
+    scheduleProxyCachePrefetchForMode(mediaProxyMode, values.avatarUrl);
+  }
   const [{ posts }] = await db
     .select({ posts: count() })
     .from(schema.posts)
