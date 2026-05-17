@@ -75,12 +75,12 @@ function resolveTimelineCursor(query: { min_id?: Uuid; since_id?: Uuid }): {
   };
 }
 
-// Build Mastodon-compatible bidirectional pagination Link header for a
-// timeline response.  `timeline` must be ordered newest-first (DESC by id).
+// Build Mastodon-compatible bidirectional pagination Link headers for every
+// non-empty timeline response.  `timeline` must be ordered newest-first
+// (DESC by id).
 function buildTimelineLinkHeader(
   requestUrl: string,
   timeline: readonly { id: Uuid }[],
-  limit: number,
 ): { Link: string } | undefined {
   if (timeline.length === 0) return undefined;
   const baseUrl = new URL(requestUrl);
@@ -88,11 +88,9 @@ function buildTimelineLinkHeader(
   baseUrl.searchParams.delete("min_id");
   baseUrl.searchParams.delete("since_id");
   const linkParts: string[] = [];
-  if (timeline.length >= limit) {
-    const next = new URL(baseUrl);
-    next.searchParams.set("max_id", timeline[timeline.length - 1].id);
-    linkParts.push(`<${next.href}>; rel="next"`);
-  }
+  const next = new URL(baseUrl);
+  next.searchParams.set("max_id", timeline[timeline.length - 1].id);
+  linkParts.push(`<${next.href}>; rel="next"`);
   const prev = new URL(baseUrl);
   prev.searchParams.set("min_id", timeline[0].id);
   linkParts.push(`<${prev.href}>; rel="prev"`);
@@ -283,7 +281,7 @@ app.get(
     return c.json(
       timeline.map((p) => serializePost(p, owner, c.req.url)),
       200,
-      buildTimelineLinkHeader(c.req.url, timeline, query.limit),
+      buildTimelineLinkHeader(c.req.url, timeline),
     );
   },
 );
@@ -616,7 +614,7 @@ app.get(
     return c.json(
       timeline.map((p) => serializePost(p, owner, c.req.url)),
       200,
-      buildTimelineLinkHeader(c.req.url, timeline, query.limit),
+      buildTimelineLinkHeader(c.req.url, timeline),
     );
   },
 );
@@ -940,7 +938,7 @@ app.get(
     return c.json(
       timeline.map((p) => serializePost(p, owner, c.req.url)),
       200,
-      buildTimelineLinkHeader(c.req.url, timeline, query.limit),
+      buildTimelineLinkHeader(c.req.url, timeline),
     );
   },
 );
@@ -1055,7 +1053,7 @@ app.get(
     return c.json(
       timeline.map((p) => serializePost(p, owner, c.req.url)),
       200,
-      buildTimelineLinkHeader(c.req.url, timeline, query.limit),
+      buildTimelineLinkHeader(c.req.url, timeline),
     );
   },
 );

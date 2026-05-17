@@ -640,6 +640,30 @@ describe.sequential("/api/v1/timelines/public (pagination)", () => {
     expect(link).toContain(`max_id=${postIds[6]}>; rel="next"`);
   });
 
+  it('keeps rel="next" on non-empty partial gap pages', async () => {
+    expect.assertions(5);
+
+    const response = await fetchTimeline(
+      `?limit=10&max_id=${postIds[12]}&min_id=${postIds[5]}`,
+    );
+    expect(response.status).toBe(200);
+
+    const json = (await response.json()) as { id: string }[];
+    expect(json.map((p) => p.id)).toEqual([
+      postIds[11],
+      postIds[10],
+      postIds[9],
+      postIds[8],
+      postIds[7],
+      postIds[6],
+    ]);
+
+    const link = response.headers.get("Link") ?? "";
+    expect(link).toContain(`max_id=${postIds[6]}>; rel="next"`);
+    expect(link).toContain(`min_id=${postIds[11]}>; rel="prev"`);
+    expect(link).not.toContain("since_id=");
+  });
+
   it("returns the newest posts above the cursor when only since_id is set", async () => {
     expect.assertions(2);
 

@@ -306,8 +306,10 @@ To be released.
     `since_id` is now honoured on these endpoints as well, and `min_id`
     takes precedence when both are supplied.  Timeline responses also
     include a `rel="prev"` entry in the `Link` header alongside the existing
-    `rel="next"` entry, so clients no longer have to guess which cursor
-    parameter to use.  [[#479], [#482]]
+    `rel="next"` entry, and keep `rel="next"` even when a bounded gap page
+    returns fewer statuses than the requested `limit`, so clients no longer
+    have to guess which cursor parameter to use or stop walking partial gaps.
+    [[#479], [#482], [#492]]
 
  -  Optimized Mastodon-compatible timeline loading after the Drizzle ORM
     upgrade.  Home, list, public, and hashtag timelines now use a smaller
@@ -405,6 +407,7 @@ To be released.
 [#489]: https://github.com/fedify-dev/hollo/issues/489
 [#490]: https://github.com/fedify-dev/hollo/pull/490
 [#491]: https://github.com/fedify-dev/hollo/pull/491
+[#492]: https://github.com/fedify-dev/hollo/issues/492
 [#493]: https://github.com/fedify-dev/hollo/pull/493
 
 
