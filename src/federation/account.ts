@@ -21,6 +21,8 @@ import { getLogger } from "@logtape/logtape";
 import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { DatabaseLike } from "../db";
+import { MEDIA_PROXY, type MediaProxyMode } from "../media-proxy";
+import { prefetchProxyCacheForMode } from "../proxy-cache";
 import type { NewPinnedPost, Post } from "../schema";
 import * as schema from "../schema";
 import { type Uuid, uuidv7 } from "../uuid";
@@ -90,6 +92,7 @@ export type PersistAccountOptions = {
   documentLoader?: DocumentLoader;
   skipUpdate?: boolean;
   handleConflictPolicy?: PersistAccountHandleConflictPolicy;
+  mediaProxyMode?: MediaProxyMode;
 };
 
 function getAcctUri(handle: string): string {
@@ -347,6 +350,10 @@ export async function persistAccount(
     where: { iri: { eq: actorId.href } },
   });
   if (account == null) return null;
+  await prefetchProxyCacheForMode(
+    options.mediaProxyMode ?? MEDIA_PROXY,
+    values.avatarUrl,
+  );
   const [{ posts }] = await db
     .select({ posts: count() })
     .from(schema.posts)

@@ -1,10 +1,12 @@
-import { Person } from "@fedify/vocab";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Image, Person } from "@fedify/vocab";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanDatabase } from "../../tests/helpers";
 import { createAccount } from "../../tests/helpers/oauth";
 import db from "../db";
+import { proxyCacheKeyForUrl } from "../proxy-cache";
 import * as Schema from "../schema";
+import { drive } from "../storage";
 import type { Uuid } from "../uuid";
 import {
   AccountHandleConflictError,
@@ -78,13 +80,19 @@ async function createLocalPost(accountId: Uuid): Promise<Schema.Post> {
   return post;
 }
 
-function createRemotePerson(iri: string, username: string): Person {
+function createRemotePerson(
+  iri: string,
+  username: string,
+  avatarUrl?: string,
+): Person {
   return new Person({
     id: new URL(iri),
     preferredUsername: username,
     name: "Michael Foster",
     inbox: new URL(`${iri}/inbox`),
     url: new URL(`https://${new URL(iri).host}/@${username}`),
+    icon:
+      avatarUrl == null ? undefined : new Image({ url: new URL(avatarUrl) }),
   });
 }
 
@@ -296,5 +304,66 @@ describe.sequential("persistAccount canonical handle reassignment", () => {
       expect(error).toBeInstanceOf(AccountHandleConflictError);
       expect((error as AccountHandleConflictError).reason).toBe("local");
     }
+  });
+});
+
+describe.sequential("persistAccount remote avatar cache", () => {
+  beforeEach(async () => {
+    await cleanDatabase();
+    drive.fake();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  afterEach(() => {
+    drive.restore();
+  });
+
+  it("prefetches the remote avatar into the proxy cache in cache mode", async () => {
+    expect.assertions(5);
+
+    const avatarUrl = "https://remote.test/users/michael/avatar.webp";
+    const avatar = new Uint8Array([10, 20, 30, 40]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        if (requestUrl === avatarUrl) {
+          return new Response(avatar.buffer as ArrayBuffer, {
+            status: 200,
+            headers: { "Content-Type": "image/webp" },
+          });
+        }
+        return new Response(null, { status: 404 });
+      }),
+    );
+
+    const account = await persistAccount(
+      db,
+      createRemotePerson(
+        "https://remote.test/users/michael",
+        "michael",
+        avatarUrl,
+      ),
+      "https://hollo.test",
+      { mediaProxyMode: "cache" },
+    );
+
+    const disk = drive.use();
+    const key = proxyCacheKeyForUrl(avatarUrl);
+
+    expect(account?.avatarUrl).toBe(avatarUrl);
+    expect(await disk.exists(`${key}.bin`)).toBe(true);
+    expect(await disk.exists(`${key}.json`)).toBe(true);
+    expect(await disk.getBytes(`${key}.bin`)).toEqual(avatar);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      avatarUrl,
+      expect.any(Object),
+    );
   });
 });
