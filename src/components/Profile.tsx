@@ -71,18 +71,33 @@ export function Profile({ accountOwner, baseUrl }: ProfileProps) {
             </span>
           </p>
           <p class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-neutral-600 dark:text-neutral-400">
-            <span>
-              <strong class="font-semibold text-brand-700 dark:text-brand-400">
-                {numberFormatter.format(account.followingCount ?? 0)}
-              </strong>{" "}
-              following
-            </span>
-            <span>
+            {accountOwner.followingListPublic ? (
+              <a
+                href={`/@${accountOwner.handle}/following`}
+                class="transition-colors hover:text-brand-700 dark:hover:text-brand-400"
+              >
+                <strong class="font-semibold text-brand-700 dark:text-brand-400">
+                  {numberFormatter.format(account.followingCount ?? 0)}
+                </strong>{" "}
+                following
+              </a>
+            ) : (
+              <span>
+                <strong class="font-semibold text-brand-700 dark:text-brand-400">
+                  {numberFormatter.format(account.followingCount ?? 0)}
+                </strong>{" "}
+                following
+              </span>
+            )}
+            <a
+              href={`/@${accountOwner.handle}/followers`}
+              class="transition-colors hover:text-brand-700 dark:hover:text-brand-400"
+            >
               <strong class="font-semibold text-brand-700 dark:text-brand-400">
                 {numberFormatter.format(account.followersCount ?? 0)}
               </strong>{" "}
               {account.followersCount === 1 ? "follower" : "followers"}
-            </span>
+            </a>
           </p>
           {bioHtml && (
             <div
