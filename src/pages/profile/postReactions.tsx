@@ -285,7 +285,7 @@ postReactions.get("/quotes", async (c) => {
     >
       <div class="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
         {quoteRows.map((q) => (
-          <PostView post={q} baseUrl={c.req.url} />
+          <PostView key={q.id} post={q} baseUrl={c.req.url} />
         ))}
       </div>
     </ReactionListPage>,
