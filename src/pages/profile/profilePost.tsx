@@ -12,6 +12,7 @@ import {
   type Reaction,
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
+import { postViewRelations } from "./postRelations.ts";
 import { summarizePostForTitle } from "./summary.ts";
 
 const profilePost = new Hono();
@@ -35,85 +36,13 @@ profilePost.get<"/:handle{@[^/]+}/:id{[-a-f0-9]+}">(async (c) => {
         )!,
     },
     with: {
-      account: { with: { owner: true } },
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          quoteTarget: {
-            with: {
-              account: { with: { owner: true } },
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: {
-                with: { account: { with: { owner: true } } },
-              },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: { with: { owner: true } } } },
-      quoteTarget: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          reactions: true,
-        },
-      },
+      ...postViewRelations,
       replies: {
         where: { visibility: { in: ["public", "unlisted"] } },
         orderBy: (posts, { desc }) => [desc(posts.published)],
         limit: 20,
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          sharing: {
-            with: {
-              account: { with: { owner: true } },
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: {
-                with: { account: { with: { owner: true } } },
-              },
-              quoteTarget: {
-                with: {
-                  account: { with: { owner: true } },
-                  media: true,
-                  poll: { with: { options: true } },
-                  replyTarget: {
-                    with: { account: { with: { owner: true } } },
-                  },
-                  reactions: true,
-                },
-              },
-              reactions: true,
-            },
-          },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          quoteTarget: {
-            with: {
-              account: { with: { owner: true } },
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: {
-                with: { account: { with: { owner: true } } },
-              },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
+        with: postViewRelations,
       },
-      reactions: true,
     },
   });
   if (post == null) return c.notFound();

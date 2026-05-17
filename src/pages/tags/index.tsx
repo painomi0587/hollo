@@ -11,6 +11,7 @@ import {
   type Post,
   type Reaction,
 } from "../../schema.ts";
+import { postViewRelations } from "../profile/postRelations.ts";
 
 const tags = new Hono().basePath("/:tag");
 
@@ -36,40 +37,7 @@ tags.get(async (c) => {
         )!,
     },
     orderBy: (posts, { desc }) => [desc(posts.id)],
-    with: {
-      account: { with: { owner: true } },
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          quoteTarget: {
-            with: {
-              account: { with: { owner: true } },
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: { with: { owner: true } } } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: { with: { owner: true } } } },
-      quoteTarget: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   return c.html(<TagPage tag={tag} posts={postList} baseUrl={c.req.url} />);
 });

@@ -8,6 +8,7 @@ import db from "../../db.ts";
 import { proxyUrl } from "../../media-proxy.ts";
 import { type AccountOwner, likes, posts, reactions } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
+import { postViewRelations } from "./postRelations.ts";
 import { summarizePostForTitle } from "./summary.ts";
 
 const PAGE_SIZE = 100;
@@ -36,42 +37,7 @@ async function loadLocalPost(c: Context): Promise<{
           or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
         )!,
     },
-    with: {
-      account: { with: { owner: true } },
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          quoteTarget: {
-            with: {
-              account: { with: { owner: true } },
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: {
-                with: { account: { with: { owner: true } } },
-              },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: { with: { owner: true } } } },
-      quoteTarget: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   if (post == null) return null;
   return { accountOwner, post };
@@ -300,42 +266,7 @@ postReactions.get("/quotes", async (c) => {
     orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
-    with: {
-      account: { with: { owner: true } },
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          quoteTarget: {
-            with: {
-              account: { with: { owner: true } },
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: {
-                with: { account: { with: { owner: true } } },
-              },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: { with: { owner: true } } } },
-      quoteTarget: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
 
   const { newerUrl, olderUrl } = paginationUrls(page, page * PAGE_SIZE < total);

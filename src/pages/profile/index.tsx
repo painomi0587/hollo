@@ -19,6 +19,7 @@ import {
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
 import postReactions from "./postReactions.tsx";
+import { postViewRelations } from "./postRelations.ts";
 import profilePost from "./profilePost.tsx";
 
 const profile = new Hono();
@@ -75,90 +76,14 @@ profile.get<"/:handle">(async (c) => {
     orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
-    with: {
-      account: { with: { owner: true } },
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          quoteTarget: {
-            with: {
-              account: { with: { owner: true } },
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: { with: { owner: true } } } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: { with: { owner: true } } } },
-      quoteTarget: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   const pinnedPostList =
     cont == null
       ? await db.query.pinnedPosts.findMany({
           where: { accountId: { eq: owner.id } },
           orderBy: (pinnedPosts, { desc }) => [desc(pinnedPosts.index)],
-          with: {
-            post: {
-              with: {
-                account: { with: { owner: true } },
-                media: true,
-                poll: { with: { options: true } },
-                sharing: {
-                  with: {
-                    account: { with: { owner: true } },
-                    media: true,
-                    poll: { with: { options: true } },
-                    replyTarget: {
-                      with: { account: { with: { owner: true } } },
-                    },
-                    quoteTarget: {
-                      with: {
-                        account: { with: { owner: true } },
-                        media: true,
-                        poll: { with: { options: true } },
-                        replyTarget: {
-                          with: { account: { with: { owner: true } } },
-                        },
-                        reactions: true,
-                      },
-                    },
-                    reactions: true,
-                  },
-                },
-                replyTarget: { with: { account: { with: { owner: true } } } },
-                quoteTarget: {
-                  with: {
-                    account: { with: { owner: true } },
-                    media: true,
-                    poll: { with: { options: true } },
-                    replyTarget: {
-                      with: { account: { with: { owner: true } } },
-                    },
-                    reactions: true,
-                  },
-                },
-                reactions: true,
-              },
-            },
-          },
+          with: { post: { with: postViewRelations } },
         })
       : [];
   const featuredTagList = await db.query.featuredTags.findMany({
@@ -237,40 +162,7 @@ profile.get("/tagged/:tag", async (c) => {
     orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
-    with: {
-      account: { with: { owner: true } },
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          quoteTarget: {
-            with: {
-              account: { with: { owner: true } },
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: { with: { owner: true } } } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: { with: { owner: true } } } },
-      quoteTarget: {
-        with: {
-          account: { with: { owner: true } },
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: { with: { owner: true } } } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   const featuredTagList = await db.query.featuredTags.findMany({
     where: { accountOwnerId: { eq: owner.id } },
