@@ -1,0 +1,1 @@
+ALTER TABLE "account_owners" ADD COLUMN "following_list_public" boolean DEFAULT false NOT NULL;

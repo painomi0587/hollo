@@ -249,6 +249,9 @@ export const accountOwners = pgTable(
     language: text("language").notNull().default("en"),
     discoverable: boolean().notNull().default(false),
     expandSpoilers: boolean("expand_spoilers").notNull().default(false),
+    followingListPublic: boolean("following_list_public")
+      .notNull()
+      .default(false),
     themeColor: themeColorEnum("theme_color").notNull(),
   },
   (table) => [

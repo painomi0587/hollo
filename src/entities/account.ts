@@ -65,6 +65,7 @@ export function serializeAccountOwner(
   return {
     ...serializeAccount(accountOwner.account, baseUrl),
     discoverable: accountOwner.discoverable,
+    hide_collections: !accountOwner.followingListPublic,
     source: accountOwner && {
       note: accountOwner.bio,
       privacy: accountOwner.visibility,
