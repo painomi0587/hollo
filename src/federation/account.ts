@@ -22,7 +22,7 @@ import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { DatabaseLike } from "../db";
 import { MEDIA_PROXY, type MediaProxyMode } from "../media-proxy";
-import { prefetchProxyCacheForMode } from "../proxy-cache";
+import { scheduleProxyCachePrefetchForMode } from "../proxy-cache";
 import type { NewPinnedPost, Post } from "../schema";
 import * as schema from "../schema";
 import { type Uuid, uuidv7 } from "../uuid";
@@ -352,7 +352,7 @@ export async function persistAccount(
   if (account == null) return null;
   // This is cache warming only.  Account persistence should not wait for a
   // slow remote avatar CDN after the database row has already been stored.
-  void prefetchProxyCacheForMode(
+  scheduleProxyCachePrefetchForMode(
     options.mediaProxyMode ?? MEDIA_PROXY,
     values.avatarUrl,
   );

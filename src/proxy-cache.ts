@@ -14,6 +14,8 @@ export const PROXY_CACHE_CONTROL = "public, max-age=2592000, immutable";
 
 const MAX_BYTES = 32 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 30_000;
+export const PROXY_CACHE_PREFETCH_CONCURRENCY = 4;
+const MAX_PROXY_CACHE_PREFETCH_QUEUE = 1024;
 const MAX_REDIRECTS = 3;
 const CACHE_PREFIX = "proxy/";
 const ALLOWED_TYPE_PREFIXES = ["image/", "video/", "audio/"];
@@ -304,4 +306,52 @@ export async function prefetchProxyCacheForMode(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+type ProxyCachePrefetchJob = {
+  key: string;
+  mode: MediaProxyMode;
+  url: string;
+};
+
+const proxyCachePrefetchQueue: ProxyCachePrefetchJob[] = [];
+const scheduledProxyCachePrefetchKeys = new Set<string>();
+let activeProxyCachePrefetches = 0;
+
+function drainProxyCachePrefetchQueue(): void {
+  while (
+    activeProxyCachePrefetches < PROXY_CACHE_PREFETCH_CONCURRENCY &&
+    proxyCachePrefetchQueue.length > 0
+  ) {
+    const job = proxyCachePrefetchQueue.shift();
+    if (job == null) return;
+    activeProxyCachePrefetches++;
+    void prefetchProxyCacheForMode(job.mode, job.url).finally(() => {
+      activeProxyCachePrefetches--;
+      scheduledProxyCachePrefetchKeys.delete(job.key);
+      drainProxyCachePrefetchQueue();
+    });
+  }
+}
+
+export function scheduleProxyCachePrefetchForMode(
+  mode: MediaProxyMode,
+  url: string | null | undefined,
+): boolean {
+  if (mode !== "cache" || url == null) return false;
+  const key = proxyCacheKeyForUrl(url);
+  if (scheduledProxyCachePrefetchKeys.has(key)) return false;
+  if (
+    activeProxyCachePrefetches + proxyCachePrefetchQueue.length >=
+    PROXY_CACHE_PREFETCH_CONCURRENCY + MAX_PROXY_CACHE_PREFETCH_QUEUE
+  ) {
+    logger.warn("Dropping remote media cache prefetch for {url}: queue full", {
+      url,
+    });
+    return false;
+  }
+  scheduledProxyCachePrefetchKeys.add(key);
+  proxyCachePrefetchQueue.push({ key, mode, url });
+  drainProxyCachePrefetchQueue();
+  return true;
 }

@@ -10,8 +10,20 @@ import {
 
 import { signProxyUrl } from "./media-proxy";
 import { createProxyApp } from "./proxy";
-import { prefetchProxyCacheForMode, proxyCacheKeyForUrl } from "./proxy-cache";
+import {
+  prefetchProxyCacheForMode,
+  PROXY_CACHE_PREFETCH_CONCURRENCY,
+  proxyCacheKeyForUrl,
+  scheduleProxyCachePrefetchForMode,
+} from "./proxy-cache";
 import { drive } from "./storage";
+
+async function waitFor(condition: () => Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    if (await condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 function buildResponse(
   body: Uint8Array | string,
@@ -116,5 +128,72 @@ describe.sequential("proxy cache prefetch", () => {
     expect(await drive.use().exists(`${proxyCacheKeyForUrl(svgUrl)}.bin`)).toBe(
       false,
     );
+  });
+
+  it("deduplicates scheduled prefetches for the same cache key", async () => {
+    expect.assertions(4);
+
+    let resolveFetch: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      async () =>
+        await new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const url = "https://remote.example/dedupe.png";
+    const key = proxyCacheKeyForUrl(url);
+
+    expect(scheduleProxyCachePrefetchForMode("cache", url)).toBe(true);
+    expect(scheduleProxyCachePrefetchForMode("cache", url)).toBe(false);
+    await waitFor(async () => fetchMock.mock.calls.length === 1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveFetch!(buildResponse(new Uint8Array([9, 9, 9])));
+    await waitFor(async () => await drive.use().exists(`${key}.bin`));
+    expect(await drive.use().exists(`${key}.bin`)).toBe(true);
+  });
+
+  it("bounds scheduled prefetch concurrency", async () => {
+    expect.assertions(4);
+
+    const resolveFetches: Array<(response: Response) => void> = [];
+    fetchMock.mockImplementation(
+      async () =>
+        await new Promise<Response>((resolve) => {
+          resolveFetches.push(resolve);
+        }),
+    );
+
+    const urls = Array.from(
+      { length: PROXY_CACHE_PREFETCH_CONCURRENCY + 2 },
+      (_, i) => `https://remote.example/concurrent-${i}.png`,
+    );
+
+    expect(
+      urls.map((url) => scheduleProxyCachePrefetchForMode("cache", url)),
+    ).toEqual(urls.map(() => true));
+    await waitFor(
+      async () =>
+        fetchMock.mock.calls.length === PROXY_CACHE_PREFETCH_CONCURRENCY,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(PROXY_CACHE_PREFETCH_CONCURRENCY);
+
+    resolveFetches[0]?.(buildResponse(new Uint8Array([1])));
+    await waitFor(
+      async () =>
+        fetchMock.mock.calls.length === PROXY_CACHE_PREFETCH_CONCURRENCY + 1,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(
+      PROXY_CACHE_PREFETCH_CONCURRENCY + 1,
+    );
+
+    for (let i = 1; i < urls.length; i++) {
+      await waitFor(async () => resolveFetches.length > i);
+      resolveFetches[i]?.(buildResponse(new Uint8Array([i + 1])));
+    }
+    const lastKey = proxyCacheKeyForUrl(urls[urls.length - 1]);
+    await waitFor(async () => await drive.use().exists(`${lastKey}.bin`));
+    expect(await drive.use().exists(`${lastKey}.bin`)).toBe(true);
   });
 });
