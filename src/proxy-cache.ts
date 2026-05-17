@@ -61,7 +61,12 @@ function parseProxyCacheMetadata(
   content: string | null | undefined,
 ): { contentType: string } | null {
   if (content == null) return null;
-  const meta = JSON.parse(content) as unknown;
+  let meta: unknown;
+  try {
+    meta = JSON.parse(content) as unknown;
+  } catch {
+    return null;
+  }
   if (meta == null || typeof meta !== "object") return null;
   const contentType = (meta as { contentType?: unknown }).contentType;
   if (typeof contentType !== "string" || !isAllowedContentType(contentType)) {

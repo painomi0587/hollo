@@ -101,8 +101,8 @@ describe.sequential("proxy cache prefetch", () => {
     expect(getBytesMock).not.toHaveBeenCalled();
   });
 
-  it("treats missing or null cache metadata as a cache miss", async () => {
-    expect.assertions(4);
+  it("treats missing, null, or malformed cache metadata as a cache miss", async () => {
+    expect.assertions(6);
 
     const disk = drive.use();
     const missingMetaKey = proxyCacheKeyForUrl(
@@ -130,6 +130,21 @@ describe.sequential("proxy cache prefetch", () => {
 
     await expect(readProxyCacheEntry(nullMetaKey)).resolves.toBeNull();
     await expect(hasProxyCacheEntry(nullMetaKey)).resolves.toBe(false);
+
+    const malformedMetaKey = proxyCacheKeyForUrl(
+      "https://remote.example/malformed-meta.png",
+    );
+    await disk.put(`${malformedMetaKey}.bin`, new Uint8Array([7, 8, 9]), {
+      contentType: "image/png",
+      visibility: "public",
+    });
+    await disk.put(`${malformedMetaKey}.json`, "{", {
+      contentType: "application/json",
+      visibility: "public",
+    });
+
+    await expect(readProxyCacheEntry(malformedMetaKey)).resolves.toBeNull();
+    await expect(hasProxyCacheEntry(malformedMetaKey)).resolves.toBe(false);
   });
 
   it("is a no-op outside cache mode", async () => {
