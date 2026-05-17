@@ -318,7 +318,7 @@ function ReactionListPage({
     <Layout
       title={`${pageTitle}: ${summary} — ${post.account.name}`}
       shortTitle={pageTitle}
-      description={post.summary ?? post.content}
+      description={post.summary || post.content}
       imageUrl={post.account.avatarUrl}
       themeColor={accountOwner.themeColor}
     >

@@ -130,7 +130,7 @@ function PostPage({ post, accountOwner, baseUrl }: PostPageProps) {
     <Layout
       title={`${summary} — ${post.account.name}`}
       shortTitle={summary}
-      description={post.summary ?? post.content}
+      description={post.summary || post.content}
       imageUrl={post.account.avatarUrl}
       url={post.url ?? post.iri}
       links={[
