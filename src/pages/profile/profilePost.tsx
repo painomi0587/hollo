@@ -1,18 +1,12 @@
 import { Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
-import { Post as PostView } from "../../components/Post.tsx";
+import { type PostForView, Post as PostView } from "../../components/Post.tsx";
 import db from "../../db.ts";
-import {
-  type Account,
-  type AccountOwner,
-  type Medium,
-  type Poll,
-  type PollOption,
-  type Post,
-  type Reaction,
-} from "../../schema.ts";
+import { type AccountOwner } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
+import { postViewRelations } from "./postRelations.ts";
+import { summarizePostForTitle } from "./summary.ts";
 
 const profilePost = new Hono();
 
@@ -35,77 +29,13 @@ profilePost.get<"/:handle{@[^/]+}/:id{[-a-f0-9]+}">(async (c) => {
         )!,
     },
     with: {
-      account: true,
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          quoteTarget: {
-            with: {
-              account: true,
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: true } },
-      quoteTarget: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          reactions: true,
-        },
-      },
+      ...postViewRelations,
       replies: {
         where: { visibility: { in: ["public", "unlisted"] } },
         orderBy: (posts, { desc }) => [desc(posts.published)],
         limit: 20,
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          sharing: {
-            with: {
-              account: true,
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
-              quoteTarget: {
-                with: {
-                  account: true,
-                  media: true,
-                  poll: { with: { options: true } },
-                  replyTarget: { with: { account: true } },
-                  reactions: true,
-                },
-              },
-              reactions: true,
-            },
-          },
-          replyTarget: { with: { account: true } },
-          quoteTarget: {
-            with: {
-              account: true,
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
+        with: postViewRelations,
       },
-      reactions: true,
     },
   });
   if (post == null) return c.notFound();
@@ -116,88 +46,17 @@ profilePost.get<"/:handle{@[^/]+}/:id{[-a-f0-9]+}">(async (c) => {
 
 interface PostPageProps {
   readonly accountOwner: AccountOwner;
-  readonly post: Post & {
-    account: Account;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          quoteTarget:
-            | (Post & {
-                account: Account;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: Account }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: Account }) | null;
-    quoteTarget:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replies: (Post & {
-      account: Account;
-      media: Medium[];
-      poll: (Poll & { options: PollOption[] }) | null;
-      sharing:
-        | (Post & {
-            account: Account;
-            media: Medium[];
-            poll: (Poll & { options: PollOption[] }) | null;
-            replyTarget: (Post & { account: Account }) | null;
-            quoteTarget:
-              | (Post & {
-                  account: Account;
-                  media: Medium[];
-                  poll: (Poll & { options: PollOption[] }) | null;
-                  replyTarget: (Post & { account: Account }) | null;
-                  reactions: Reaction[];
-                })
-              | null;
-            reactions: Reaction[];
-          })
-        | null;
-      replyTarget: (Post & { account: Account }) | null;
-      quoteTarget:
-        | (Post & {
-            account: Account;
-            media: Medium[];
-            poll: (Poll & { options: PollOption[] }) | null;
-            replyTarget: (Post & { account: Account }) | null;
-            reactions: Reaction[];
-          })
-        | null;
-      reactions: Reaction[];
-    })[];
-    reactions: Reaction[];
-  };
+  readonly post: PostForView & { replies: PostForView[] };
   readonly baseUrl: URL | string;
 }
 
 function PostPage({ post, accountOwner, baseUrl }: PostPageProps) {
-  const summary =
-    post.summary ??
-    ((post.content ?? "").length > 30
-      ? `${(post.content ?? "").substring(0, 30)}…`
-      : (post.content ?? ""));
+  const summary = summarizePostForTitle(post);
   return (
     <Layout
       title={`${summary} — ${post.account.name}`}
       shortTitle={summary}
-      description={post.summary ?? post.content}
+      description={post.summary || post.content}
       imageUrl={post.account.avatarUrl}
       url={post.url ?? post.iri}
       links={[

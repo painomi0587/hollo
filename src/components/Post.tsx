@@ -4,6 +4,7 @@ import { proxyUrl } from "../media-proxy";
 import type { PreviewCard } from "../previewcard";
 import type {
   Account,
+  AccountOwner,
   Medium as DbMedium,
   Poll as DbPoll,
   Post as DbPost,
@@ -11,41 +12,45 @@ import type {
   Reaction,
 } from "../schema";
 
+export type PostAccount = Account & { owner?: AccountOwner | null };
+
+export type PostForView = DbPost & {
+  account: PostAccount;
+  media: DbMedium[];
+  poll: (DbPoll & { options: PollOption[] }) | null;
+  sharing:
+    | (DbPost & {
+        account: PostAccount;
+        media: DbMedium[];
+        poll: (DbPoll & { options: PollOption[] }) | null;
+        replyTarget: (DbPost & { account: PostAccount }) | null;
+        quoteTarget:
+          | (DbPost & {
+              account: PostAccount;
+              media: DbMedium[];
+              poll: (DbPoll & { options: PollOption[] }) | null;
+              replyTarget: (DbPost & { account: PostAccount }) | null;
+              reactions: Reaction[];
+            })
+          | null;
+        reactions: Reaction[];
+      })
+    | null;
+  replyTarget: (DbPost & { account: PostAccount }) | null;
+  quoteTarget:
+    | (DbPost & {
+        account: PostAccount;
+        media: DbMedium[];
+        poll: (DbPoll & { options: PollOption[] }) | null;
+        replyTarget: (DbPost & { account: PostAccount }) | null;
+        reactions: Reaction[];
+      })
+    | null;
+  reactions: Reaction[];
+};
+
 export interface PostProps {
-  readonly post: DbPost & {
-    account: Account;
-    media: DbMedium[];
-    poll: (DbPoll & { options: PollOption[] }) | null;
-    sharing:
-      | (DbPost & {
-          account: Account;
-          media: DbMedium[];
-          poll: (DbPoll & { options: PollOption[] }) | null;
-          replyTarget: (DbPost & { account: Account }) | null;
-          quoteTarget:
-            | (DbPost & {
-                account: Account;
-                media: DbMedium[];
-                poll: (DbPoll & { options: PollOption[] }) | null;
-                replyTarget: (DbPost & { account: Account }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (DbPost & { account: Account }) | null;
-    quoteTarget:
-      | (DbPost & {
-          account: Account;
-          media: DbMedium[];
-          poll: (DbPoll & { options: PollOption[] }) | null;
-          replyTarget: (DbPost & { account: Account }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  };
+  readonly post: PostForView;
   readonly shared?: Date;
   readonly pinned?: boolean;
   readonly quoted?: boolean;
@@ -85,6 +90,8 @@ export function Post({
   );
   const authorUrl = account.url ?? account.iri;
   const avatar = proxyUrl(account.avatarUrl, baseUrl);
+  const localPermalink =
+    account.owner == null ? null : `/@${account.owner.handle}/${post.id}`;
   const wrapperClass = quoted
     ? "rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900/60"
     : featured
@@ -188,19 +195,37 @@ export function Post({
         {post.likesCount != null && post.likesCount > 0 && (
           <>
             <span aria-hidden="true">·</span>
-            <span class="inline-flex items-center gap-1">
-              <span class="i-lucide-heart" aria-hidden="true" />
-              {numberFormatter.format(post.likesCount)}
-            </span>
+            <CountLink
+              localPermalink={localPermalink}
+              path="/likes"
+              icon="i-lucide-heart"
+              count={post.likesCount}
+              label="Liked by"
+            />
           </>
         )}
         {post.sharesCount != null && post.sharesCount > 0 && (
           <>
             <span aria-hidden="true">·</span>
-            <span class="inline-flex items-center gap-1">
-              <span class="i-lucide-repeat-2" aria-hidden="true" />
-              {numberFormatter.format(post.sharesCount)}
-            </span>
+            <CountLink
+              localPermalink={localPermalink}
+              path="/shares"
+              icon="i-lucide-repeat-2"
+              count={post.sharesCount}
+              label="Shared by"
+            />
+          </>
+        )}
+        {post.quotesCount != null && post.quotesCount > 0 && (
+          <>
+            <span aria-hidden="true">·</span>
+            <CountLink
+              localPermalink={localPermalink}
+              path="/quotes"
+              icon="i-lucide-quote"
+              count={post.quotesCount}
+              label="Quoted by"
+            />
           </>
         )}
         {post.reactions.length > 0 && (
@@ -208,23 +233,71 @@ export function Post({
             <span aria-hidden="true">·</span>
             <span class="inline-flex flex-wrap items-center gap-1">
               {Object.entries(groupByEmojis(post.reactions, baseUrl)).map(
-                ([emoji, { src, count }]) =>
-                  src == null ? (
-                    <span title={`${emoji} × ${count}`}>{emoji}</span>
+                ([emoji, { src, count }]) => {
+                  const inner =
+                    src == null ? (
+                      <span>{emoji}</span>
+                    ) : (
+                      <img
+                        src={src}
+                        alt={emoji}
+                        class="inline h-4 align-text-bottom"
+                      />
+                    );
+                  const title = `${emoji} × ${count}`;
+                  return localPermalink == null ? (
+                    <span title={title}>{inner}</span>
                   ) : (
-                    <img
-                      src={src}
-                      alt={emoji}
-                      title={`${emoji} × ${count}`}
-                      class="inline h-4 align-text-bottom"
-                    />
-                  ),
+                    <a
+                      href={`${localPermalink}/reactions/${encodeURIComponent(emoji)}`}
+                      title={title}
+                      class="hover:text-brand-700 dark:hover:text-brand-400"
+                    >
+                      {inner}
+                    </a>
+                  );
+                },
               )}
             </span>
           </>
         )}
       </footer>
     </article>
+  );
+}
+
+interface CountLinkProps {
+  readonly localPermalink: string | null;
+  readonly path: string;
+  readonly icon: string;
+  readonly count: number;
+  readonly label: string;
+}
+
+function CountLink({
+  localPermalink,
+  path,
+  icon,
+  count,
+  label,
+}: CountLinkProps) {
+  const inner = (
+    <>
+      <span class={icon} aria-hidden="true" />
+      {numberFormatter.format(count)}
+    </>
+  );
+  if (localPermalink == null) {
+    return <span class="inline-flex items-center gap-1">{inner}</span>;
+  }
+  return (
+    <a
+      href={`${localPermalink}${path}`}
+      title={`${label} ${numberFormatter.format(count)}`}
+      class="inline-flex items-center gap-1 hover:text-brand-700 dark:hover:text-brand-400"
+    >
+      {inner}
+    </a>
   );
 }
 
@@ -255,10 +328,10 @@ interface PostContentProps {
     poll: (DbPoll & { options: PollOption[] }) | null;
     quoteTarget:
       | (DbPost & {
-          account: Account;
+          account: PostAccount;
           media: DbMedium[];
           poll: (DbPoll & { options: PollOption[] }) | null;
-          replyTarget: (DbPost & { account: Account }) | null;
+          replyTarget: (DbPost & { account: PostAccount }) | null;
           reactions: Reaction[];
         })
       | null;

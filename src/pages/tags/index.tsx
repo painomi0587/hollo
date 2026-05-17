@@ -1,17 +1,10 @@
 import { Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
-import { Post as PostView } from "../../components/Post.tsx";
+import { type PostForView, Post as PostView } from "../../components/Post.tsx";
 import { db } from "../../db.ts";
-import {
-  type Account,
-  accountOwners,
-  type Medium,
-  type Poll,
-  type PollOption,
-  type Post,
-  type Reaction,
-} from "../../schema.ts";
+import { accountOwners } from "../../schema.ts";
+import { postViewRelations } from "../profile/postRelations.ts";
 
 const tags = new Hono().basePath("/:tag");
 
@@ -37,80 +30,14 @@ tags.get(async (c) => {
         )!,
     },
     orderBy: (posts, { desc }) => [desc(posts.id)],
-    with: {
-      account: true,
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          quoteTarget: {
-            with: {
-              account: true,
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: true } },
-      quoteTarget: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   return c.html(<TagPage tag={tag} posts={postList} baseUrl={c.req.url} />);
 });
 
 interface TagPageProps {
   readonly tag: string;
-  readonly posts: (Post & {
-    account: Account;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          quoteTarget:
-            | (Post & {
-                account: Account;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: Account }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: Account }) | null;
-    quoteTarget:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  })[];
+  readonly posts: PostForView[];
   readonly baseUrl: URL | string;
 }
 

@@ -235,6 +235,17 @@ To be released.
         are removed; UnoCSS emits a single _src/public/uno.css_ whose
         URL is cache-busted by file mtime.
 
+ -  Added public reaction list pages anchored to each local post:
+    `/@:handle/:id/likes` lists the accounts that liked the post,
+    `/@:handle/:id/shares` lists the accounts that boosted it,
+    `/@:handle/:id/reactions/:emoji` lists the accounts that reacted with
+    a specific emoji, and `/@:handle/:id/quotes` lists the posts that
+    quote it.  Each page features the original post above the list.  On
+    the profile feed and post permalink page, the per-post like, share,
+    quote, and reaction-emoji indicators now link into these pages for
+    local posts; remote posts continue to display the counts as plain
+    text.  [[#490]]
+
  -  Added avatar and header image upload to the admin account creation and
     editing forms, with drag-and-drop support and in-page image preview.
     Files are stored using the same storage backend as the Mastodon-compatible
@@ -371,6 +382,7 @@ To be released.
 [#487]: https://github.com/fedify-dev/hollo/pull/487
 [#488]: https://github.com/fedify-dev/hollo/issues/488
 [#489]: https://github.com/fedify-dev/hollo/issues/489
+[#490]: https://github.com/fedify-dev/hollo/pull/490
 
 
 Version 0.8.4

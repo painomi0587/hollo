@@ -3,25 +3,23 @@ import { Hono } from "hono";
 import xss from "xss";
 
 import { Layout } from "../../components/Layout.tsx";
-import { Post as PostView } from "../../components/Post.tsx";
+import { type PostForView, Post as PostView } from "../../components/Post.tsx";
 import { Profile } from "../../components/Profile.tsx";
 import { db } from "../../db.ts";
 import {
   type Account,
   type AccountOwner,
   type FeaturedTag,
-  type Medium,
-  type Poll,
-  type PollOption,
-  type Post,
   posts,
-  type Reaction,
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
+import postReactions from "./postReactions.tsx";
+import { postViewRelations } from "./postRelations.ts";
 import profilePost from "./profilePost.tsx";
 
 const profile = new Hono();
 
+profile.route("/:id{[-a-f0-9]+}", postReactions);
 profile.route("/:id{[-a-f0-9]+}", profilePost);
 
 const PAGE_SIZE = 30;
@@ -73,84 +71,14 @@ profile.get<"/:handle">(async (c) => {
     orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
-    with: {
-      account: true,
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          quoteTarget: {
-            with: {
-              account: true,
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: true } },
-      quoteTarget: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   const pinnedPostList =
     cont == null
       ? await db.query.pinnedPosts.findMany({
           where: { accountId: { eq: owner.id } },
           orderBy: (pinnedPosts, { desc }) => [desc(pinnedPosts.index)],
-          with: {
-            post: {
-              with: {
-                account: true,
-                media: true,
-                poll: { with: { options: true } },
-                sharing: {
-                  with: {
-                    account: true,
-                    media: true,
-                    poll: { with: { options: true } },
-                    replyTarget: { with: { account: true } },
-                    quoteTarget: {
-                      with: {
-                        account: true,
-                        media: true,
-                        poll: { with: { options: true } },
-                        replyTarget: { with: { account: true } },
-                        reactions: true,
-                      },
-                    },
-                    reactions: true,
-                  },
-                },
-                replyTarget: { with: { account: true } },
-                quoteTarget: {
-                  with: {
-                    account: true,
-                    media: true,
-                    poll: { with: { options: true } },
-                    replyTarget: { with: { account: true } },
-                    reactions: true,
-                  },
-                },
-                reactions: true,
-              },
-            },
-          },
+          with: { post: { with: postViewRelations } },
         })
       : [];
   const featuredTagList = await db.query.featuredTags.findMany({
@@ -229,40 +157,7 @@ profile.get("/tagged/:tag", async (c) => {
     orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
-    with: {
-      account: true,
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          quoteTarget: {
-            with: {
-              account: true,
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: true } },
-      quoteTarget: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   const featuredTagList = await db.query.featuredTags.findMany({
     where: { accountOwnerId: { eq: owner.id } },
@@ -287,74 +182,8 @@ profile.get("/tagged/:tag", async (c) => {
 interface ProfilePageProps {
   readonly accountOwner: AccountOwner & { account: Account };
   readonly tag?: string;
-  readonly posts: (Post & {
-    account: Account;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          quoteTarget:
-            | (Post & {
-                account: Account;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: Account }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: Account }) | null;
-    quoteTarget:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  })[];
-  readonly pinnedPosts: (Post & {
-    account: Account;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          quoteTarget:
-            | (Post & {
-                account: Account;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: Account }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: Account }) | null;
-    quoteTarget:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  })[];
+  readonly posts: PostForView[];
+  readonly pinnedPosts: PostForView[];
   readonly featuredTags: FeaturedTag[];
   readonly atomUrl?: string;
   readonly olderUrl?: string;
