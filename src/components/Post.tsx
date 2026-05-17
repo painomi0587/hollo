@@ -9,6 +9,7 @@ import type {
   Poll as DbPoll,
   Post as DbPost,
   PollOption,
+  QuoteState,
   Reaction,
 } from "../schema";
 
@@ -341,11 +342,28 @@ interface PostContentProps {
   readonly baseUrl: URL | string;
 }
 
+type EffectiveQuoteState = QuoteState | "deleted";
+
+function getEffectiveQuoteState(
+  post: Pick<DbPost, "quoteState" | "quoteTargetId"> & {
+    quoteTarget: unknown;
+  },
+): EffectiveQuoteState | null {
+  // A null quoteState with a quoteTargetId represents legacy quotes that
+  // predate FEP-044f tracking; treat them as accepted.
+  const state =
+    post.quoteState ?? (post.quoteTargetId == null ? null : "accepted");
+  if (state === "accepted" && post.quoteTarget == null) return "deleted";
+  return state;
+}
+
 function PostContent({ post, featured, baseUrl }: PostContentProps) {
-  const displayContentHtml =
-    post.quoteTarget == null
-      ? post.contentHtml
-      : stripQuoteInlineFallbacks(post.contentHtml);
+  const quoteState = getEffectiveQuoteState(post);
+  const quoteDisplayable =
+    quoteState === "accepted" && post.quoteTarget != null;
+  const displayContentHtml = quoteDisplayable
+    ? stripQuoteInlineFallbacks(post.contentHtml)
+    : post.contentHtml;
   const contentHtml = renderCustomEmojis(
     displayContentHtml,
     post.emojis,
@@ -385,17 +403,82 @@ function PostContent({ post, featured, baseUrl }: PostContentProps) {
       {post.previewCard != null && post.media.length === 0 && (
         <PreviewCardView card={post.previewCard} baseUrl={baseUrl} />
       )}
-      {post.quoteTarget != null && (
+      {quoteDisplayable && post.quoteTarget != null && (
         <div class="mt-3">
           <Post
-            post={{ ...post.quoteTarget, sharing: null, quoteTarget: null }}
+            post={{
+              ...post.quoteTarget,
+              sharing: null,
+              quoteTarget: null,
+              quoteTargetId: null,
+              quoteTargetIri: null,
+              quoteState: null,
+            }}
             quoted={true}
             baseUrl={baseUrl}
           />
         </div>
       )}
+      {quoteState != null && quoteState !== "accepted" && (
+        <div class="mt-3">
+          <QuotePlaceholder state={quoteState} />
+        </div>
+      )}
     </>
   );
+}
+
+type HiddenQuoteState = Exclude<EffectiveQuoteState, "accepted">;
+
+interface QuotePlaceholderProps {
+  readonly state: HiddenQuoteState;
+}
+
+function QuotePlaceholder({ state }: QuotePlaceholderProps) {
+  const { icon, message } = describeHiddenQuote(state);
+  return (
+    <div class="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400">
+      <p class="flex items-start gap-2">
+        <span class={`${icon} mt-0.5 shrink-0`} aria-hidden="true" />
+        <span>{message}</span>
+      </p>
+    </div>
+  );
+}
+
+function describeHiddenQuote(state: HiddenQuoteState): {
+  icon: string;
+  message: string;
+} {
+  switch (state) {
+    case "pending":
+      return {
+        icon: "i-lucide-clock",
+        message:
+          "The quoted post is hidden while awaiting the author's approval.",
+      };
+    case "rejected":
+      return {
+        icon: "i-lucide-circle-x",
+        message: "The author of the quoted post did not approve this quote.",
+      };
+    case "revoked":
+      return {
+        icon: "i-lucide-ban",
+        message:
+          "The author of the quoted post revoked approval for this quote.",
+      };
+    case "unauthorized":
+      return {
+        icon: "i-lucide-lock",
+        message: "This quote was not authorized by the quoted post's author.",
+      };
+    case "deleted":
+      return {
+        icon: "i-lucide-trash-2",
+        message: "The quoted post is no longer available.",
+      };
+  }
 }
 
 interface PreviewCardViewProps {

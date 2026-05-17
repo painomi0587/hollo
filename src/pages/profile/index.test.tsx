@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { cleanDatabase } from "../../../tests/helpers";
 import { createAccount } from "../../../tests/helpers/oauth";
 import db from "../../db";
-import { featuredTags, posts } from "../../schema";
+import { accounts, featuredTags, instances, posts } from "../../schema";
 import { uuidv7 } from "../../uuid";
 import app from "../index";
 
@@ -169,5 +169,177 @@ describe.sequential("profile tagged page", () => {
     expect(html).toContain("quote-inline");
     expect(html).toContain("RE:");
     expect(html).toContain(quotedPostUrl);
+  });
+
+  it.each([
+    ["revoked", "revoked approval"],
+    ["rejected", "did not approve"],
+    ["pending", "awaiting the author"],
+    ["unauthorized", "not authorized"],
+  ] as const)(
+    "hides %s quote source behind a placeholder on profile pages",
+    async (state, expectedMessageFragment) => {
+      expect.assertions(6);
+
+      const remoteAccountId = uuidv7();
+      await db
+        .insert(instances)
+        .values({
+          host: "remote.test",
+          software: null,
+          softwareVersion: null,
+        })
+        .onConflictDoNothing();
+      await db.insert(accounts).values({
+        id: remoteAccountId,
+        iri: "https://remote.test/@quoted",
+        instanceHost: "remote.test",
+        type: "Person",
+        name: "Quoted Author",
+        emojis: {},
+        handle: "@quoted@remote.test",
+        bioHtml: "",
+        url: "https://remote.test/@quoted",
+        protected: false,
+        inboxUrl: "https://remote.test/@quoted/inbox",
+        followersUrl: "https://remote.test/@quoted/followers",
+        sharedInboxUrl: "https://remote.test/inbox",
+        featuredUrl: "https://remote.test/@quoted/pinned",
+        published: new Date(),
+      });
+
+      const quotedPostId = uuidv7();
+      const quotePostId = uuidv7();
+      const quotedPostUrl = `https://remote.test/notes/${quotedPostId}`;
+
+      await db.insert(posts).values([
+        {
+          id: quotedPostId,
+          iri: quotedPostUrl,
+          type: "Note",
+          accountId: remoteAccountId,
+          visibility: "public",
+          content: "Quoted post",
+          contentHtml: "<p>Quoted post body</p>",
+          published: new Date(),
+        },
+        {
+          id: quotePostId,
+          iri: `https://hollo.test/@hollo/${quotePostId}`,
+          type: "Note",
+          accountId: account.id,
+          quoteTargetId: quotedPostId,
+          quoteState: state,
+          visibility: "public",
+          content: "Quote post",
+          contentHtml:
+            "<p>Quote post</p>" +
+            `<p class="quote-inline">RE: <a href="${quotedPostUrl}">` +
+            `${quotedPostUrl}</a></p>`,
+          published: new Date(),
+        },
+      ]);
+
+      const response = await app.request("/@hollo");
+
+      expect(response.status).toBe(200);
+
+      const html = await response.text();
+
+      expect(html).toContain("Quote post");
+      expect(html).not.toContain("Quoted post body");
+      expect(html).toContain("quote-inline");
+      expect(html).toContain(quotedPostUrl);
+      expect(html.toLowerCase()).toContain(expectedMessageFragment);
+    },
+  );
+
+  it(
+    "does not render a stale placeholder when an accepted quote target " +
+      "is itself a quote",
+    async () => {
+      expect.assertions(4);
+
+      const innerQuotedPostId = uuidv7();
+      const middleQuotePostId = uuidv7();
+      const outerQuotePostId = uuidv7();
+      const innerQuotedPostUrl = `https://hollo.test/@hollo/${innerQuotedPostId}`;
+      const middleQuotePostUrl = `https://hollo.test/@hollo/${middleQuotePostId}`;
+
+      await db.insert(posts).values([
+        {
+          id: innerQuotedPostId,
+          iri: innerQuotedPostUrl,
+          type: "Note",
+          accountId: account.id,
+          visibility: "public",
+          content: "Innermost post",
+          contentHtml: "<p>Innermost post body</p>",
+          published: new Date(),
+        },
+        {
+          id: middleQuotePostId,
+          iri: middleQuotePostUrl,
+          type: "Note",
+          accountId: account.id,
+          quoteTargetId: innerQuotedPostId,
+          quoteState: "accepted",
+          visibility: "public",
+          content: "Middle quote",
+          contentHtml: "<p>Middle quote body</p>",
+          published: new Date(),
+        },
+        {
+          id: outerQuotePostId,
+          iri: `https://hollo.test/@hollo/${outerQuotePostId}`,
+          type: "Note",
+          accountId: account.id,
+          quoteTargetId: middleQuotePostId,
+          quoteState: "accepted",
+          visibility: "public",
+          content: "Outer quote",
+          contentHtml: "<p>Outer quote body</p>",
+          published: new Date(),
+        },
+      ]);
+
+      const response = await app.request("/@hollo");
+
+      expect(response.status).toBe(200);
+
+      const html = await response.text();
+
+      expect(html).toContain("Outer quote body");
+      expect(html).toContain("Middle quote body");
+      expect(html.toLowerCase()).not.toContain("no longer available");
+    },
+  );
+
+  it("shows a placeholder when the quoted post no longer exists", async () => {
+    expect.assertions(3);
+
+    const quotePostId = uuidv7();
+
+    await db.insert(posts).values({
+      id: quotePostId,
+      iri: `https://hollo.test/@hollo/${quotePostId}`,
+      type: "Note",
+      accountId: account.id,
+      quoteTargetIri: "https://remote.test/notes/gone",
+      quoteState: "accepted",
+      visibility: "public",
+      content: "Quote post",
+      contentHtml: "<p>Quote post</p>",
+      published: new Date(),
+    });
+
+    const response = await app.request("/@hollo");
+
+    expect(response.status).toBe(200);
+
+    const html = await response.text();
+
+    expect(html).toContain("Quote post");
+    expect(html.toLowerCase()).toContain("no longer available");
   });
 });
