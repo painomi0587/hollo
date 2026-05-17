@@ -189,7 +189,7 @@ function FollowsPage({
               </span>
             </h2>
             <form method="get" role="search" class="w-full sm:w-72">
-              <label class="sr-only" for="follows-search">
+              <label class="sr-only" htmlFor="follows-search">
                 Search by name or handle
               </label>
               <div class="relative">
@@ -205,6 +205,7 @@ function FollowsPage({
                   name="q"
                   value={query ?? ""}
                   placeholder="Filter by name or handle"
+                  aria-label="Search by name or handle"
                   autoComplete="off"
                   class="w-full rounded-md border border-neutral-300 bg-white py-2 ps-9 pe-3 text-sm text-neutral-900 shadow-sm transition-colors placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900"
                 />

@@ -77,6 +77,7 @@ data.get("/", async (c) => {
                 name="uri"
                 placeholder="@hollo@hollo.social"
                 required
+                aria-label="Fediverse handle or URI to refresh"
                 aria-invalid={refreshError ? "true" : undefined}
                 class={`flex-1 rounded-md border bg-white px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900 ${
                   refreshError

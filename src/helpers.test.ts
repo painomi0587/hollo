@@ -221,7 +221,7 @@ describe("Helpers", () => {
       const value = encoder.encode("test").buffer as ArrayBuffer;
       const result = base64Url(value);
 
-      expect(result).to.match(URL_SAFE_REGEXP);
+      expect(result).toMatch(URL_SAFE_REGEXP);
       expect(result).toBe("dGVzdA");
     });
   });
@@ -229,7 +229,7 @@ describe("Helpers", () => {
     it("returns a URL safe string", () => {
       expect.assertions(1);
 
-      expect(randomBytes(32)).to.match(URL_SAFE_REGEXP);
+      expect(randomBytes(32)).toMatch(URL_SAFE_REGEXP);
     });
   });
 });

@@ -218,6 +218,7 @@ data.get("/", async (c) => {
                 name="before"
                 value={suggestedCleanupCutoff}
                 required
+                aria-label="Delete thumbnails created before"
                 aria-invalid={error === "clean" ? "true" : undefined}
                 class={`${dateInputClass} flex-1 ${
                   error === "clean_preview"
@@ -396,6 +397,7 @@ data.get("/", async (c) => {
                 name="before"
                 value={suggestedCleanupCutoff}
                 required
+                aria-label="Delete thumbnails created before"
                 aria-invalid={error === "clean" ? "true" : undefined}
                 class={`${dateInputClass} flex-1 ${
                   error === "clean"

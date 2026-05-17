@@ -52,7 +52,7 @@ export function AuthorizationPage(props: AuthorizationPageProps) {
                 const inputId = `oauth-account-${accountOwner.id}`;
                 return (
                   <label
-                    for={inputId}
+                    htmlFor={inputId}
                     class="flex cursor-pointer items-start gap-3 rounded-md border border-neutral-200 bg-white p-3 transition-colors hover:border-brand-400 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:border-brand-600 dark:has-[:checked]:bg-brand-950/40"
                   >
                     <input
@@ -61,6 +61,7 @@ export function AuthorizationPage(props: AuthorizationPageProps) {
                       name="account_id"
                       value={accountOwner.id}
                       checked={i === 0}
+                      aria-label={accountOwner.account.name}
                       class="mt-1 size-4 border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
                     />
                     <span class="min-w-0 flex-1">

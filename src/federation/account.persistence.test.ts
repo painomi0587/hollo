@@ -322,16 +322,13 @@ describe.sequential("persistAccount canonical handle reassignment", () => {
       ),
     ).rejects.toThrow(AccountHandleConflictError);
 
-    try {
-      await persistAccount(
-        db,
-        createRemotePerson("https://remote.test/users/hollo", "hollo"),
-        "https://hollo.test",
-      );
-    } catch (error) {
-      expect(error).toBeInstanceOf(AccountHandleConflictError);
-      expect((error as AccountHandleConflictError).reason).toBe("local");
-    }
+    const error = await persistAccount(
+      db,
+      createRemotePerson("https://remote.test/users/hollo", "hollo"),
+      "https://hollo.test",
+    ).catch((e) => e);
+    expect(error).toBeInstanceOf(AccountHandleConflictError);
+    expect((error as AccountHandleConflictError).reason).toBe("local");
   });
 });
 

@@ -1013,6 +1013,7 @@ accounts.get("/:id/migrate", async (c) => {
                 name="handle"
                 placeholder="@hollo@hollo.social"
                 required
+                aria-label="Fediverse handle or actor URI to add as alias"
                 aria-invalid={aliasesError === "from" ? "true" : undefined}
                 value={aliasesError === "from" ? aliasesHandle : undefined}
                 class={`${inputClass} flex-1 ${
@@ -1058,6 +1059,7 @@ accounts.get("/:id/migrate", async (c) => {
                 name="handle"
                 placeholder={HOLLO_OFFICIAL_ACCOUNT}
                 required
+                aria-label="Target account handle to move to"
                 aria-invalid={aliasesError === "to" ? "true" : undefined}
                 value={
                   aliasesError === "to"
@@ -1251,7 +1253,7 @@ accounts.get("/:id/migrate", async (c) => {
             >
               <div>
                 <label
-                  for="import-category"
+                  htmlFor="import-category"
                   class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
                 >
                   Category
@@ -1273,7 +1275,7 @@ accounts.get("/:id/migrate", async (c) => {
               </div>
               <div>
                 <label
-                  for="import-file"
+                  htmlFor="import-file"
                   class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
                 >
                   CSV file
@@ -1284,6 +1286,7 @@ accounts.get("/:id/migrate", async (c) => {
                   name="file"
                   accept=".csv"
                   required
+                  aria-label="CSV file"
                   class="mt-1 block w-full text-sm text-neutral-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-600 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand-700 dark:text-neutral-300 dark:file:bg-brand-700 dark:hover:file:bg-brand-800"
                 />
                 <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">

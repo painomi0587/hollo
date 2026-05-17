@@ -20,7 +20,7 @@ describe("OAuth Helpers", () => {
   describe("generatePKCECodeVerifier", () => {
     it("returns a URL safe string", () => {
       const codeVerifier = generatePKCECodeVerifier();
-      expect(codeVerifier).to.match(URL_SAFE_REGEXP);
+      expect(codeVerifier).toMatch(URL_SAFE_REGEXP);
     });
   });
 

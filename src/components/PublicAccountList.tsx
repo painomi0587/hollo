@@ -45,7 +45,7 @@ function PublicAccountItem({ account, baseUrl }: PublicAccountItemProps) {
   const avatar = proxyUrl(account.avatarUrl, baseUrl);
   return (
     <article class="flex items-start gap-4 py-6">
-      <a href={href} class="shrink-0">
+      <a href={href} aria-label={account.name} class="shrink-0">
         {avatar ? (
           <img
             src={avatar}
@@ -63,6 +63,7 @@ function PublicAccountItem({ account, baseUrl }: PublicAccountItemProps) {
           href={href}
           class="block font-semibold text-neutral-900 hover:underline dark:text-neutral-100"
           dangerouslySetInnerHTML={{ __html: nameHtml }}
+          aria-label={account.name}
         />
         <p class="select-all text-xs text-neutral-500 dark:text-neutral-400">
           {account.handle}

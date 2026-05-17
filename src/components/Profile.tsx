@@ -59,6 +59,7 @@ export function Profile({ accountOwner, baseUrl }: ProfileProps) {
             <a
               href={url}
               dangerouslySetInnerHTML={{ __html: nameHtml }}
+              aria-label={account.name}
               class="hover:underline"
             />
           </h1>

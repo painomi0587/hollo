@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 import { getLogger } from "@logtape/logtape";
-// @ts-expect-error: No type definitions available
 // cSpell: ignore ssrfcheck
 import { isSSRFSafeURL } from "ssrfcheck";
 

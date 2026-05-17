@@ -30,7 +30,7 @@ export function Field({
 }: PropsWithChildren<FieldProps>) {
   return (
     <div>
-      <label for={id} class={labelClass}>
+      <label id={`${id}-label`} htmlFor={id} class={labelClass}>
         {label}
         {labelExtra && (
           <span class="ms-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
@@ -193,12 +193,14 @@ export function CheckboxField({
           name={name}
           value={value}
           checked={checked}
+          aria-labelledby={`${inputId}-label`}
           class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 focus:ring-offset-0 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
         />
       </div>
       <div class="min-w-0 flex-1 text-sm">
         <label
-          for={inputId}
+          id={`${inputId}-label`}
+          htmlFor={inputId}
           class="font-medium text-neutral-800 dark:text-neutral-200"
         >
           {label}

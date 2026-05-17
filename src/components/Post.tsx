@@ -109,7 +109,7 @@ export function Post({
       )}
       <header class="flex items-start gap-3">
         {avatar && (
-          <a href={authorUrl} class="shrink-0">
+          <a href={authorUrl} aria-label={account.name} class="shrink-0">
             <img
               src={avatar}
               alt=""
@@ -132,6 +132,7 @@ export function Post({
             <a
               href={authorUrl}
               dangerouslySetInnerHTML={{ __html: authorNameHtml }}
+              aria-label={account.name}
               class="hover:underline"
             />
           </div>

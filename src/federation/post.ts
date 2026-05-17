@@ -31,7 +31,6 @@ import { getLogger } from "@logtape/logtape";
 import { and, count, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { escape } from "es-toolkit";
 import mime from "mime";
-// @ts-expect-error: No type definitions available
 import { isSSRFSafeURL } from "ssrfcheck";
 
 import type { DatabaseLike } from "../db";

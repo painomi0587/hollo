@@ -309,6 +309,7 @@ function UsernameField({ host, readOnly, value, error }: UsernameFieldProps) {
           placeholder="john"
           readOnly={readOnly}
           value={value}
+          aria-labelledby="account-username-label"
           aria-invalid={invalid ? "true" : undefined}
           pattern="^[\p{L}\p{N}._\-]+$"
           class="border-0 flex-1 bg-transparent px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60 read-only:bg-neutral-50 read-only:text-neutral-500 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:read-only:bg-neutral-900 dark:read-only:text-neutral-400"
@@ -354,7 +355,7 @@ function ImageUploadField({
       </span>
       <div class="mt-1">
         <label
-          for={id}
+          htmlFor={id}
           id={`${id}-zone`}
           class={`${containerClass} ${dropZoneBase} ${dropZoneColors}`}
         >
@@ -474,7 +475,7 @@ function ThemeColorField({ selected }: ThemeColorFieldProps) {
           const inputId = `account-theme-color-${color}`;
           return (
             <label
-              for={inputId}
+              htmlFor={inputId}
               title={capitalize(color)}
               class="relative aspect-square cursor-pointer rounded-md ring-2 ring-transparent ring-offset-2 ring-offset-white transition-shadow hover:ring-neutral-300 has-[:checked]:ring-neutral-900 dark:ring-offset-neutral-900 dark:hover:ring-neutral-700 dark:has-[:checked]:ring-neutral-100"
               style={`background-color: ${swatch};`}
@@ -485,6 +486,7 @@ function ThemeColorField({ selected }: ThemeColorFieldProps) {
                 name="themeColor"
                 value={color}
                 checked={active === color}
+                aria-label={capitalize(color)}
                 class="peer sr-only"
               />
               <span class="sr-only">{capitalize(color)}</span>

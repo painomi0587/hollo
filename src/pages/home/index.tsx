@@ -72,7 +72,11 @@ homePage.get("/", async (c) => {
                 <article class="rounded-xl border border-neutral-200 bg-white p-5 transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700">
                   <div class="flex items-start gap-4">
                     {avatar && (
-                      <a href={url} class="shrink-0">
+                      <a
+                        href={url}
+                        aria-label={owner.account.name}
+                        class="shrink-0"
+                      >
                         <img
                           src={avatar}
                           alt=""
@@ -87,6 +91,7 @@ homePage.get("/", async (c) => {
                         <a
                           href={url}
                           dangerouslySetInnerHTML={{ __html: nameHtml }}
+                          aria-label={owner.account.name}
                           class="hover:text-brand-700 dark:hover:text-brand-400"
                         />
                       </h2>

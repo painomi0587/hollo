@@ -80,25 +80,26 @@ emojis.get("/", async (c) => {
                           id={`emoji-${emoji.shortcode}`}
                           name="emoji"
                           value={emoji.shortcode}
+                          aria-label={`:${emoji.shortcode}:`}
                           class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
                           onchange="this.form.querySelector('button[type=submit]').disabled = !this.form.querySelectorAll('input[name=emoji]:checked').length"
                         />
                       </td>
                       <td class="px-3 py-2 text-neutral-700 dark:text-neutral-300">
-                        <label for={`emoji-${emoji.shortcode}`}>
+                        <label htmlFor={`emoji-${emoji.shortcode}`}>
                           {emoji.category ?? "—"}
                         </label>
                       </td>
                       <td class="px-3 py-2">
                         <label
-                          for={`emoji-${emoji.shortcode}`}
+                          htmlFor={`emoji-${emoji.shortcode}`}
                           class="font-mono text-neutral-900 dark:text-neutral-100"
                         >
                           :{emoji.shortcode}:
                         </label>
                       </td>
                       <td class="px-3 py-2">
-                        <label for={`emoji-${emoji.shortcode}`}>
+                        <label htmlFor={`emoji-${emoji.shortcode}`}>
                           {previewUrl == null ? (
                             <span class="text-xs text-neutral-500 dark:text-neutral-400">
                               :{emoji.shortcode}:
@@ -170,7 +171,7 @@ emojis.get("/new", async (c) => {
         <div class="grid gap-4 sm:grid-cols-2">
           <div>
             <label
-              for="emoji-category"
+              htmlFor="emoji-category"
               class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
             >
               Category
@@ -190,7 +191,7 @@ emojis.get("/new", async (c) => {
           </div>
           <div>
             <label
-              for="emoji-new-category"
+              htmlFor="emoji-new-category"
               class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
             >
               New category
@@ -200,13 +201,14 @@ emojis.get("/new", async (c) => {
               type="text"
               name="new"
               disabled={true}
+              aria-label="New category"
               class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900"
             />
           </div>
         </div>
         <div>
           <label
-            for="emoji-shortcode"
+            htmlFor="emoji-shortcode"
             class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
           >
             Short code
@@ -218,18 +220,19 @@ emojis.get("/new", async (c) => {
             required
             pattern="^:(-|[a-z0-9_])+:$"
             placeholder=":shortcode:"
+            aria-label="Short code"
             class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-sm shadow-sm transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900"
           />
         </div>
         <div>
           <label
-            for="emoji-image"
+            htmlFor="emoji-image"
             class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
           >
             Image
           </label>
           <label
-            for="emoji-image"
+            htmlFor="emoji-image"
             class="mt-1 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-neutral-300 bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-600 transition-colors hover:border-brand-400 hover:bg-brand-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:border-brand-600 dark:hover:bg-brand-950/20"
           >
             <span
@@ -248,6 +251,7 @@ emojis.get("/new", async (c) => {
               name="image"
               required
               accept="image/png, image/jpeg, image/gif, image/webp"
+              aria-label="Emoji image file"
               class="sr-only"
             />
           </label>
@@ -450,22 +454,23 @@ emojis.get("/import", async (c) => {
                         id={id}
                         name="import"
                         value={JSON.stringify({ shortcode, url })}
+                        aria-label={`:${shortcode}:`}
                         class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
                       />
                     </td>
                     <td class="px-3 py-2">
                       <label
-                        for={id}
+                        htmlFor={id}
                         class="font-mono text-neutral-900 dark:text-neutral-100"
                       >
                         :{shortcode}:
                       </label>
                     </td>
                     <td class="px-3 py-2 text-neutral-700 dark:text-neutral-300">
-                      <label for={id}>{domain}</label>
+                      <label htmlFor={id}>{domain}</label>
                     </td>
                     <td class="px-3 py-2">
-                      <label for={id}>
+                      <label htmlFor={id}>
                         {previewUrl == null ? (
                           <span class="text-xs text-neutral-500 dark:text-neutral-400">
                             :{shortcode}:
@@ -488,7 +493,7 @@ emojis.get("/import", async (c) => {
         <div class="grid gap-4 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900 sm:grid-cols-2">
           <div>
             <label
-              for="import-category"
+              htmlFor="import-category"
               class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
             >
               Category
@@ -508,7 +513,7 @@ emojis.get("/import", async (c) => {
           </div>
           <div>
             <label
-              for="import-new-category"
+              htmlFor="import-new-category"
               class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
             >
               New category
@@ -518,6 +523,7 @@ emojis.get("/import", async (c) => {
               type="text"
               name="new"
               disabled={true}
+              aria-label="New category"
               class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900"
             />
           </div>

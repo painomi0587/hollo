@@ -48,7 +48,7 @@ function AccountItem({
     <article class="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
       <div class="flex items-start gap-4">
         {avatar && (
-          <a href={href} class="shrink-0">
+          <a href={href} aria-label={account.name} class="shrink-0">
             <img
               src={avatar}
               alt=""
@@ -63,6 +63,7 @@ function AccountItem({
             <a
               href={href}
               dangerouslySetInnerHTML={{ __html: nameHtml }}
+              aria-label={account.name}
               class="hover:underline"
             />
           </h2>

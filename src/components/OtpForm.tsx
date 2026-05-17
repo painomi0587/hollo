@@ -19,7 +19,7 @@ export function OtpForm(props: OtpFormProps) {
   return (
     <form method={props.method ?? "post"} action={props.action}>
       <label
-        for="otp-token"
+        htmlFor="otp-token"
         class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
       >
         Authentication code
@@ -33,6 +33,7 @@ export function OtpForm(props: OtpFormProps) {
           pattern="^[0-9]+$"
           required
           placeholder="123456"
+          aria-label="Authentication code"
           autocomplete="one-time-code"
           aria-invalid={invalid ? "true" : undefined}
           class={`${tokenInputClass} ${invalid ? fieldInvalid : fieldValid}`}

@@ -325,6 +325,7 @@ async function AuthPage({ totp, tfa, passkeys }: AuthPageProps) {
                       type="text"
                       value={tfa.totp.toString()}
                       readonly
+                      aria-label="TOTP setup URL"
                       class="mt-2 w-full rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
                     />
                   </details>
@@ -347,6 +348,7 @@ async function AuthPage({ totp, tfa, passkeys }: AuthPageProps) {
                     pattern="^[0-9]+$"
                     required
                     placeholder="123456"
+                    aria-label="Six-digit authentication code"
                     aria-invalid={tfa.error == null ? undefined : "true"}
                     class={`flex-1 rounded-md border bg-white px-3 py-2 text-center font-mono text-lg tracking-widest text-neutral-900 shadow-sm placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900 ${
                       tfa.error == null
@@ -469,7 +471,7 @@ async function AuthPage({ totp, tfa, passkeys }: AuthPageProps) {
         <form id="passkey-enroll-form" class="space-y-3">
           <label
             class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
-            for="passkey-nickname"
+            htmlFor="passkey-nickname"
           >
             Nickname
             <span class="ms-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
@@ -482,6 +484,7 @@ async function AuthPage({ totp, tfa, passkeys }: AuthPageProps) {
             type="text"
             maxLength={80}
             placeholder="e.g. iPhone, work laptop, YubiKey"
+            aria-label="Nickname"
             class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900"
           />
           <div class="flex flex-wrap items-center gap-3">
