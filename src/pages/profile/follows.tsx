@@ -4,7 +4,7 @@ import { type Context, Hono } from "hono";
 import { Layout } from "../../components/Layout.tsx";
 import { Profile } from "../../components/Profile.tsx";
 import { PublicAccountList } from "../../components/PublicAccountList.tsx";
-import db from "../../db.ts";
+import { db } from "../../db.ts";
 import {
   type Account,
   type AccountOwner,
