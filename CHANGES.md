@@ -98,7 +98,7 @@ To be released.
     origin.  This sidesteps CORS configurations on remote object stores
     and prevents the visitor's browser from talking directly to the
     source server.  Controlled by a new `MEDIA_PROXY` environment
-    variable with three levels:  [[#481], [#483]]
+    variable with three levels:  [[#481], [#483], [#493]]
 
      -  `off` (default): the Mastodon API and web UI hand the original
         remote URL to clients, matching the historical behaviour.
@@ -113,8 +113,12 @@ To be released.
      -  `cache`: same URL rewriting, but the streamed body is persisted
         to the configured storage backend as `proxy/<sha256>.bin`, with
         a content-type sidecar alongside it at `proxy/<sha256>.json`.
-        Subsequent requests skip the upstream fetch.  The admin
-        dashboard at */thumbnail\_cleanup* can purge the cache on demand.
+        Subsequent requests skip the upstream fetch.  Remote actor avatars
+        for accounts with an approved follow relationship to the local
+        account are also prefetched into this same cache when the actor is
+        stored or refreshed, so stale upstream avatar files can keep
+        rendering after Hollo has seen them once.  The admin dashboard at
+        */thumbnail\_cleanup* can purge the cache on demand.
 
     `MEDIA_PROXY` also accepts the Boolean synonyms `true`/`on`/`1`
     (as aliases for `proxy`) and `false`/`off`/`0` (as aliases for
@@ -401,6 +405,7 @@ To be released.
 [#489]: https://github.com/fedify-dev/hollo/issues/489
 [#490]: https://github.com/fedify-dev/hollo/pull/490
 [#491]: https://github.com/fedify-dev/hollo/pull/491
+[#493]: https://github.com/fedify-dev/hollo/pull/493
 
 
 Version 0.8.4
