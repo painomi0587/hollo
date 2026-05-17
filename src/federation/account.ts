@@ -350,7 +350,9 @@ export async function persistAccount(
     where: { iri: { eq: actorId.href } },
   });
   if (account == null) return null;
-  await prefetchProxyCacheForMode(
+  // This is cache warming only.  Account persistence should not wait for a
+  // slow remote avatar CDN after the database row has already been stored.
+  void prefetchProxyCacheForMode(
     options.mediaProxyMode ?? MEDIA_PROXY,
     values.avatarUrl,
   );

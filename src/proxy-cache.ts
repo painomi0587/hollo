@@ -187,6 +187,26 @@ export async function readProxyCacheEntry(
   }
 }
 
+export async function hasProxyCacheEntry(key: string): Promise<boolean> {
+  const disk = drive.use();
+  try {
+    if (!(await disk.exists(`${key}.bin`))) return false;
+    const meta = JSON.parse(await disk.get(`${key}.json`)) as {
+      contentType?: unknown;
+    };
+    return (
+      typeof meta.contentType === "string" &&
+      isAllowedContentType(meta.contentType)
+    );
+  } catch (error) {
+    logger.warn("Failed to inspect proxy cache entry {key}: {error}", {
+      key,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 export async function writeProxyCacheEntry(
   key: string,
   body: Uint8Array,
@@ -266,7 +286,7 @@ export async function prefetchProxyCacheForMode(
 ): Promise<boolean> {
   if (mode !== "cache" || url == null) return false;
   const key = proxyCacheKeyForUrl(url);
-  if ((await readProxyCacheEntry(key)) != null) return true;
+  if (await hasProxyCacheEntry(key)) return true;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

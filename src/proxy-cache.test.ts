@@ -70,7 +70,7 @@ describe.sequential("proxy cache prefetch", () => {
   });
 
   it("does not fetch when the cache entry already exists", async () => {
-    expect.assertions(3);
+    expect.assertions(4);
 
     const avatar = new Uint8Array([2, 4, 6, 8]);
     fetchMock.mockResolvedValueOnce(
@@ -78,10 +78,13 @@ describe.sequential("proxy cache prefetch", () => {
     );
 
     const url = "https://remote.example/already.png";
+    const disk = drive.use();
     await expect(prefetchProxyCacheForMode("cache", url)).resolves.toBe(true);
+    const getBytesMock = vi.spyOn(disk, "getBytes");
     await expect(prefetchProxyCacheForMode("cache", url)).resolves.toBe(true);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(getBytesMock).not.toHaveBeenCalled();
   });
 
   it("is a no-op outside cache mode", async () => {

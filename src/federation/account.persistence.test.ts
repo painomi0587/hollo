@@ -14,6 +14,13 @@ import {
   updateAccountStats,
 } from "./account";
 
+async function waitFor(condition: () => Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    if (await condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 async function createRemoteAccount(params: {
   iri: string;
   handle: string;
@@ -320,10 +327,14 @@ describe.sequential("persistAccount remote avatar cache", () => {
   });
 
   it("prefetches the remote avatar into the proxy cache in cache mode", async () => {
-    expect.assertions(5);
+    expect.assertions(6);
 
     const avatarUrl = "https://remote.test/users/michael/avatar.webp";
     const avatar = new Uint8Array([10, 20, 30, 40]);
+    let resolveAvatarFetch: (response: Response) => void;
+    const avatarFetch = new Promise<Response>((resolve) => {
+      resolveAvatarFetch = resolve;
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request) => {
@@ -334,10 +345,7 @@ describe.sequential("persistAccount remote avatar cache", () => {
               ? input.href
               : input.url;
         if (requestUrl === avatarUrl) {
-          return new Response(avatar.buffer as ArrayBuffer, {
-            status: 200,
-            headers: { "Content-Type": "image/webp" },
-          });
+          return await avatarFetch;
         }
         return new Response(null, { status: 404 });
       }),
@@ -358,12 +366,24 @@ describe.sequential("persistAccount remote avatar cache", () => {
     const key = proxyCacheKeyForUrl(avatarUrl);
 
     expect(account?.avatarUrl).toBe(avatarUrl);
-    expect(await disk.exists(`${key}.bin`)).toBe(true);
-    expect(await disk.exists(`${key}.json`)).toBe(true);
-    expect(await disk.getBytes(`${key}.bin`)).toEqual(avatar);
+    expect(await disk.exists(`${key}.bin`)).toBe(false);
+    await waitFor(
+      async () => vi.mocked(globalThis.fetch).mock.calls.length > 0,
+    );
     expect(globalThis.fetch).toHaveBeenCalledWith(
       avatarUrl,
       expect.any(Object),
     );
+
+    resolveAvatarFetch!(
+      new Response(avatar.buffer as ArrayBuffer, {
+        status: 200,
+        headers: { "Content-Type": "image/webp" },
+      }),
+    );
+    await waitFor(async () => await disk.exists(`${key}.bin`));
+    expect(await disk.exists(`${key}.bin`)).toBe(true);
+    expect(await disk.exists(`${key}.json`)).toBe(true);
+    expect(await disk.getBytes(`${key}.bin`)).toEqual(avatar);
   });
 });
