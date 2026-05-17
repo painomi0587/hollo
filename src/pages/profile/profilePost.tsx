@@ -1,16 +1,9 @@
 import { Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
-import { type PostAccount, Post as PostView } from "../../components/Post.tsx";
+import { type PostForView, Post as PostView } from "../../components/Post.tsx";
 import db from "../../db.ts";
-import {
-  type AccountOwner,
-  type Medium,
-  type Poll,
-  type PollOption,
-  type Post,
-  type Reaction,
-} from "../../schema.ts";
+import { type AccountOwner } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
 import { postViewRelations } from "./postRelations.ts";
 import { summarizePostForTitle } from "./summary.ts";
@@ -53,74 +46,7 @@ profilePost.get<"/:handle{@[^/]+}/:id{[-a-f0-9]+}">(async (c) => {
 
 interface PostPageProps {
   readonly accountOwner: AccountOwner;
-  readonly post: Post & {
-    account: PostAccount;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: PostAccount;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: PostAccount }) | null;
-          quoteTarget:
-            | (Post & {
-                account: PostAccount;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: PostAccount }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: PostAccount }) | null;
-    quoteTarget:
-      | (Post & {
-          account: PostAccount;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: PostAccount }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replies: (Post & {
-      account: PostAccount;
-      media: Medium[];
-      poll: (Poll & { options: PollOption[] }) | null;
-      sharing:
-        | (Post & {
-            account: PostAccount;
-            media: Medium[];
-            poll: (Poll & { options: PollOption[] }) | null;
-            replyTarget: (Post & { account: PostAccount }) | null;
-            quoteTarget:
-              | (Post & {
-                  account: PostAccount;
-                  media: Medium[];
-                  poll: (Poll & { options: PollOption[] }) | null;
-                  replyTarget: (Post & { account: PostAccount }) | null;
-                  reactions: Reaction[];
-                })
-              | null;
-            reactions: Reaction[];
-          })
-        | null;
-      replyTarget: (Post & { account: PostAccount }) | null;
-      quoteTarget:
-        | (Post & {
-            account: PostAccount;
-            media: Medium[];
-            poll: (Poll & { options: PollOption[] }) | null;
-            replyTarget: (Post & { account: PostAccount }) | null;
-            reactions: Reaction[];
-          })
-        | null;
-      reactions: Reaction[];
-    })[];
-    reactions: Reaction[];
-  };
+  readonly post: PostForView & { replies: PostForView[] };
   readonly baseUrl: URL | string;
 }
 

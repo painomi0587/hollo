@@ -1,16 +1,9 @@
 import { Hono } from "hono";
 
 import { Layout } from "../../components/Layout.tsx";
-import { type PostAccount, Post as PostView } from "../../components/Post.tsx";
+import { type PostForView, Post as PostView } from "../../components/Post.tsx";
 import { db } from "../../db.ts";
-import {
-  accountOwners,
-  type Medium,
-  type Poll,
-  type PollOption,
-  type Post,
-  type Reaction,
-} from "../../schema.ts";
+import { accountOwners } from "../../schema.ts";
 import { postViewRelations } from "../profile/postRelations.ts";
 
 const tags = new Hono().basePath("/:tag");
@@ -44,40 +37,7 @@ tags.get(async (c) => {
 
 interface TagPageProps {
   readonly tag: string;
-  readonly posts: (Post & {
-    account: PostAccount;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: PostAccount;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: PostAccount }) | null;
-          quoteTarget:
-            | (Post & {
-                account: PostAccount;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: PostAccount }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: PostAccount }) | null;
-    quoteTarget:
-      | (Post & {
-          account: PostAccount;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: PostAccount }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  })[];
+  readonly posts: PostForView[];
   readonly baseUrl: URL | string;
 }
 

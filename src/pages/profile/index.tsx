@@ -3,19 +3,14 @@ import { Hono } from "hono";
 import xss from "xss";
 
 import { Layout } from "../../components/Layout.tsx";
-import { type PostAccount, Post as PostView } from "../../components/Post.tsx";
+import { type PostForView, Post as PostView } from "../../components/Post.tsx";
 import { Profile } from "../../components/Profile.tsx";
 import { db } from "../../db.ts";
 import {
   type Account,
   type AccountOwner,
   type FeaturedTag,
-  type Medium,
-  type Poll,
-  type PollOption,
-  type Post,
   posts,
-  type Reaction,
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
 import postReactions from "./postReactions.tsx";
@@ -187,74 +182,8 @@ profile.get("/tagged/:tag", async (c) => {
 interface ProfilePageProps {
   readonly accountOwner: AccountOwner & { account: Account };
   readonly tag?: string;
-  readonly posts: (Post & {
-    account: PostAccount;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: PostAccount;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: PostAccount }) | null;
-          quoteTarget:
-            | (Post & {
-                account: PostAccount;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: PostAccount }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: PostAccount }) | null;
-    quoteTarget:
-      | (Post & {
-          account: PostAccount;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: PostAccount }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  })[];
-  readonly pinnedPosts: (Post & {
-    account: PostAccount;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: PostAccount;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: PostAccount }) | null;
-          quoteTarget:
-            | (Post & {
-                account: PostAccount;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: PostAccount }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: PostAccount }) | null;
-    quoteTarget:
-      | (Post & {
-          account: PostAccount;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: PostAccount }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  })[];
+  readonly posts: PostForView[];
+  readonly pinnedPosts: PostForView[];
   readonly featuredTags: FeaturedTag[];
   readonly atomUrl?: string;
   readonly olderUrl?: string;
