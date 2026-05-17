@@ -163,6 +163,31 @@ async function isApprovedFollower(
   return follow != null;
 }
 
+async function determineQuoteState(
+  quoteTarget: typeof posts.$inferSelect,
+  owner: { id: Uuid },
+): Promise<"accepted" | "pending"> {
+  if (quoteTarget.accountId === owner.id) return "accepted";
+  // Legacy remote posts without an advertised FEP-044f policy keep the
+  // historical behavior of being accepted immediately.
+  if (quoteTarget.quoteApprovalPolicy == null) return "accepted";
+  const policy = normalizeQuoteApprovalPolicy(quoteTarget.quoteApprovalPolicy);
+  // FEP-044f automatic approval: anyone may quote, no authorization round-trip.
+  if (policy === "public") return "accepted";
+  // FEP-044f followers-only automatic approval — validateQuoteTarget has
+  // already verified the quoter is an approved follower; reaffirm here so
+  // this helper is self-contained.
+  if (policy === "followers") {
+    return (await isApprovedFollower(owner.id, quoteTarget.accountId))
+      ? "accepted"
+      : "pending";
+  }
+  // Reserved for a future schema that distinguishes automatic vs. manual
+  // approval. Until then validateQuoteTarget rejects "nobody" with 422,
+  // so this branch is effectively unreachable for the create path.
+  return "pending";
+}
+
 async function isBlockedBetween(accountId: Uuid, otherAccountId: Uuid) {
   const block = await db.query.blocks.findFirst({
     where: {
@@ -397,10 +422,12 @@ app.post(
           : await db.query.accountOwners.findFirst({
               where: { id: { eq: quoteTarget.accountId } },
             });
+      // Local targets are always accepted; only remote targets need policy
+      // resolution.
       quoteState =
-        localQuoteTargetOwner == null && quoteTarget.quoteApprovalPolicy != null
-          ? "pending"
-          : "accepted";
+        localQuoteTargetOwner != null
+          ? "accepted"
+          : await determineQuoteState(quoteTarget, owner);
     }
     await db.transaction(async (tx) => {
       let poll: Poll | null = null;

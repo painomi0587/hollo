@@ -579,8 +579,8 @@ describe.sequential("/api/v1/statuses quotes", () => {
     }
   });
 
-  it("requests authorization for cached remote public policies", async () => {
-    expect.assertions(3);
+  it("accepts cached remote public quote policies without authorization", async () => {
+    expect.assertions(6);
 
     const remoteAccountId = uuidv7();
     const quotedPostId = uuidv7();
@@ -599,12 +599,6 @@ describe.sequential("/api/v1/statuses quotes", () => {
       followersUrl: "https://remote.test/@fep-author/followers",
       sharedInboxUrl: "https://remote.test/inbox",
       instanceHost: "remote.test",
-    });
-    await db.insert(follows).values({
-      iri: `https://remote.test/follows/${crypto.randomUUID()}`,
-      followingId: remoteAccountId,
-      followerId: quoter.id,
-      approved: new Date(),
     });
     await db.insert(posts).values({
       id: quotedPostId,
@@ -629,25 +623,134 @@ describe.sequential("/api/v1/statuses quotes", () => {
       });
       expect(quoteResponse.status).toBe(200);
       const quote = await quoteResponse.json();
-      expect(quote.quote.state).toBe("pending");
+      expect(quote.quote.state).toBe("accepted");
+      expect(quote.quote.quoted_status?.id).toBe(quotedPostId);
 
-      let quoteRequest: unknown;
-      await vi.waitFor(async () => {
-        for (const [input] of fetch.mock.calls) {
+      const activities = await Promise.all(
+        fetch.mock.calls.map(async ([input]) => {
           const request = input instanceof Request ? input : null;
-          const activity =
-            request == null ? null : await request.clone().json();
-          if (activity?.type === "QuoteRequest") {
-            quoteRequest = activity;
-            return;
-          }
-        }
-        throw new Error("QuoteRequest was not sent");
+          return request == null ? null : await request.clone().json();
+        }),
+      );
+      expect(
+        activities.some((activity) => activity?.type === "QuoteRequest"),
+      ).toBe(false);
+
+      const objectResponse = await app.request(`/@quote-quoter/${quote.id}`, {
+        headers: { Accept: "application/activity+json" },
       });
-      expect(quoteRequest).toBeDefined();
+      const object = await objectResponse.json();
+      expect(object.quote).toBe(quotedPostIri);
+      expect(object.quoteUrl).toBe(quotedPostIri);
     } finally {
       fetch.mockRestore();
     }
+  });
+
+  it("accepts cached remote followers-only quotes from approved followers", async () => {
+    expect.assertions(3);
+
+    const remoteAccountId = uuidv7();
+    const quotedPostId = uuidv7();
+    const quotedPostIri = `https://remote.test/@followers-author/${quotedPostId}`;
+
+    await db.insert(instances).values({ host: "remote.test" });
+    await db.insert(accounts).values({
+      id: remoteAccountId,
+      iri: "https://remote.test/@followers-author",
+      type: "Person",
+      name: "Followers-only remote author",
+      handle: "@followers-author@remote.test",
+      bioHtml: "",
+      protected: false,
+      inboxUrl: "https://remote.test/@followers-author/inbox",
+      followersUrl: "https://remote.test/@followers-author/followers",
+      sharedInboxUrl: "https://remote.test/inbox",
+      instanceHost: "remote.test",
+    });
+    await db.insert(follows).values({
+      iri: `https://remote.test/follows/${crypto.randomUUID()}`,
+      followingId: remoteAccountId,
+      followerId: quoter.id,
+      approved: new Date(),
+    });
+    await db.insert(posts).values({
+      id: quotedPostId,
+      iri: quotedPostIri,
+      type: "Note",
+      accountId: remoteAccountId,
+      visibility: "public",
+      quoteApprovalPolicy: "followers",
+      content: "Followers-only remote post",
+      contentHtml: "<p>Followers-only remote post</p>\n",
+      url: quotedPostIri,
+      published: new Date(),
+    });
+
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 202 }));
+    try {
+      const quoteResponse = await createStatus(quoterToken, {
+        status: "Quoting a followers-only remote post as an approved follower",
+        quoted_status_id: quotedPostId,
+      });
+      expect(quoteResponse.status).toBe(200);
+      const quote = await quoteResponse.json();
+      expect(quote.quote.state).toBe("accepted");
+      const activities = await Promise.all(
+        fetch.mock.calls.map(async ([input]) => {
+          const request = input instanceof Request ? input : null;
+          return request == null ? null : await request.clone().json();
+        }),
+      );
+      expect(
+        activities.some((activity) => activity?.type === "QuoteRequest"),
+      ).toBe(false);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it("does not silently accept followers-only quotes from non-followers", async () => {
+    expect.assertions(1);
+
+    const remoteAccountId = uuidv7();
+    const quotedPostId = uuidv7();
+    const quotedPostIri = `https://remote.test/@followers-author2/${quotedPostId}`;
+
+    await db.insert(instances).values({ host: "remote.test" });
+    await db.insert(accounts).values({
+      id: remoteAccountId,
+      iri: "https://remote.test/@followers-author2",
+      type: "Person",
+      name: "Followers-only remote author 2",
+      handle: "@followers-author2@remote.test",
+      bioHtml: "",
+      protected: false,
+      inboxUrl: "https://remote.test/@followers-author2/inbox",
+      followersUrl: "https://remote.test/@followers-author2/followers",
+      sharedInboxUrl: "https://remote.test/inbox",
+      instanceHost: "remote.test",
+    });
+    await db.insert(posts).values({
+      id: quotedPostId,
+      iri: quotedPostIri,
+      type: "Note",
+      accountId: remoteAccountId,
+      visibility: "public",
+      quoteApprovalPolicy: "followers",
+      content: "Followers-only remote post",
+      contentHtml: "<p>Followers-only remote post</p>\n",
+      url: quotedPostIri,
+      published: new Date(),
+    });
+
+    const quoteResponse = await createStatus(quoterToken, {
+      status: "Quoting a followers-only remote post without following",
+      quoted_status_id: quotedPostId,
+    });
+    expect(quoteResponse.status).toBe(422);
   });
 
   it("returns revoked quote state when a quote is revoked", async () => {
@@ -785,77 +888,6 @@ describe.sequential("/api/v1/statuses quotes", () => {
       expect(activity.type).toBe("Delete");
       expect(activity.object.type).toBe("QuoteAuthorization");
       expect(activity.object.id).toBe(quoteAuthorizationIri);
-    } finally {
-      fetch.mockRestore();
-    }
-  });
-
-  it("includes the quote target in pending QuoteRequest instruments", async () => {
-    expect.assertions(6);
-
-    const remoteAccountId = uuidv7();
-    const quotedPostId = uuidv7();
-    const quotedPostIri = `https://remote.test/@author/${quotedPostId}`;
-
-    await db.insert(instances).values({ host: "remote.test" });
-    await db.insert(accounts).values({
-      id: remoteAccountId,
-      iri: "https://remote.test/@author",
-      type: "Person",
-      name: "Remote author",
-      handle: "@author@remote.test",
-      bioHtml: "",
-      protected: false,
-      inboxUrl: "https://remote.test/@author/inbox",
-      sharedInboxUrl: "https://remote.test/inbox",
-      instanceHost: "remote.test",
-    });
-    await db.insert(posts).values({
-      id: quotedPostId,
-      iri: quotedPostIri,
-      type: "Note",
-      accountId: remoteAccountId,
-      visibility: "public",
-      quoteApprovalPolicy: "public",
-      content: "Remote quoted post",
-      contentHtml: "<p>Remote quoted post</p>\n",
-      url: quotedPostIri,
-      published: new Date(),
-    });
-
-    const fetch = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(null, { status: 202 }));
-    try {
-      const quoteResponse = await createStatus(quoterToken, {
-        status: "Requesting quote authorization",
-        quoted_status_id: quotedPostId,
-      });
-      expect(quoteResponse.status).toBe(200);
-      const quote = await quoteResponse.json();
-      expect(quote.quote.state).toBe("pending");
-
-      let quoteRequest: unknown;
-      await vi.waitFor(async () => {
-        for (const [input] of fetch.mock.calls) {
-          const request = input instanceof Request ? input : null;
-          const activity =
-            request == null ? null : await request.clone().json();
-          if (activity?.type === "QuoteRequest") {
-            quoteRequest = activity;
-            return;
-          }
-        }
-        throw new Error("QuoteRequest was not sent");
-      });
-
-      expect(quoteRequest).toBeDefined();
-      const instrument = (
-        quoteRequest as { instrument?: Record<string, unknown> }
-      ).instrument;
-      expect(instrument?.quote).toBe(quotedPostIri);
-      expect(instrument?.quoteUrl).toBe(quotedPostIri);
-      expect(JSON.stringify(instrument)).toContain(quotedPostIri);
     } finally {
       fetch.mockRestore();
     }
