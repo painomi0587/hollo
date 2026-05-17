@@ -17,7 +17,7 @@ export function PublicAccountList({
   return (
     <ul class="mt-4 divide-y divide-neutral-200 dark:divide-neutral-800">
       {accounts.map((account) => (
-        <li>
+        <li key={account.id}>
           <PublicAccountItem account={account} baseUrl={baseUrl} />
         </li>
       ))}
