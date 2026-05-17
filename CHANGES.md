@@ -375,7 +375,7 @@ To be released.
     `posts` table, taking several seconds even on a warm cache.  The new
     index cuts these to index lookups.
 
- -  Upgraded Fedify to 2.2.1.
+ -  Upgraded Fedify to 2.2.2.
 
  -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.
 
