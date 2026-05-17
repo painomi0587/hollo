@@ -235,6 +235,17 @@ To be released.
         are removed; UnoCSS emits a single _src/public/uno.css_ whose
         URL is cache-busted by file mtime.
 
+ -  Added public *Followers* and *Following* pages on profile screens, with
+    pagination (100 entries per page) and a substring search filter over
+    display name and handle.  The followers list is always public.  The
+    following list is gated by a new per-account setting, *Make following
+    list public* (off by default); when off, the page returns *404 Not
+    Found*, the corresponding ActivityPub `following` collection is hidden
+    from federation, and the Mastodon-compatible
+    `GET /api/v1/accounts/:id/following` endpoint returns an empty array.
+    The toggle also round-trips through `PATCH update_credentials` as
+    `hide_collections`. [[#491]]
+
  -  Added public reaction list pages anchored to each local post:
     `/@:handle/:id/likes` lists the accounts that liked the post,
     `/@:handle/:id/shares` lists the accounts that boosted it,
@@ -383,6 +394,7 @@ To be released.
 [#488]: https://github.com/fedify-dev/hollo/issues/488
 [#489]: https://github.com/fedify-dev/hollo/issues/489
 [#490]: https://github.com/fedify-dev/hollo/pull/490
+[#491]: https://github.com/fedify-dev/hollo/pull/491
 
 
 Version 0.8.4

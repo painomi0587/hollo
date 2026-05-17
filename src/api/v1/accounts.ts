@@ -241,6 +241,10 @@ app.patch(
           : owner.fields,
         visibility: form["source[privacy]"] ?? owner.visibility,
         language: form["source[language]"] ?? owner.language,
+        followingListPublic:
+          form.hide_collections == null
+            ? owner.followingListPublic
+            : form.hide_collections !== "true",
       })
       .where(eq(accountOwners.id, owner.id))
       .returning();
@@ -815,7 +819,13 @@ app.get("/:id/followers", async (c) => {
 app.get("/:id/following", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.json({ error: "Record not found" }, 404);
-  const followers = await db.query.follows.findMany({
+  const localOwner = await db.query.accountOwners.findFirst({
+    where: { id: { eq: accountId } },
+  });
+  if (localOwner != null && !localOwner.followingListPublic) {
+    return c.json([]);
+  }
+  const following = await db.query.follows.findMany({
     where: {
       RAW: (follows, { and, eq, isNotNull }) =>
         and(eq(follows.followerId, accountId), isNotNull(follows.approved))!,
@@ -824,7 +834,7 @@ app.get("/:id/following", async (c) => {
     with: { following: { with: { owner: true, successor: true } } },
   });
   return c.json(
-    followers.map((f) =>
+    following.map((f) =>
       f.following.owner == null
         ? serializeAccount(f.following, c.req.url)
         : serializeAccountOwner(

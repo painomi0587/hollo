@@ -13,6 +13,7 @@ import {
   posts,
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
+import follows from "./follows.tsx";
 import postReactions from "./postReactions.tsx";
 import { postViewRelations } from "./postRelations.ts";
 import profilePost from "./profilePost.tsx";
@@ -21,6 +22,7 @@ const profile = new Hono();
 
 profile.route("/:id{[-a-f0-9]+}", postReactions);
 profile.route("/:id{[-a-f0-9]+}", profilePost);
+profile.route("/", follows);
 
 const PAGE_SIZE = 30;
 

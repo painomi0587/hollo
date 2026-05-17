@@ -173,6 +173,9 @@ federation
         where: { handle: { eq: identifier } },
       });
       if (owner == null || cursor == null) return null;
+      if (!owner.followingListPublic) {
+        return { items: [], nextCursor: null };
+      }
       const offset = Number.parseInt(cursor, 10);
       if (!Number.isInteger(offset)) return null;
       const following = await db.query.accounts.findMany({
@@ -207,7 +210,9 @@ federation
       where: { handle: { eq: identifier } },
       with: { account: true },
     });
-    return owner == null ? 0 : owner.account.followingCount;
+    if (owner == null) return 0;
+    if (!owner.followingListPublic) return 0;
+    return owner.account.followingCount;
   });
 
 federation
