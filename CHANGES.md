@@ -65,6 +65,14 @@ To be released.
     AWS SDK v4 consumers onto fast-xml-parser v5 would risk runtime
     regressions on S3 deployments.
 
+ -  Hollo now warns at startup whenever `LOG_QUERY=true` is set.  The
+    flag causes drizzle-orm to emit every SQL query together with its
+    bound parameter values, which include OAuth access tokens (stored
+    plain in the database), authorization codes, and other secrets;
+    leaving it enabled in production exposes those secrets to anyone
+    with read access to the application logs (or to a downstream
+    collector such as Sentry or a file sink).
+
 
 Version 0.7.15
 --------------
