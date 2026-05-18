@@ -54,6 +54,17 @@ To be released.
     announcements—a blocker still saw notifications and timeline
     entries from the actor they had blocked.
 
+ -  Pinned the transitive `fast-xml-parser` dependency (carried in via
+    the AWS SDK that backs S3 storage) using `pnpm.overrides`.  v4
+    consumers now resolve to `^4.5.5` (fixing the critical entity-
+    encoding bypass and several high-severity parser issues) and v5
+    consumers resolve to `^5.7.0`.  Each AWS SDK is kept on its
+    expected major version to preserve API compatibility; the single
+    remaining "XMLBuilder unescaped delimiter" moderate advisory is
+    only patched on v5.7.0+ and is not addressed here because forcing
+    AWS SDK v4 consumers onto fast-xml-parser v5 would risk runtime
+    regressions on S3 deployments.
+
 
 Version 0.7.15
 --------------
