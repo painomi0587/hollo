@@ -47,6 +47,13 @@ To be released.
     `HTTPException(403, …)` (the new CSRF middleware, among others)
     would have surfaced as opaque 500 responses to clients.
 
+ -  Incoming `Follow`, `Like`, `EmojiReact`, and `Announce` activities
+    from a blocked actor are now silently dropped.  Previously a block
+    only flipped auto-approval on incoming follow requests and did
+    nothing for protected accounts, likes, reactions, or
+    announcements—a blocker still saw notifications and timeline
+    entries from the actor they had blocked.
+
 
 Version 0.7.15
 --------------

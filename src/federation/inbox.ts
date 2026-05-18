@@ -53,7 +53,7 @@ import {
   posts,
   reactions,
 } from "../schema";
-import { isUuid } from "../uuid";
+import { isUuid, type Uuid } from "../uuid";
 import {
   persistAccount,
   removeFollower,
@@ -70,6 +70,23 @@ import {
 } from "./post";
 
 const inboxLogger = getLogger(["hollo", "inbox"]);
+
+// Returns true when the local account `localAccountId` has blocked the
+// account `remoteAccountId`. Used to silently drop incoming activities
+// (Follow, Like, EmojiReact, Announce) directed at a local user from
+// someone they have blocked.
+async function isBlockedByLocalAccount(
+  localAccountId: Uuid,
+  remoteAccountId: Uuid,
+): Promise<boolean> {
+  const result = await db.query.blocks.findFirst({
+    where: and(
+      eq(blocks.accountId, localAccountId),
+      eq(blocks.blockedAccountId, remoteAccountId),
+    ),
+  });
+  return result != null;
+}
 
 type ResolvedReactionTarget = {
   post: Post & { account: Account & { owner: AccountOwner | null } };
@@ -168,18 +185,33 @@ export async function onFollowed(
     inboxLogger.debug("Invalid following: {following}", { following });
     return;
   }
-  const follower = await persistAccount(db, actor, ctx.origin, ctx);
-  if (follower == null) return;
-  let approves = !following.protected;
-  if (approves) {
-    const block = await db.query.blocks.findFirst({
+  // Silently drop follow requests from blocked actors regardless of
+  // whether the target account is protected.  Previously the block
+  // only flipped auto-approval on unprotected accounts, so a blocked
+  // actor could still queue a pending follow request on a protected
+  // one.  The block check runs before `persistAccount` so we don't
+  // even spend a network roundtrip refreshing a blocked actor.
+  const existingFollower = await db.query.accounts.findFirst({
+    where: eq(accounts.iri, actor.id.href),
+  });
+  if (existingFollower != null) {
+    const existingBlock = await db.query.blocks.findFirst({
       where: and(
         eq(blocks.accountId, following.id),
-        eq(blocks.blockedAccountId, follower.id),
+        eq(blocks.blockedAccountId, existingFollower.id),
       ),
     });
-    approves = block == null;
+    if (existingBlock != null) {
+      inboxLogger.debug(
+        "Dropping Follow from blocked actor {actorIri} to {targetIri}.",
+        { actorIri: actor.id.href, targetIri: object.id.href },
+      );
+      return;
+    }
   }
+  const follower = await persistAccount(db, actor, ctx.origin, ctx);
+  if (follower == null) return;
+  const approves = !following.protected;
   await db
     .insert(follows)
     .values({
@@ -635,6 +667,28 @@ export async function onPostShared(
 ): Promise<void> {
   const object = await announce.getObject();
   if (!isPost(object)) return;
+  // If the announced post is local and its owner has blocked the
+  // announcer, silently drop the entire activity (no share record,
+  // no forwarding, no notification).
+  const announcedIri = object.id?.href;
+  const announcerIri = announce.actorId?.href;
+  if (announcedIri != null && announcerIri != null) {
+    const sharedPost = await db.query.posts.findFirst({
+      where: eq(posts.iri, announcedIri),
+      with: { account: { with: { owner: true } } },
+    });
+    if (sharedPost?.account.owner != null) {
+      const sharerAccount = await db.query.accounts.findFirst({
+        where: eq(accounts.iri, announcerIri),
+      });
+      if (
+        sharerAccount != null &&
+        (await isBlockedByLocalAccount(sharedPost.accountId, sharerAccount.id))
+      ) {
+        return;
+      }
+    }
+  }
   const post = await persistSharingPost(db, announce, object, ctx.origin, ctx);
   if (post == null || !post.isNew) return;
   if (post?.sharingId != null) {
@@ -759,6 +813,12 @@ export async function onLiked(
   if (actor == null) return;
   const account = await persistAccount(db, actor, ctx.origin, ctx);
   if (account == null) return;
+  if (
+    target.post.account.owner != null &&
+    (await isBlockedByLocalAccount(target.post.accountId, account.id))
+  ) {
+    return;
+  }
   await db.transaction(async (tx) => {
     await tx
       .insert(likes)
@@ -844,6 +904,12 @@ export async function onEmojiReactionAdded(
   if (actor == null) return;
   const account = await persistAccount(db, actor, ctx.origin, ctx);
   if (account == null) return;
+  if (
+    target.post.account.owner != null &&
+    (await isBlockedByLocalAccount(target.post.accountId, account.id))
+  ) {
+    return;
+  }
   let emojiIri: URL | null = null;
   let customEmoji: URL | null = null;
   if (emoji.startsWith(":") && emoji.endsWith(":")) {
