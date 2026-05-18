@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+import { timingSafeEqual } from "node:crypto";
 import { base64 } from "@hexagon/base64";
 import type { HonoRequest } from "hono";
 import type z from "zod";
@@ -49,4 +51,25 @@ export function base64Url(buffer: ArrayBuffer) {
 
 export function randomBytes(length: number): string {
   return base64Url(crypto.getRandomValues(new Uint8Array(length)).buffer);
+}
+
+/**
+ * Constant-time comparison of two UTF-8 strings. Use this whenever one of
+ * the inputs is a secret (OAuth client secret, signed-cookie material, an
+ * authorization code, etc.) to avoid leaking the contents of the secret
+ * through response timing.
+ *
+ * `node:crypto`'s `timingSafeEqual` itself requires equal-length inputs,
+ * so the byte-length comparison below is unavoidable.  The UTF-8 encode
+ * step is *not* a constant-time primitive over the string contents; the
+ * helper is intended for ASCII/URL-safe token material (OAuth secrets,
+ * PKCE challenges, signed-cookie strings) where that is acceptable.
+ * Callers handling raw secret byte buffers should call
+ * `crypto.timingSafeEqual` directly instead.
+ */
+export function timingSafeEqualString(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, "utf-8");
+  const bBuf = Buffer.from(b, "utf-8");
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
 }

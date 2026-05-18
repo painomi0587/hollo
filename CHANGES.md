@@ -73,6 +73,18 @@ To be released.
     with read access to the application logs (or to a downstream
     collector such as Sentry or a file sink).
 
+ -  The OAuth PKCE code-challenge check and the OAuth multi-credential
+    client-secret consistency check are now compared in constant time
+    using `crypto.timingSafeEqual`.  (The primary client-secret
+    authentication path runs as a Postgres equality predicate and is
+    unchanged.)  The PKCE comparison is between two SHA-256 hashes
+    (low practical timing-attack risk) and the multi-credential
+    consistency check only fires when a client presents the same
+    credentials via more than one mechanism, so neither was a
+    confirmed exploitation primitive, but constant-time comparison is
+    the correct defence-in-depth posture for any user-space operation
+    on a secret.
+
 
 Version 0.7.15
 --------------

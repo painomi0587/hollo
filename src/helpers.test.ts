@@ -5,6 +5,7 @@ import {
   base64Url,
   randomBytes,
   requestBody,
+  timingSafeEqualString,
   URL_SAFE_REGEXP,
 } from "./helpers";
 
@@ -229,6 +230,33 @@ describe("Helpers", () => {
       expect.assertions(1);
 
       expect(randomBytes(32)).to.match(URL_SAFE_REGEXP);
+    });
+  });
+  describe("timingSafeEqualString", () => {
+    it("returns true for identical strings", () => {
+      expect.assertions(1);
+      expect(timingSafeEqualString("a-secret", "a-secret")).toBe(true);
+    });
+
+    it("returns false for different strings of the same length", () => {
+      expect.assertions(1);
+      expect(timingSafeEqualString("a-secret", "b-secret")).toBe(false);
+    });
+
+    it("returns false for strings of different length", () => {
+      expect.assertions(1);
+      expect(timingSafeEqualString("short", "much-longer-secret")).toBe(false);
+    });
+
+    it("returns true for empty strings", () => {
+      expect.assertions(1);
+      expect(timingSafeEqualString("", "")).toBe(true);
+    });
+
+    it("handles multi-byte UTF-8 inputs", () => {
+      expect.assertions(2);
+      expect(timingSafeEqualString("héllo", "héllo")).toBe(true);
+      expect(timingSafeEqualString("héllo", "hello")).toBe(false);
     });
   });
 });

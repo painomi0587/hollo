@@ -6,7 +6,7 @@ import { csrf } from "hono/csrf";
 import { z } from "zod";
 
 import { db } from "./db.ts";
-import { requestBody } from "./helpers.ts";
+import { requestBody, timingSafeEqualString } from "./helpers.ts";
 import { loginRequired } from "./login.ts";
 import { OOB_REDIRECT_URI } from "./oauth/constants.ts";
 import revokeEndpoint from "./oauth/endpoints/revoke.ts";
@@ -330,7 +330,12 @@ app.post("/token", clientAuthentication, async (c) => {
               form.code_verifier,
             );
 
-            if (expectedCodeChallenge !== accessGrant.codeChallenge) {
+            if (
+              !timingSafeEqualString(
+                expectedCodeChallenge,
+                accessGrant.codeChallenge,
+              )
+            ) {
               return c.json(INVALID_GRANT_ERROR, 400);
             }
           }
