@@ -85,9 +85,10 @@ function createCtx() {
   return { ctx, forwardActivity };
 }
 
-async function seedShareScenario() {
+async function seedShareScenario(options: { authorHost?: string } = {}) {
+  const authorHost = options.authorHost ?? "remote.test";
   const owner = await createAccount({ username: "hollo" });
-  const author = await seedRemoteAccount("author");
+  const author = await seedRemoteAccountOn(authorHost, "author");
   const sharer = await seedRemoteAccount("sharer");
   await db.insert(follows).values({
     iri: `https://hollo.test/@hollo#follows/${sharer.id}`,
@@ -98,7 +99,7 @@ async function seedShareScenario() {
     notify: false,
   });
   const originalPostId = crypto.randomUUID() as Uuid;
-  const originalPostIri = "https://remote.test/@author/posts/1";
+  const originalPostIri = `${author.iri}/posts/1`;
   await db.insert(posts).values({
     id: originalPostId,
     iri: originalPostIri,
@@ -120,6 +121,43 @@ async function seedShareScenario() {
     originalPostIri,
     sharer,
   };
+}
+
+async function seedRemoteAccountOn(host: string, username: string) {
+  const id = crypto.randomUUID() as Uuid;
+  const iri = `https://${host}/@${username}`;
+  await db
+    .insert(instances)
+    .values({
+      host,
+      software: "mastodon",
+      softwareVersion: null,
+    })
+    .onConflictDoNothing();
+  await db.insert(accounts).values({
+    id,
+    iri,
+    type: "Person",
+    name: username,
+    handle: `@${username}@${host}`,
+    bioHtml: "",
+    emojis: {},
+    fieldHtmls: {},
+    aliases: [],
+    protected: false,
+    inboxUrl: `${iri}/inbox`,
+    followersUrl: `${iri}/followers`,
+    sharedInboxUrl: `https://${host}/inbox`,
+    featuredUrl: `${iri}/featured`,
+    instanceHost: host,
+    published: new Date(),
+  });
+  const account = await db.query.accounts.findFirst({
+    where: eq(accounts.id, id),
+    with: { owner: true },
+  });
+  if (account == null) throw new Error("Failed to seed remote account");
+  return account;
 }
 
 async function seedLocalPostShareScenario() {
@@ -264,5 +302,78 @@ describe("persistSharingPost", () => {
     );
 
     expect(forwardActivity).toHaveBeenCalledOnce();
+  });
+
+  it("refuses to first-materialize a new post whose attribution claims a different origin", async () => {
+    expect.assertions(2);
+    // Sharer is on remote.test. The announce embeds a brand-new Note
+    // hosted on remote.test (matching the announcer's origin) but the
+    // attribution names an actor on victim.test. Without validation,
+    // persistPost would dereference victim.test for the attribution
+    // and cache the forged content as victim.test/@author's post.
+    const sharer = await seedRemoteAccount("sharer");
+    const forgedIri = "https://remote.test/@sharer/posts/forged";
+    const forgedObject = new Note({
+      id: new URL(forgedIri),
+      attribution: new Person({
+        id: new URL("https://victim.test/@author"),
+      }),
+      content: "<p>masquerade</p>",
+      to: PUBLIC_COLLECTION,
+    });
+
+    const share = await persistSharingPost(
+      db,
+      createAnnounce(
+        "https://remote.test/@sharer/announces/forge",
+        createPerson(sharer),
+        forgedObject,
+      ),
+      forgedObject,
+      "https://hollo.test",
+      { account: sharer },
+    );
+
+    const inserted = await db.query.posts.findFirst({
+      where: eq(posts.iri, forgedIri),
+    });
+    expect(share).toBeNull();
+    expect(inserted).toBeUndefined();
+  });
+
+  it("ignores embedded content from a cross-origin announce for a known post", async () => {
+    expect.assertions(3);
+    // Sharer is on remote.test, author/post are on victim.test (different
+    // origin). The embedded Note carries a hijacked body for the known
+    // post IRI; the canonical row in the DB must win.
+    const { actor, originalPostId, originalPostIri, sharer } =
+      await seedShareScenario({ authorHost: "victim.test" });
+
+    const forgedObject = new Note({
+      id: new URL(originalPostIri),
+      content: "<p>HIJACKED</p>",
+      to: PUBLIC_COLLECTION,
+    });
+
+    const share = await persistSharingPost(
+      db,
+      createAnnounce(
+        "https://remote.test/@sharer/announces/1",
+        actor,
+        forgedObject,
+      ),
+      forgedObject,
+      "https://hollo.test",
+      { account: sharer },
+    );
+
+    const original = await db.query.posts.findFirst({
+      where: eq(posts.id, originalPostId),
+    });
+    expect(share).not.toBeNull();
+    // The original post must keep its canonical content, not the
+    // attacker-supplied "HIJACKED" version.
+    expect(original?.content).toBe("Shared once");
+    expect(original?.contentHtml).toBe("<p>Shared once</p>");
   });
 });

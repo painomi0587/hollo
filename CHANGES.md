@@ -17,6 +17,14 @@ To be released.
     The inbox handler now refuses an `Update` whose actor origin does not
     match the embedded object's `id` origin.
 
+ -  Fixed a security vulnerability where an `Announce` activity from a
+    different origin than the announced object could first-materialize a
+    cached post from attacker-controlled embedded content, masquerading
+    as another actor's post.  Cross-origin announces of previously unknown
+    objects are now re-fetched from the canonical URL before being
+    persisted, and the embedded body is no longer trusted to overwrite a
+    post that is already known locally.
+
 
 Version 0.7.15
 --------------
