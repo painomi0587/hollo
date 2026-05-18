@@ -25,6 +25,12 @@ To be released.
     persisted, and the embedded body is no longer trusted to overwrite a
     post that is already known locally.
 
+ -  The login and OTP session cookies are now set with `HttpOnly`,
+    `SameSite=Lax`, and (over HTTPS) `Secure`.  Previously these cookies
+    were set without explicit attributes, so a single reflected XSS could
+    exfiltrate the session and cross-site POSTs could forge admin
+    actions.
+
 
 Version 0.7.15
 --------------

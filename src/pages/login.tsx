@@ -1,8 +1,9 @@
 import { zValidator } from "@hono/zod-validator";
 import { verify } from "argon2";
 import { eq } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { getSignedCookie, setSignedCookie } from "hono/cookie";
+import type { CookieOptions } from "hono/utils/cookie";
 import { TOTP } from "otpauth";
 import { z } from "zod";
 import { Layout } from "../components/Layout.tsx";
@@ -14,6 +15,23 @@ import { credentials } from "../schema.ts";
 // biome-ignore lint/complexity/useLiteralKeys: tsc complains about this (TS4111)
 const SECRET_KEY = process.env["SECRET_KEY"];
 if (SECRET_KEY == null) throw new Error("SECRET_KEY is required");
+
+// Returns the security options that every session-bearing cookie set by
+// this module needs.  `Secure` is bound to the request's effective scheme
+// (which `x-forwarded-fetch` rewrites from `X-Forwarded-Proto` when
+// `BEHIND_PROXY=true`), so a Hollo running over plaintext HTTP locally
+// still works while production deployments correctly mark cookies as
+// `Secure`.  `SameSite=Lax` blocks cross-site POSTs (the realistic CSRF
+// vector) while still allowing top-level navigations into the admin UI
+// such as the OAuth authorization flow initiated from a client app.
+function sessionCookieOptions(c: Context): CookieOptions {
+  return {
+    httpOnly: true,
+    sameSite: "Lax",
+    path: "/",
+    secure: new URL(c.req.url).protocol === "https:",
+  };
+}
 
 const login = new Hono();
 
@@ -59,7 +77,13 @@ login.post("/", async (c) => {
       400,
     );
   }
-  await setSignedCookie(c, "login", new Date().toISOString(), SECRET_KEY);
+  await setSignedCookie(
+    c,
+    "login",
+    new Date().toISOString(),
+    SECRET_KEY,
+    sessionCookieOptions(c),
+  );
   return c.redirect(next ?? "/");
 });
 
@@ -132,7 +156,13 @@ login.post(
         <OtpPage next={form.next} errors={{ token: "Invalid token." }} />,
       );
     }
-    await setSignedCookie(c, "otp", `${login} totp`, SECRET_KEY);
+    await setSignedCookie(
+      c,
+      "otp",
+      `${login} totp`,
+      SECRET_KEY,
+      sessionCookieOptions(c),
+    );
     return c.redirect(form.next ?? "/");
   },
 );
