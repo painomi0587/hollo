@@ -14,10 +14,12 @@ import {
   follows,
   instances,
   listMembers,
+  listPosts,
   lists,
   media,
   mentions,
   posts,
+  timelinePosts,
 } from "../../schema";
 import type { Uuid } from "../../uuid";
 import { uuidv7 } from "../../uuid";
@@ -132,6 +134,8 @@ describe.sequential("/api/v1/timelines/list/:list_id", () => {
       thumbnailWidth: 320,
       thumbnailHeight: 240,
     });
+
+    await db.insert(listPosts).values({ listId, postId });
 
     const response = await app.request(`/api/v1/timelines/list/${listId}`, {
       method: "GET",
@@ -285,6 +289,10 @@ describe.sequential("/api/v1/timelines/home", () => {
       },
     ]);
 
+    await db
+      .insert(timelinePosts)
+      .values({ accountId: owner.id, postId: approvedPostId });
+
     const response = await app.request("/api/v1/timelines/home", {
       headers: {
         authorization: bearerAuthorization(accessToken),
@@ -376,6 +384,10 @@ describe.sequential("/api/v1/timelines/home", () => {
         published: new Date(),
       },
     ]);
+
+    await db
+      .insert(timelinePosts)
+      .values({ accountId: owner.id, postId: quotePostId });
 
     const response = await app.request("/api/v1/timelines/home", {
       method: "GET",
@@ -470,6 +482,10 @@ describe.sequential("/api/v1/timelines/home", () => {
       },
     ]);
 
+    await db
+      .insert(timelinePosts)
+      .values({ accountId: owner.id, postId: boostPostId });
+
     const response = await app.request("/api/v1/timelines/home", {
       method: "GET",
       headers: {
@@ -538,6 +554,8 @@ describe.sequential("/api/v1/timelines/home", () => {
       contentHtml,
       published: new Date(),
     });
+
+    await db.insert(timelinePosts).values({ accountId: owner.id, postId });
 
     const response = await app.request("/api/v1/timelines/home", {
       method: "GET",
