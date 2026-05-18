@@ -25,6 +25,18 @@ To be released.
     persisted, and the embedded body is no longer trusted to overwrite a
     post that is already known locally.
 
+    As a deliberate trade-off, a cross-origin `Announce` of a previously
+    unknown post is dropped when the canonical origin is unreachable
+    (down, rate-limiting, or rejecting Hollo's signed fetch).  Honoring
+    the embedded body in that case would re-introduce the masquerade
+    vector that this change closes—an attacker can always craft an
+    embedded object whose `id` and `attributedTo` agree on a victim
+    origin, so the only safe source for the canonical content is the
+    canonical origin itself.  In practice this affects relay-mediated
+    boosts and cross-instance reposts when the source instance is
+    temporarily offline; locally cached posts and same-origin announces
+    are unaffected.
+
  -  The login and OTP session cookies are now set with `HttpOnly`,
     `SameSite=Lax`, and (over HTTPS) `Secure`.  Previously these cookies
     were set without explicit attributes, so a single reflected XSS could
