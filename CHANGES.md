@@ -6,6 +6,12 @@ Version 0.7.16
 
 To be released.
 
+ -  Fixed a security vulnerability where any federated actor could send a
+    `Delete` activity to remove cached remote posts authored by any other
+    actor, because the inbox handler matched only on the post IRI without
+    verifying the deleter's identity.  `Delete` activities are now ignored
+    unless the actor's origin matches the post author's origin.
+
 
 Version 0.7.15
 --------------

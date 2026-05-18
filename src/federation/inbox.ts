@@ -564,9 +564,25 @@ export async function onPostDeleted(
   const objectId = del.objectId;
   if (actorId == null || objectId == null) return;
   await db.transaction(async (tx) => {
+    const existingPost = await tx.query.posts.findFirst({
+      where: eq(posts.iri, objectId.href),
+      with: { account: true },
+    });
+    if (existingPost == null) return;
+    // Only an actor from the same origin as the post's author may delete it.
+    // Without this check, any federated actor could remove cached posts
+    // belonging to any other actor by guessing or harvesting their IRIs.
+    if (new URL(existingPost.account.iri).origin !== actorId.origin) {
+      inboxLogger.debug(
+        "Refused Delete of {postIri} from {actorIri}: " +
+          "actor is not from the post author's origin.",
+        { postIri: objectId.href, actorIri: actorId.href },
+      );
+      return;
+    }
     const deletedPosts = await tx
       .delete(posts)
-      .where(eq(posts.iri, objectId.href))
+      .where(eq(posts.id, existingPost.id))
       .returning();
     if (deletedPosts.length > 0) {
       const deletedPost = deletedPosts[0];
