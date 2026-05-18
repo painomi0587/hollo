@@ -19,7 +19,7 @@ import type { Uuid } from "../uuid";
 
 export const TIMELINE_INBOXES =
   // oxlint-disable-next-line typescript/dot-notation
-  process.env["TIMELINE_INBOXES"]?.trim()?.toLowerCase() === "true";
+  process.env["TIMELINE_INBOXES"]?.trim()?.toLowerCase() !== "false";
 
 export const TIMELINE_INBOX_LIMIT = 1000;
 

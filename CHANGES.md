@@ -381,6 +381,11 @@ To be released.
     `posts` table, taking several seconds even on a warm cache.  The new
     index cuts these to index lookups.
 
+ -  The `TIMELINE_INBOXES` feature flag, introduced in Hollo 0.4.0, now
+    defaults to `true`.  Set it to `false` explicitly to opt out.  The flag
+    will be removed entirely in Hollo 1.0.0, when timeline inbox mode will
+    be the only supported behavior.
+
  -  Upgraded Fedify to 2.2.2.
 
  -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.
