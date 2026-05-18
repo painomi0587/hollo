@@ -530,12 +530,45 @@ export async function onPostUpdated(
   const object = await update.getObject();
   if (!isPost(object)) return;
 
+  const updateActorId = update.actorId;
+  const objectId = object.id;
+  const attributionId = object.attributionId;
+  if (updateActorId == null || objectId == null || attributionId == null) {
+    return;
+  }
+  // Authorization: a remote `Update` may overwrite (or first-materialize)
+  // a cached post under another instance's authority through several
+  // distinct routes:
+  //
+  //   - the `Update` actor is on a different origin than the post's
+  //     claimed author,
+  //   - the embedded object's `id` is on a different origin than its
+  //     `attributedTo`, masquerading evil-hosted content as another
+  //     actor's post.
+  //
+  // Require all three origins (actor, object id, attribution) to match
+  // before trusting the embedded object.
+  if (
+    updateActorId.origin !== attributionId.origin ||
+    objectId.origin !== attributionId.origin
+  ) {
+    inboxLogger.debug(
+      "Refused Update of {postIri} from {actorIri}: " +
+        "actor/object/attribution origins do not all match " +
+        "(attribution: {attributionIri}).",
+      {
+        postIri: objectId.href,
+        actorIri: updateActorId.href,
+        attributionIri: attributionId.href,
+      },
+    );
+    return;
+  }
+
   // Get post ID before update to find quote posts
-  const existingPost = object.id
-    ? await db.query.posts.findFirst({
-        where: eq(posts.iri, object.id.href),
-      })
-    : null;
+  const existingPost = await db.query.posts.findFirst({
+    where: eq(posts.iri, objectId.href),
+  });
 
   // Persist the updated post
   await persistPost(db, object, ctx.origin, ctx);

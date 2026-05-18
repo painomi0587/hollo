@@ -12,6 +12,11 @@ To be released.
     verifying the deleter's identity.  `Delete` activities are now ignored
     unless the actor's origin matches the post author's origin.
 
+ -  Fixed a security vulnerability where an `Update` activity could overwrite
+    or first-materialize a remote post under another instance's authority.
+    The inbox handler now refuses an `Update` whose actor origin does not
+    match the embedded object's `id` origin.
+
 
 Version 0.7.15
 --------------
