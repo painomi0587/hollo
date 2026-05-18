@@ -2,6 +2,7 @@ import { isActor } from "@fedify/fedify";
 import { getLogger } from "@logtape/logtape";
 import { count, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
 import federation from "../federation";
@@ -13,6 +14,7 @@ const logger = getLogger(["hollo", "pages", "federation"]);
 
 const data = new Hono();
 
+data.use(csrf());
 data.use(loginRequired);
 
 data.get("/", async (c) => {

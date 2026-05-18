@@ -2,6 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { getLogger } from "@logtape/logtape";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import { z } from "zod";
 
 import { db } from "./db.ts";
@@ -120,8 +121,17 @@ app.get(
   },
 );
 
+// The OAuth authorization consent form is cookie-authenticated and runs
+// at the same origin as Hollo's web UI. Without an `Origin`/Sec-Fetch-Site
+// check, a malicious page could submit a hidden cross-site POST to
+// silently grant itself access to a logged-in admin's account.
+// `/token`, `/revoke`, and `/userinfo` are intentionally not behind csrf()
+// because client apps (including browser SPAs on arbitrary origins)
+// authenticate to them with client credentials or bearer tokens, not
+// session cookies.
 app.post(
   "/authorize",
+  csrf(),
   loginRequired,
   zValidator(
     "form",

@@ -1,12 +1,15 @@
 import { hash } from "argon2";
 import { count } from "drizzle-orm";
 import { type Context, Hono } from "hono";
+import { csrf } from "hono/csrf";
 import { Layout } from "../../components/Layout.tsx";
 import { SetupForm } from "../../components/SetupForm.tsx";
 import db from "../../db.ts";
 import { credentials } from "../../schema.ts";
 
 const setup = new Hono();
+
+setup.use(csrf());
 
 function showsProxyWarning(c: Context): boolean {
   const url = new URL(c.req.url);

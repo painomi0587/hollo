@@ -64,6 +64,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -138,6 +139,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -180,6 +182,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -227,6 +230,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -276,6 +280,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -321,6 +326,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -366,6 +372,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -408,6 +415,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -438,6 +446,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -468,6 +477,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -500,6 +510,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -532,6 +543,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -564,6 +576,7 @@ describe.sequential("OAuth", () => {
           method: "GET",
           headers: {
             Cookie: cookie,
+            "Sec-Fetch-Site": "same-origin",
           },
         },
       );
@@ -612,6 +625,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -639,6 +653,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -670,6 +685,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -698,6 +714,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -733,6 +750,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -772,6 +790,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -796,6 +815,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -820,6 +840,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -848,6 +869,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 
@@ -876,6 +898,7 @@ describe.sequential("OAuth", () => {
         body: formData,
         headers: {
           Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
         },
       });
 

@@ -15,6 +15,7 @@ import { createObjectCsvStringifier } from "csv-writer-portable";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { uniq } from "es-toolkit";
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import { streamText } from "hono/streaming";
 import neatCsv from "neat-csv";
 import { AccountForm } from "../components/AccountForm.tsx";
@@ -61,6 +62,7 @@ const logger = getLogger(["hollo", "pages", "accounts"]);
 
 const accounts = new Hono();
 
+accounts.use(csrf());
 accounts.use(loginRequired);
 
 accounts.get("/", async (c) => {

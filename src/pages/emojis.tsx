@@ -1,6 +1,7 @@
 import { getLogger } from "@logtape/logtape";
 import { desc, inArray, isNotNull, ne } from "drizzle-orm";
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import mime from "mime";
 import { DashboardLayout } from "../components/DashboardLayout";
 import db from "../db";
@@ -12,6 +13,7 @@ const logger = getLogger(["hollo", "pages", "emojis"]);
 
 const emojis = new Hono();
 
+emojis.use(csrf());
 emojis.use(loginRequired);
 
 emojis.get("/", async (c) => {

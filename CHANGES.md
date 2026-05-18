@@ -31,6 +31,22 @@ To be released.
     exfiltrate the session and cross-site POSTs could forge admin
     actions.
 
+ -  Hono's CSRF middleware is now applied to every cookie-authenticated
+    web route (`/login`, `/login/otp`, `/logout`, `/setup`, `/auth`,
+    `/accounts`, `/emojis`, `/federation`) and to `POST /oauth/authorize`.
+    Without this, a malicious page could submit a hidden cross-site form
+    to trigger state-changing actions (disable 2FA, delete an account,
+    silently authorize an OAuth app, etc.) on behalf of a logged-in
+    admin.  `/oauth/token`, `/oauth/revoke`, `/oauth/userinfo`, and the
+    `/api/*` namespace continue to authenticate with client credentials
+    or bearer tokens and are intentionally not affected.
+
+ -  The application error handler now returns the response carried by
+    `HTTPException` instead of rethrowing it as a generic 500.  Without
+    this, middleware that signals refusal by throwing
+    `HTTPException(403, …)` (the new CSRF middleware, among others)
+    would have surfaced as opaque 500 responses to clients.
+
 
 Version 0.7.15
 --------------

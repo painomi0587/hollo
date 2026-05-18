@@ -37,6 +37,7 @@ describe.sequential("emojis", () => {
       body: formData,
       headers: {
         Cookie: cookie,
+        "Sec-Fetch-Site": "same-origin",
       },
     });
 

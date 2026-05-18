@@ -3,6 +3,7 @@ import { verify } from "argon2";
 import { eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { getSignedCookie, setSignedCookie } from "hono/cookie";
+import { csrf } from "hono/csrf";
 import type { CookieOptions } from "hono/utils/cookie";
 import { TOTP } from "otpauth";
 import { z } from "zod";
@@ -34,6 +35,8 @@ function sessionCookieOptions(c: Context): CookieOptions {
 }
 
 const login = new Hono();
+
+login.use(csrf());
 
 login.get("/", (c) => {
   const next = c.req.query("next");

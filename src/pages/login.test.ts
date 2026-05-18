@@ -13,6 +13,53 @@ async function seedCredential(email: string, password: string) {
     .values({ email, passwordHash: await hash(password) });
 }
 
+describe("POST /login (CSRF)", () => {
+  beforeEach(async () => {
+    await cleanDatabase();
+  });
+
+  it("rejects a cross-site POST with a mismatched Origin header", async () => {
+    expect.assertions(1);
+    const email = "admin@hollo.test";
+    const password = "correct-horse-battery-staple";
+    await seedCredential(email, password);
+
+    const form = new URLSearchParams({ email, password });
+    const response = await app.fetch(
+      new Request("http://hollo.test/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Origin: "https://attacker.example",
+        },
+        body: form.toString(),
+        redirect: "manual",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects a POST that omits Origin and Sec-Fetch-Site", async () => {
+    expect.assertions(1);
+    const email = "admin@hollo.test";
+    const password = "correct-horse-battery-staple";
+    await seedCredential(email, password);
+
+    const form = new URLSearchParams({ email, password });
+    const response = await app.fetch(
+      new Request("http://hollo.test/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+        redirect: "manual",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+  });
+});
+
 describe("POST /login", () => {
   beforeEach(async () => {
     await cleanDatabase();
@@ -28,7 +75,10 @@ describe("POST /login", () => {
     const response = await app.fetch(
       new Request("http://hollo.test/login", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
+        },
         body: form.toString(),
         redirect: "manual",
       }),
@@ -53,7 +103,10 @@ describe("POST /login", () => {
     const response = await app.fetch(
       new Request("https://hollo.test/login", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
+        },
         body: form.toString(),
         redirect: "manual",
       }),
@@ -100,6 +153,7 @@ describe("POST /login/otp", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
           Cookie: loginCookie,
         },
         body: form.toString(),
@@ -126,6 +180,7 @@ describe("POST /login/otp", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
           Cookie: loginCookie,
         },
         body: form.toString(),

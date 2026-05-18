@@ -5,6 +5,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { captureException } from "@sentry/core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 
 import api from "./api";
 import fedi from "./federation";
@@ -18,6 +19,11 @@ const app = new Hono();
 
 app.onError((err, _) => {
   captureException(err);
+  // Let HTTPException carry its own status/body through to the client.
+  // Middleware like `hono/csrf` signals a refusal by throwing
+  // `HTTPException(403, { res })`; rethrowing would surface that as a
+  // generic 500 to the caller and defeat the protection.
+  if (err instanceof HTTPException) return err.getResponse();
   throw err;
 });
 
