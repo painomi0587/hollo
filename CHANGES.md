@@ -181,6 +181,10 @@ To be released.
     to 10 custom fields via `fields_attributes[0]` through
     `fields_attributes[9]`.
 
+ -  Added `LOG_FILE_FORMAT` environment variable to control the format of the
+    log file set by `LOG_FILE`.  Valid values are `jsonl` (the default, JSON
+    Lines format) and `logfmt` ([logfmt] format).
+
  -  Fixed preview card generation for remote posts whose content only links to
     mentioned accounts.  Hollo now excludes ActivityPub `Mention` targets from
     remote preview-card link detection even when the source server, such as
@@ -392,6 +396,7 @@ To be released.
 
 [Split-domain WebFinger guide]: https://docs.hollo.social/install/split-domain/
 [FEP-044f]: https://w3id.org/fep/044f
+[logfmt]: https://brandur.org/logfmt
 [@hollo@hollo.social]: https://hollo.social/@hollo
 [#67]: https://github.com/fedify-dev/hollo/issues/67
 [#127]: https://github.com/fedify-dev/hollo/issues/127

@@ -416,7 +416,8 @@ STORAGE_URL_BASE=https://your-bucket.s3.amazonaws.com
 | `BEHIND_PROXY`                           | false   | Trust proxy headers                                                                                             |
 | `LOG_LEVEL`                              | info    | Logging level                                                                                                   |
 | `LOG_QUERY`                              | false   | Log database queries                                                                                            |
-| `LOG_FILE`                               | -       | JSON log file path                                                                                              |
+| `LOG_FILE`                               | -       | Log file path                                                                                                   |
+| `LOG_FILE_FORMAT`                        | jsonl   | Log file format: `jsonl` or `logfmt`                                                                            |
 | `SENTRY_DSN`                             | -       | Sentry error tracking                                                                                           |
 | `HOME_URL`                               | -       | Home page redirect URL                                                                                          |
 | `ALLOW_PRIVATE_ADDRESS`                  | false   | Disable SSRF protection                                                                                         |
