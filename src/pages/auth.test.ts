@@ -39,7 +39,7 @@ describe("auth passkeys", () => {
       const cookie = await getLoginCookie();
       const response = await app.request("/auth/passkeys/registration/begin", {
         method: "POST",
-        headers: { Cookie: cookie },
+        headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
       });
       expect(response.status).toBe(302);
       expect(response.headers.get("Location")).toBe("/setup");
@@ -52,7 +52,7 @@ describe("auth passkeys", () => {
         "http://hollo.test/auth/passkeys/registration/begin",
         {
           method: "POST",
-          headers: { Cookie: cookie },
+          headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
         },
       );
       expect(response.status).toBe(200);
@@ -80,7 +80,10 @@ describe("auth passkeys", () => {
       await seedCredential();
       const response = await app.request(
         "http://hollo.test/auth/passkeys/registration/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       expect(response.status).toBe(302);
       expect(response.headers.get("Location")).toMatch(/^\/login\?next=/);
@@ -98,6 +101,7 @@ describe("auth passkeys", () => {
           headers: {
             Cookie: cookie,
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
           },
           body: JSON.stringify({
             registrationResponse: {
@@ -124,7 +128,7 @@ describe("auth passkeys", () => {
         "http://hollo.test/auth/passkeys/registration/begin",
         {
           method: "POST",
-          headers: { Cookie: cookie },
+          headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
         },
       );
       const challengeCookie = beginResponse.headers.get("Set-Cookie") ?? "";
@@ -147,6 +151,7 @@ describe("auth passkeys", () => {
           headers: {
             Cookie: `${cookie}; ${passkeyRegCookie}`,
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
           },
           body: JSON.stringify({
             nickname: "My Yubikey",
@@ -182,7 +187,10 @@ describe("auth passkeys", () => {
       const cookie = await getLoginCookie();
       const beginResponse = await app.request(
         "http://hollo.test/auth/passkeys/registration/begin",
-        { method: "POST", headers: { Cookie: cookie } },
+        {
+          method: "POST",
+          headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie = beginResponse.headers.get("Set-Cookie") ?? "";
       const passkeyRegCookie = challengeCookie.split(";")[0];
@@ -215,6 +223,7 @@ describe("auth passkeys", () => {
           headers: {
             Cookie: `${cookie}; ${passkeyRegCookie}`,
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
           },
           body: JSON.stringify({
             registrationResponse: {
@@ -238,7 +247,10 @@ describe("auth passkeys", () => {
       const beginCookie = await getLoginCookie();
       const beginResponse = await app.request(
         "http://hollo.test/auth/passkeys/registration/begin",
-        { method: "POST", headers: { Cookie: beginCookie } },
+        {
+          method: "POST",
+          headers: { Cookie: beginCookie, "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie = beginResponse.headers.get("Set-Cookie") ?? "";
       const passkeyRegCookie = challengeCookie.split(";")[0];
@@ -254,6 +266,7 @@ describe("auth passkeys", () => {
           headers: {
             Cookie: `${otherCookie}; ${passkeyRegCookie}`,
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
           },
           body: JSON.stringify({
             registrationResponse: {
@@ -275,7 +288,10 @@ describe("auth passkeys", () => {
       const cookie = await getLoginCookie();
       const beginResponse = await app.request(
         "http://hollo.test/auth/passkeys/registration/begin",
-        { method: "POST", headers: { Cookie: cookie } },
+        {
+          method: "POST",
+          headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie = beginResponse.headers.get("Set-Cookie") ?? "";
       const passkeyRegCookie = challengeCookie.split(";")[0];
@@ -289,6 +305,7 @@ describe("auth passkeys", () => {
           headers: {
             Cookie: `${cookie}; ${passkeyRegCookie}`,
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
           },
           body: JSON.stringify({
             registrationResponse: {
@@ -311,7 +328,10 @@ describe("auth passkeys", () => {
       const cookie = await getLoginCookie();
       const beginResponse = await app.request(
         "http://hollo.test/auth/passkeys/registration/begin",
-        { method: "POST", headers: { Cookie: cookie } },
+        {
+          method: "POST",
+          headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie = beginResponse.headers.get("Set-Cookie") ?? "";
       const passkeyRegCookie = challengeCookie.split(";")[0];
@@ -332,6 +352,7 @@ describe("auth passkeys", () => {
           headers: {
             Cookie: `${cookie}; ${passkeyRegCookie}`,
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             "User-Agent":
               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
           },
@@ -361,7 +382,10 @@ describe("auth passkeys", () => {
       const cookie = await getLoginCookie();
       const beginResponse = await app.request(
         "http://hollo.test/auth/passkeys/registration/begin",
-        { method: "POST", headers: { Cookie: cookie } },
+        {
+          method: "POST",
+          headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie = beginResponse.headers.get("Set-Cookie") ?? "";
       const passkeyRegCookie = challengeCookie.split(";")[0];
@@ -373,6 +397,7 @@ describe("auth passkeys", () => {
           headers: {
             Cookie: `${cookie}; ${passkeyRegCookie}`,
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
           },
           // The schema requires `registrationResponse`, so this body is
           // invalid and used to trip zValidator before the handler ran.
@@ -403,7 +428,7 @@ describe("auth passkeys", () => {
         "/auth/passkeys/cred-to-remove/delete",
         {
           method: "POST",
-          headers: { Cookie: cookie },
+          headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
         },
       );
       expect(response.status).toBe(302);
@@ -419,7 +444,7 @@ describe("auth passkeys", () => {
         "/auth/passkeys/does-not-exist/delete",
         {
           method: "POST",
-          headers: { Cookie: cookie },
+          headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
         },
       );
       expect(response.status).toBe(302);
@@ -442,7 +467,7 @@ describe("auth passkeys", () => {
       });
       const cookie = await getLoginCookie();
       const response = await app.request("/auth", {
-        headers: { Cookie: cookie },
+        headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
       });
       expect(response.status).toBe(200);
       const body = await response.text();

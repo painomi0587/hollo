@@ -4,6 +4,7 @@ import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
+import { csrf } from "hono/csrf";
 import type { HOTP, TOTP } from "otpauth";
 import { z } from "zod";
 
@@ -27,6 +28,7 @@ const PASSKEY_REG_MAX_AGE_SECONDS = 5 * 60;
 
 const auth = new Hono();
 
+auth.use(csrf());
 auth.use(loginRequired);
 
 auth.get("/", async (c) => {

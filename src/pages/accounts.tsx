@@ -15,6 +15,7 @@ import { count, eq } from "drizzle-orm";
 import { uniq } from "es-toolkit";
 import type { Disk } from "flydrive";
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import { streamText } from "hono/streaming";
 import mime from "mime";
 import neatCsv from "neat-csv";
@@ -110,6 +111,7 @@ function storageKeyFromUrl(url: string): string | undefined {
 
 const accounts = new Hono();
 
+accounts.use(csrf());
 accounts.use(loginRequired);
 
 accounts.get("/", async (c) => {

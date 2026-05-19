@@ -1,10 +1,18 @@
+import { hash } from "argon2";
 import { eq } from "drizzle-orm";
+import { Secret, TOTP } from "otpauth";
 import * as timekeeper from "timekeeper";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanDatabase } from "../../tests/helpers";
+import { getLoginCookie } from "../../tests/helpers/web";
 import db from "../db";
-import { credentials, passkeyLoginChallenges, passkeys } from "../schema";
+import {
+  credentials,
+  passkeyLoginChallenges,
+  passkeys,
+  totps,
+} from "../schema";
 import app from "./index";
 
 vi.mock("../passkey", async () => {
@@ -79,7 +87,10 @@ describe("login passkeys", () => {
           email: "wrong@example.com",
           password: "wrong-password",
         }),
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
+        },
       });
       const body = await response.text();
       // The <details> element rendering its `open` attribute means the
@@ -93,7 +104,10 @@ describe("login passkeys", () => {
     it("returns 404 and does not insert a challenge when no passkeys are enrolled", async () => {
       const response = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       expect(response.status).toBe(404);
       const rows = await db.query.passkeyLoginChallenges.findMany();
@@ -121,7 +135,10 @@ describe("login passkeys", () => {
 
       const response = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       expect(response.status).toBe(200);
       expect(response.headers.get("Retry-After")).toBeNull();
@@ -140,7 +157,10 @@ describe("login passkeys", () => {
       await seedPasskey();
       const response = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
@@ -163,7 +183,10 @@ describe("login passkeys", () => {
         "http://hollo.test/login/passkey/finish",
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
+          },
           body: JSON.stringify({
             authenticationResponse: {
               id: "cred-id-login",
@@ -190,7 +213,10 @@ describe("login passkeys", () => {
       await seedPasskey("a-different-cred");
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -200,6 +226,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: JSON.stringify({
@@ -230,7 +257,10 @@ describe("login passkeys", () => {
 
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -241,6 +271,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: JSON.stringify({
@@ -284,7 +315,10 @@ describe("login passkeys", () => {
 
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -295,6 +329,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: JSON.stringify({
@@ -326,7 +361,10 @@ describe("login passkeys", () => {
 
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -355,6 +393,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: finishBody,
@@ -373,6 +412,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: finishBody,
@@ -399,7 +439,10 @@ describe("login passkeys", () => {
 
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -410,6 +453,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: JSON.stringify({
@@ -442,7 +486,10 @@ describe("login passkeys", () => {
       });
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -453,6 +500,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: JSON.stringify({
@@ -484,7 +532,10 @@ describe("login passkeys", () => {
       // capture the signed cookie, then time-travel past the TTL.
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -500,6 +551,7 @@ describe("login passkeys", () => {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "Sec-Fetch-Site": "same-origin",
               Cookie: challengeCookie,
             },
             body: JSON.stringify({
@@ -533,7 +585,10 @@ describe("login passkeys", () => {
 
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -544,6 +599,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: JSON.stringify({
@@ -580,7 +636,10 @@ describe("login passkeys", () => {
 
       const beginResponse = await app.request(
         "http://hollo.test/login/passkey/begin",
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Sec-Fetch-Site": "same-origin" },
+        },
       );
       const challengeCookie =
         beginResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
@@ -591,6 +650,7 @@ describe("login passkeys", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Sec-Fetch-Site": "same-origin",
             Cookie: challengeCookie,
           },
           body: JSON.stringify({
@@ -613,5 +673,190 @@ describe("login passkeys", () => {
       const body = (await response.json()) as { redirect: string };
       expect(body.redirect).toBe("/");
     });
+  });
+});
+async function seedHashedCredential(email: string, password: string) {
+  await db
+    .insert(credentials)
+    .values({ email, passwordHash: await hash(password) });
+}
+
+describe("POST /login (CSRF)", () => {
+  beforeEach(async () => {
+    await cleanDatabase();
+  });
+
+  it("rejects a cross-site POST with a mismatched Origin header", async () => {
+    expect.assertions(1);
+    const email = "admin@hollo.test";
+    const password = "correct-horse-battery-staple";
+    await seedHashedCredential(email, password);
+
+    const form = new URLSearchParams({ email, password });
+    const response = await app.fetch(
+      new Request("http://hollo.test/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Origin: "https://attacker.example",
+        },
+        body: form.toString(),
+        redirect: "manual",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects a POST that omits Origin and Sec-Fetch-Site", async () => {
+    expect.assertions(1);
+    const email = "admin@hollo.test";
+    const password = "correct-horse-battery-staple";
+    await seedHashedCredential(email, password);
+
+    const form = new URLSearchParams({ email, password });
+    const response = await app.fetch(
+      new Request("http://hollo.test/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+        redirect: "manual",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("POST /login", () => {
+  beforeEach(async () => {
+    await cleanDatabase();
+  });
+
+  it("sets HttpOnly, SameSite=Lax, Path=/ on the login cookie", async () => {
+    expect.assertions(5);
+    const email = "admin@hollo.test";
+    const password = "correct-horse-battery-staple";
+    await seedHashedCredential(email, password);
+
+    const form = new URLSearchParams({ email, password });
+    const response = await app.fetch(
+      new Request("http://hollo.test/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
+        },
+        body: form.toString(),
+        redirect: "manual",
+      }),
+    );
+
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toMatch(/(?:^|;\s*|^|\s)login=/i);
+    expect(setCookie).toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/SameSite=Lax/i);
+    expect(setCookie).toMatch(/Path=\//i);
+    // The test request is over plain http, so Secure must NOT be set.
+    expect(setCookie).not.toMatch(/Secure/i);
+  });
+
+  it("marks the login cookie Secure when the request is over https", async () => {
+    expect.assertions(1);
+    const email = "admin@hollo.test";
+    const password = "correct-horse-battery-staple";
+    await seedHashedCredential(email, password);
+
+    const form = new URLSearchParams({ email, password });
+    const response = await app.fetch(
+      new Request("https://hollo.test/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
+        },
+        body: form.toString(),
+        redirect: "manual",
+      }),
+    );
+
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toMatch(/Secure/i);
+  });
+});
+
+async function seedTotp() {
+  const secret = new Secret({ size: 20 });
+  await db.insert(totps).values({
+    issuer: "Hollo",
+    label: "admin",
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30,
+    secret: secret.base32,
+  });
+  return new TOTP({
+    issuer: "Hollo",
+    label: "admin",
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30,
+    secret,
+  });
+}
+
+describe("POST /login/otp", () => {
+  beforeEach(async () => {
+    await cleanDatabase();
+  });
+
+  it("sets HttpOnly, SameSite=Lax, Path=/ on the otp cookie", async () => {
+    expect.assertions(5);
+    const totp = await seedTotp();
+    const loginCookie = await getLoginCookie();
+
+    const form = new URLSearchParams({ token: totp.generate() });
+    const response = await app.fetch(
+      new Request("http://hollo.test/login/otp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
+          Cookie: loginCookie,
+        },
+        body: form.toString(),
+        redirect: "manual",
+      }),
+    );
+
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toMatch(/(?:^|;\s*|\s)otp=/i);
+    expect(setCookie).toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/SameSite=Lax/i);
+    expect(setCookie).toMatch(/Path=\//i);
+    expect(setCookie).not.toMatch(/Secure/i);
+  });
+
+  it("marks the otp cookie Secure when the request is over https", async () => {
+    expect.assertions(1);
+    const totp = await seedTotp();
+    const loginCookie = await getLoginCookie();
+
+    const form = new URLSearchParams({ token: totp.generate() });
+    const response = await app.fetch(
+      new Request("https://hollo.test/login/otp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Sec-Fetch-Site": "same-origin",
+          Cookie: loginCookie,
+        },
+        body: form.toString(),
+        redirect: "manual",
+      }),
+    );
+
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toMatch(/Secure/i);
   });
 });

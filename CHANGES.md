@@ -421,6 +421,103 @@ To be released.
 [#493]: https://github.com/fedify-dev/hollo/pull/493
 
 
+Version 0.8.5
+-------------
+
+Released on May 19, 2026.
+
+ -  Fixed a security vulnerability where any federated actor could send a
+    `Delete` activity to remove cached remote posts authored by any other
+    actor, because the inbox handler matched only on the post IRI without
+    verifying the deleter's identity.  `Delete` activities are now ignored
+    unless the actor's origin matches the post author's origin.
+
+ -  Fixed a security vulnerability where an `Update` activity could overwrite
+    or first-materialize a remote post under another instance's authority.
+    The inbox handler now refuses an `Update` whose actor origin does not
+    match the embedded object's `id` origin.
+
+ -  Fixed a security vulnerability where an `Announce` activity from a
+    different origin than the announced object could first-materialize a
+    cached post from attacker-controlled embedded content, masquerading
+    as another actor's post.  Cross-origin announces of previously unknown
+    objects are now re-fetched from the canonical URL before being
+    persisted, and the embedded body is no longer trusted to overwrite a
+    post that is already known locally.
+
+    As a deliberate trade-off, a cross-origin `Announce` of a previously
+    unknown post is dropped when the canonical origin is unreachable
+    (down, rate-limiting, or rejecting Hollo's signed fetch).  Honoring
+    the embedded body in that case would re-introduce the masquerade
+    vector that this change closes—an attacker can always craft an
+    embedded object whose `id` and `attributedTo` agree on a victim
+    origin, so the only safe source for the canonical content is the
+    canonical origin itself.  In practice this affects relay-mediated
+    boosts and cross-instance reposts when the source instance is
+    temporarily offline; locally cached posts and same-origin announces
+    are unaffected.
+
+ -  The login and OTP session cookies are now set with `HttpOnly`,
+    `SameSite=Lax`, and (over HTTPS) `Secure`.  Previously these cookies
+    were set without explicit attributes, so a single reflected XSS could
+    exfiltrate the session and cross-site POSTs could forge admin
+    actions.
+
+ -  Hono's CSRF middleware is now applied to every cookie-authenticated
+    web route (`/login`, `/login/otp`, `/logout`, `/setup`, `/auth`,
+    `/accounts`, `/emojis`, `/federation`) and to `POST /oauth/authorize`.
+    Without this, a malicious page could submit a hidden cross-site form
+    to trigger state-changing actions (disable 2FA, delete an account,
+    silently authorize an OAuth app, etc.) on behalf of a logged-in
+    admin.  `/oauth/token`, `/oauth/revoke`, `/oauth/userinfo`, and the
+    `/api/*` namespace continue to authenticate with client credentials
+    or bearer tokens and are intentionally not affected.
+
+ -  The application error handler now returns the response carried by
+    `HTTPException` instead of rethrowing it as a generic 500.  Without
+    this, middleware that signals refusal by throwing
+    `HTTPException(403, …)` (the new CSRF middleware, among others)
+    would have surfaced as opaque 500 responses to clients.
+
+ -  Incoming `Follow`, `Like`, `EmojiReact`, and `Announce` activities
+    from a blocked actor are now silently dropped.  Previously a block
+    only flipped auto-approval on incoming follow requests and did
+    nothing for protected accounts, likes, reactions, or
+    announcements—a blocker still saw notifications and timeline
+    entries from the actor they had blocked.
+
+ -  Pinned the transitive `fast-xml-parser` dependency (carried in via
+    the AWS SDK that backs S3 storage) using `pnpm.overrides`.  v4
+    consumers now resolve to `^4.5.5` (fixing the critical entity-
+    encoding bypass and several high-severity parser issues) and v5
+    consumers resolve to `^5.7.0`.  Each AWS SDK is kept on its
+    expected major version to preserve API compatibility; the single
+    remaining “XMLBuilder unescaped delimiter” moderate advisory is
+    only patched on v5.7.0+ and is not addressed here because forcing
+    AWS SDK v4 consumers onto fast-xml-parser v5 would risk runtime
+    regressions on S3 deployments.
+
+ -  Hollo now warns at startup whenever `LOG_QUERY=true` is set.  The
+    flag causes drizzle-orm to emit every SQL query together with its
+    bound parameter values, which include OAuth access tokens (stored
+    plain in the database), authorization codes, and other secrets;
+    leaving it enabled in production exposes those secrets to anyone
+    with read access to the application logs (or to a downstream
+    collector such as Sentry or a file sink).
+
+ -  The OAuth PKCE code-challenge check and the OAuth multi-credential
+    client-secret consistency check are now compared in constant time
+    using `crypto.timingSafeEqual`.  (The primary client-secret
+    authentication path runs as a Postgres equality predicate and is
+    unchanged.)  The PKCE comparison is between two SHA-256 hashes
+    (low practical timing-attack risk) and the multi-credential
+    consistency check only fires when a client presents the same
+    credentials via more than one mechanism, so neither was a
+    confirmed exploitation primitive, but constant-time comparison is
+    the correct defence-in-depth posture for any user-space operation
+    on a secret.
+
+
 Version 0.8.4
 -------------
 
@@ -649,6 +746,103 @@ Released on April 27, 2026.
 [#445]: https://github.com/fedify-dev/hollo/issues/445
 [#447]: https://github.com/fedify-dev/hollo/pull/447
 [#448]: https://github.com/fedify-dev/hollo/pull/448
+
+
+Version 0.7.16
+--------------
+
+Released on May 19, 2026.
+
+ -  Fixed a security vulnerability where any federated actor could send a
+    `Delete` activity to remove cached remote posts authored by any other
+    actor, because the inbox handler matched only on the post IRI without
+    verifying the deleter's identity.  `Delete` activities are now ignored
+    unless the actor's origin matches the post author's origin.
+
+ -  Fixed a security vulnerability where an `Update` activity could overwrite
+    or first-materialize a remote post under another instance's authority.
+    The inbox handler now refuses an `Update` whose actor origin does not
+    match the embedded object's `id` origin.
+
+ -  Fixed a security vulnerability where an `Announce` activity from a
+    different origin than the announced object could first-materialize a
+    cached post from attacker-controlled embedded content, masquerading
+    as another actor's post.  Cross-origin announces of previously unknown
+    objects are now re-fetched from the canonical URL before being
+    persisted, and the embedded body is no longer trusted to overwrite a
+    post that is already known locally.
+
+    As a deliberate trade-off, a cross-origin `Announce` of a previously
+    unknown post is dropped when the canonical origin is unreachable
+    (down, rate-limiting, or rejecting Hollo's signed fetch).  Honoring
+    the embedded body in that case would re-introduce the masquerade
+    vector that this change closes—an attacker can always craft an
+    embedded object whose `id` and `attributedTo` agree on a victim
+    origin, so the only safe source for the canonical content is the
+    canonical origin itself.  In practice this affects relay-mediated
+    boosts and cross-instance reposts when the source instance is
+    temporarily offline; locally cached posts and same-origin announces
+    are unaffected.
+
+ -  The login and OTP session cookies are now set with `HttpOnly`,
+    `SameSite=Lax`, and (over HTTPS) `Secure`.  Previously these cookies
+    were set without explicit attributes, so a single reflected XSS could
+    exfiltrate the session and cross-site POSTs could forge admin
+    actions.
+
+ -  Hono's CSRF middleware is now applied to every cookie-authenticated
+    web route (`/login`, `/login/otp`, `/logout`, `/setup`, `/auth`,
+    `/accounts`, `/emojis`, `/federation`) and to `POST /oauth/authorize`.
+    Without this, a malicious page could submit a hidden cross-site form
+    to trigger state-changing actions (disable 2FA, delete an account,
+    silently authorize an OAuth app, etc.) on behalf of a logged-in
+    admin.  `/oauth/token`, `/oauth/revoke`, `/oauth/userinfo`, and the
+    `/api/*` namespace continue to authenticate with client credentials
+    or bearer tokens and are intentionally not affected.
+
+ -  The application error handler now returns the response carried by
+    `HTTPException` instead of rethrowing it as a generic 500.  Without
+    this, middleware that signals refusal by throwing
+    `HTTPException(403, …)` (the new CSRF middleware, among others)
+    would have surfaced as opaque 500 responses to clients.
+
+ -  Incoming `Follow`, `Like`, `EmojiReact`, and `Announce` activities
+    from a blocked actor are now silently dropped.  Previously a block
+    only flipped auto-approval on incoming follow requests and did
+    nothing for protected accounts, likes, reactions, or
+    announcements—a blocker still saw notifications and timeline
+    entries from the actor they had blocked.
+
+ -  Pinned the transitive `fast-xml-parser` dependency (carried in via
+    the AWS SDK that backs S3 storage) using `pnpm.overrides`.  v4
+    consumers now resolve to `^4.5.5` (fixing the critical entity-
+    encoding bypass and several high-severity parser issues) and v5
+    consumers resolve to `^5.7.0`.  Each AWS SDK is kept on its
+    expected major version to preserve API compatibility; the single
+    remaining “XMLBuilder unescaped delimiter” moderate advisory is
+    only patched on v5.7.0+ and is not addressed here because forcing
+    AWS SDK v4 consumers onto fast-xml-parser v5 would risk runtime
+    regressions on S3 deployments.
+
+ -  Hollo now warns at startup whenever `LOG_QUERY=true` is set.  The
+    flag causes drizzle-orm to emit every SQL query together with its
+    bound parameter values, which include OAuth access tokens (stored
+    plain in the database), authorization codes, and other secrets;
+    leaving it enabled in production exposes those secrets to anyone
+    with read access to the application logs (or to a downstream
+    collector such as Sentry or a file sink).
+
+ -  The OAuth PKCE code-challenge check and the OAuth multi-credential
+    client-secret consistency check are now compared in constant time
+    using `crypto.timingSafeEqual`.  (The primary client-secret
+    authentication path runs as a Postgres equality predicate and is
+    unchanged.)  The PKCE comparison is between two SHA-256 hashes
+    (low practical timing-attack risk) and the multi-credential
+    consistency check only fires when a client presents the same
+    credentials via more than one mechanism, so neither was a
+    confirmed exploitation primitive, but constant-time comparison is
+    the correct defence-in-depth posture for any user-space operation
+    on a secret.
 
 
 Version 0.7.15

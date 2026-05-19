@@ -658,6 +658,38 @@ export async function persistSharingPost(
   if (existingPost != null) return { ...existingPost, isNew: false };
   const actor = await announce.getActor(options);
   if (actor == null) return null;
+  // The embedded object inside an Announce is attacker-controlled. To
+  // avoid first-materializing a forged post under another actor's
+  // authority we trust the embedded body only when the row is already
+  // known locally (persistPost's `skipUpdate` keeps the canonical
+  // version) or when the to-be-inserted object satisfies both:
+  //
+  //   - if the announcer and the object's origin differ, the object
+  //     must be fetched from its canonical URL, and
+  //   - the object's `id` must share an origin with its
+  //     `attributedTo`, so the post cannot masquerade as content by an
+  //     actor on a different instance.
+  let canonicalObject: ASPost = object;
+  if (object.id == null || announce.actorId == null) return null;
+  const known = await db.query.posts.findFirst({
+    where: { iri: { eq: object.id.href } },
+  });
+  if (known == null) {
+    if (object.id.origin !== announce.actorId.origin) {
+      const fetched = await lookupObject(object.id, options);
+      if (!isPost(fetched)) return null;
+      canonicalObject = fetched;
+    }
+    const canonId = canonicalObject.id;
+    const canonAttrId = canonicalObject.attributionId;
+    if (
+      canonId == null ||
+      canonAttrId == null ||
+      canonId.origin !== canonAttrId.origin
+    ) {
+      return null;
+    }
+  }
   const account =
     options.account?.iri != null && options.account.iri === actor.id?.href
       ? options.account
@@ -666,7 +698,7 @@ export async function persistSharingPost(
           skipUpdate: true,
         });
   if (account == null) return null;
-  const originalPost = await persistPost(db, object, baseUrl, {
+  const originalPost = await persistPost(db, canonicalObject, baseUrl, {
     ...options,
     skipUpdate: true,
   });
