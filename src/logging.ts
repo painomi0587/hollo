@@ -5,6 +5,7 @@ import { getFileSink } from "@logtape/file";
 import {
   configure,
   getAnsiColorFormatter,
+  getLogger,
   getStreamSink,
   jsonLinesFormatter,
   type LogLevel,
@@ -60,5 +61,33 @@ await configure({
       lowestLevel: "warning",
       sinks: ["console", "file"],
     },
+    {
+      // Dedicated category for the `LOG_QUERY` startup warning so it
+      // is emitted regardless of the operator's chosen `LOG_LEVEL`.
+      // `parentSinks: "override"` prevents the parent `hollo` logger
+      // from duplicating each record into the same console/file sinks.
+      category: ["hollo", "logging"],
+      lowestLevel: "warning",
+      sinks: ["console", "file"],
+      parentSinks: "override",
+    },
   ],
 });
+
+// `LOG_QUERY=true` causes drizzle-orm to emit every SQL query with its
+// bound parameter values.  Those parameters routinely include OAuth
+// access tokens (stored plain in the DB), authorization codes, signed
+// session-cookie material, and other secrets.  Anyone with read access
+// to the resulting logs (or to a downstream collector such as Sentry,
+// Loki, or a file sink) can replay them.  Make sure operators see a
+// loud warning at every startup so the flag is not left on by accident
+// in production.
+if (LOG_QUERY) {
+  getLogger(["hollo", "logging"]).warning(
+    "LOG_QUERY=true is set: drizzle-orm will log every SQL query " +
+      "together with its bound parameter values.  Those parameters " +
+      "include OAuth access tokens, authorization codes, and other " +
+      "secrets.  Use this only for local debugging; never leave it " +
+      "enabled in production.",
+  );
+}

@@ -54,7 +54,7 @@ import {
   posts,
   reactions,
 } from "../schema";
-import { isUuid } from "../uuid";
+import { isUuid, type Uuid } from "../uuid";
 import {
   persistAccount,
   REFRESH_ACTORS_ON_INTERACTION,
@@ -73,6 +73,23 @@ import {
 } from "./post";
 
 const inboxLogger = getLogger(["hollo", "inbox"]);
+
+// Returns true when the local account `localAccountId` has blocked the
+// account `remoteAccountId`. Used to silently drop incoming activities
+// (Follow, Like, EmojiReact, Announce) directed at a local user from
+// someone they have blocked.
+async function isBlockedByLocalAccount(
+  localAccountId: Uuid,
+  remoteAccountId: Uuid,
+): Promise<boolean> {
+  const result = await db.query.blocks.findFirst({
+    where: and(
+      eq(blocks.accountId, localAccountId),
+      eq(blocks.blockedAccountId, remoteAccountId),
+    ),
+  });
+  return result != null;
+}
 
 type ResolvedReactionTarget = {
   post: Post & { account: Account & { owner: AccountOwner | null } };
@@ -175,6 +192,30 @@ export async function onFollowed(
     inboxLogger.debug("Invalid following: {following}", { following });
     return;
   }
+  // Silently drop follow requests from blocked actors regardless of
+  // whether the target account is protected.  Previously the block
+  // only flipped auto-approval on unprotected accounts, so a blocked
+  // actor could still queue a pending follow request on a protected
+  // one.  The block check runs before `persistAccount` so we don't
+  // even spend a network roundtrip refreshing a blocked actor.
+  const existingFollower = await db.query.accounts.findFirst({
+    where: eq(accounts.iri, actor.id.href),
+  });
+  if (existingFollower != null) {
+    const existingBlock = await db.query.blocks.findFirst({
+      where: and(
+        eq(blocks.accountId, following.id),
+        eq(blocks.blockedAccountId, existingFollower.id),
+      ),
+    });
+    if (existingBlock != null) {
+      inboxLogger.debug(
+        "Dropping Follow from blocked actor {actorIri} to {targetIri}.",
+        { actorIri: actor.id.href, targetIri: object.id.href },
+      );
+      return;
+    }
+  }
   const follower = await persistAccount(
     db,
     actor,
@@ -182,16 +223,7 @@ export async function onFollowed(
     getPersistOptions(ctx),
   );
   if (follower == null) return;
-  let approves = !following.protected;
-  if (approves) {
-    const block = await db.query.blocks.findFirst({
-      where: and(
-        eq(blocks.accountId, following.id),
-        eq(blocks.blockedAccountId, follower.id),
-      ),
-    });
-    approves = block == null;
-  }
+  const approves = !following.protected;
   await db
     .insert(follows)
     .values({
@@ -589,12 +621,45 @@ export async function onPostUpdated(
   const object = await update.getObject();
   if (!isPost(object)) return;
 
+  const updateActorId = update.actorId;
+  const objectId = object.id;
+  const attributionId = object.attributionId;
+  if (updateActorId == null || objectId == null || attributionId == null) {
+    return;
+  }
+  // Authorization: a remote `Update` may overwrite (or first-materialize)
+  // a cached post under another instance's authority through several
+  // distinct routes:
+  //
+  //   - the `Update` actor is on a different origin than the post's
+  //     claimed author,
+  //   - the embedded object's `id` is on a different origin than its
+  //     `attributedTo`, masquerading evil-hosted content as another
+  //     actor's post.
+  //
+  // Require all three origins (actor, object id, attribution) to match
+  // before trusting the embedded object.
+  if (
+    updateActorId.origin !== attributionId.origin ||
+    objectId.origin !== attributionId.origin
+  ) {
+    inboxLogger.debug(
+      "Refused Update of {postIri} from {actorIri}: " +
+        "actor/object/attribution origins do not all match " +
+        "(attribution: {attributionIri}).",
+      {
+        postIri: objectId.href,
+        actorIri: updateActorId.href,
+        attributionIri: attributionId.href,
+      },
+    );
+    return;
+  }
+
   // Get post ID before update to find quote posts
-  const existingPost = object.id
-    ? await db.query.posts.findFirst({
-        where: eq(posts.iri, object.id.href),
-      })
-    : null;
+  const existingPost = await db.query.posts.findFirst({
+    where: eq(posts.iri, objectId.href),
+  });
 
   // Persist the updated post
   await persistPost(db, object, ctx.origin, getPersistOptions(ctx));
@@ -623,9 +688,25 @@ export async function onPostDeleted(
   const objectId = del.objectId;
   if (actorId == null || objectId == null) return;
   await db.transaction(async (tx) => {
+    const existingPost = await tx.query.posts.findFirst({
+      where: eq(posts.iri, objectId.href),
+      with: { account: true },
+    });
+    if (existingPost == null) return;
+    // Only an actor from the same origin as the post's author may delete it.
+    // Without this check, any federated actor could remove cached posts
+    // belonging to any other actor by guessing or harvesting their IRIs.
+    if (new URL(existingPost.account.iri).origin !== actorId.origin) {
+      inboxLogger.debug(
+        "Refused Delete of {postIri} from {actorIri}: " +
+          "actor is not from the post author's origin.",
+        { postIri: objectId.href, actorIri: actorId.href },
+      );
+      return;
+    }
     const deletedPosts = await tx
       .delete(posts)
-      .where(eq(posts.iri, objectId.href))
+      .where(eq(posts.id, existingPost.id))
       .returning();
     if (deletedPosts.length > 0) {
       const deletedPost = deletedPosts[0];
@@ -648,6 +729,28 @@ export async function onPostShared(
 ): Promise<void> {
   const object = await announce.getObject();
   if (!isPost(object)) return;
+  // If the announced post is local and its owner has blocked the
+  // announcer, silently drop the entire activity (no share record,
+  // no forwarding, no notification).
+  const announcedIri = object.id?.href;
+  const announcerIri = announce.actorId?.href;
+  if (announcedIri != null && announcerIri != null) {
+    const sharedPost = await db.query.posts.findFirst({
+      where: eq(posts.iri, announcedIri),
+      with: { account: { with: { owner: true } } },
+    });
+    if (sharedPost?.account.owner != null) {
+      const sharerAccount = await db.query.accounts.findFirst({
+        where: eq(accounts.iri, announcerIri),
+      });
+      if (
+        sharerAccount != null &&
+        (await isBlockedByLocalAccount(sharedPost.accountId, sharerAccount.id))
+      ) {
+        return;
+      }
+    }
+  }
   const post = await persistSharingPost(
     db,
     announce,
@@ -797,6 +900,12 @@ export async function onLiked(
     getPersistOptions(ctx),
   );
   if (account == null) return;
+  if (
+    target.post.account.owner != null &&
+    (await isBlockedByLocalAccount(target.post.accountId, account.id))
+  ) {
+    return;
+  }
   // Refresh actor if stale (fire-and-forget) when interaction refresh is enabled
   if (REFRESH_ACTORS_ON_INTERACTION) {
     refreshActorIfStale(db, account, ctx.origin, ctx);
@@ -896,6 +1005,12 @@ export async function onEmojiReactionAdded(
     getPersistOptions(ctx),
   );
   if (account == null) return;
+  if (
+    target.post.account.owner != null &&
+    (await isBlockedByLocalAccount(target.post.accountId, account.id))
+  ) {
+    return;
+  }
   // Refresh actor if stale (fire-and-forget) when interaction refresh is enabled
   if (REFRESH_ACTORS_ON_INTERACTION) {
     refreshActorIfStale(db, account, ctx.origin, ctx);

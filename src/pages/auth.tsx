@@ -1,6 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { getLogger } from "@logtape/logtape";
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import type { HOTP, TOTP } from "otpauth";
 import { z } from "zod";
 
@@ -13,6 +14,7 @@ const logger = getLogger(["hollo", "pages", "auth"]);
 
 const auth = new Hono();
 
+auth.use(csrf());
 auth.use(loginRequired);
 
 auth.get("/", async (c) => {

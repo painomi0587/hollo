@@ -5,7 +5,7 @@ import { auth } from "hono/utils/basic-auth";
 import { z } from "zod";
 
 import { db } from "../db.ts";
-import { requestBody } from "../helpers.ts";
+import { requestBody, timingSafeEqualString } from "../helpers.ts";
 import {
   type AccessToken,
   type Account,
@@ -96,7 +96,13 @@ export const clientAuthentication = createMiddleware<{
     const allSameCredentials = clientCredentials.every(
       (cred) =>
         cred.client_id === firstCred.client_id &&
-        cred.client_secret === firstCred.client_secret,
+        ((cred.client_secret == null && firstCred.client_secret == null) ||
+          (cred.client_secret != null &&
+            firstCred.client_secret != null &&
+            timingSafeEqualString(
+              cred.client_secret,
+              firstCred.client_secret,
+            ))),
     );
 
     if (!allSameCredentials) {
