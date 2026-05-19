@@ -259,8 +259,8 @@ describe.sequential("/api/v1/statuses quotes", () => {
     });
   }
 
-  it("denies quotes from other users when quote policy is nobody", async () => {
-    expect.assertions(5);
+  it("allows same-instance quotes regardless of quote policy and emits an authorization IRI", async () => {
+    expect.assertions(7);
 
     const quotedResponse = await createStatus(authorToken, {
       status: "Please do not quote",
@@ -270,11 +270,20 @@ describe.sequential("/api/v1/statuses quotes", () => {
     const quoted = await quotedResponse.json();
     expect(quoted.quote_approval.automatic).toEqual([]);
 
-    const deniedResponse = await createStatus(quoterToken, {
-      status: "I should not be able to quote this",
+    const localQuoteResponse = await createStatus(quoterToken, {
+      status: "Same-instance accounts can always quote each other",
       quoted_status_id: quoted.id,
     });
-    expect(deniedResponse.status).toBe(422);
+    expect(localQuoteResponse.status).toBe(200);
+    const localQuote = await localQuoteResponse.json();
+    expect(localQuote.quote.state).toBe("accepted");
+
+    const storedLocalQuote = await db.query.posts.findFirst({
+      where: { id: { eq: localQuote.id } },
+    });
+    expect(storedLocalQuote?.quoteAuthorizationIri).toBe(
+      `${quoted.uri}/quote_authorizations/${localQuote.id}`,
+    );
 
     const selfQuoteResponse = await createStatus(authorToken, {
       status: "Self quotes are allowed",
@@ -283,6 +292,45 @@ describe.sequential("/api/v1/statuses quotes", () => {
     expect(selfQuoteResponse.status).toBe(200);
     const selfQuote = await selfQuoteResponse.json();
     expect(selfQuote.quote.state).toBe("accepted");
+  });
+
+  it("denies quotes of remote targets when the remote policy is nobody", async () => {
+    expect.assertions(1);
+
+    const remoteAuthorId = uuidv7();
+    const remotePostId = uuidv7();
+    const remotePostIri = `https://remote.test/@remote-author/${remotePostId}`;
+    await db.insert(instances).values({ host: "remote.test" });
+    await db.insert(accounts).values({
+      id: remoteAuthorId,
+      iri: "https://remote.test/@remote-author",
+      type: "Person",
+      name: "Remote Author",
+      handle: "@remote-author@remote.test",
+      bioHtml: "",
+      protected: false,
+      inboxUrl: "https://remote.test/@remote-author/inbox",
+      sharedInboxUrl: "https://remote.test/inbox",
+      instanceHost: "remote.test",
+    });
+    await db.insert(posts).values({
+      id: remotePostId,
+      iri: remotePostIri,
+      type: "Note",
+      accountId: remoteAuthorId,
+      visibility: "public",
+      quoteApprovalPolicy: "nobody",
+      content: "Please do not quote",
+      contentHtml: "<p>Please do not quote</p>\n",
+      url: remotePostIri,
+      published: new Date(),
+    });
+
+    const deniedResponse = await createStatus(quoterToken, {
+      status: "I should not be able to quote this remote post",
+      quoted_status_id: remotePostId,
+    });
+    expect(deniedResponse.status).toBe(422);
   });
 
   it("edits quote policy through the interaction policy endpoint", async () => {
@@ -794,6 +842,191 @@ describe.sequential("/api/v1/statuses quotes", () => {
     );
     const quotedAgain = await quotedAgainResponse.json();
     expect(quotedAgain.quotes_count).toBe(0);
+  });
+
+  it("fans out an Update when revoking a local quote", async () => {
+    expect.assertions(4);
+
+    const followerAccountId = uuidv7();
+    await db.insert(instances).values({ host: "remote.test" });
+    await db.insert(accounts).values({
+      id: followerAccountId,
+      iri: "https://remote.test/@quoter-follower",
+      type: "Person",
+      name: "Quoter follower",
+      handle: "@quoter-follower@remote.test",
+      bioHtml: "",
+      protected: false,
+      inboxUrl: "https://remote.test/@quoter-follower/inbox",
+      sharedInboxUrl: "https://remote.test/inbox",
+      instanceHost: "remote.test",
+    });
+    await db.insert(follows).values({
+      iri: `https://remote.test/@quoter-follower#follows/${crypto.randomUUID()}`,
+      followingId: quoter.id,
+      followerId: followerAccountId,
+      approved: new Date(),
+    });
+
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 202 }));
+    try {
+      const quotedResponse = await createStatus(authorToken, {
+        status: "Quoted post",
+      });
+      expect(quotedResponse.status).toBe(200);
+      const quoted = await quotedResponse.json();
+
+      const quoteResponse = await createStatus(quoterToken, {
+        status: "Quoting this",
+        quoted_status_id: quoted.id,
+      });
+      expect(quoteResponse.status).toBe(200);
+      const quote = await quoteResponse.json();
+
+      const revokeResponse = await app.request(
+        `/api/v1/statuses/${quoted.id}/quotes/${quote.id}/revoke`,
+        {
+          method: "POST",
+          headers: {
+            authorization: bearerAuthorization(authorToken),
+          },
+        },
+      );
+      expect(revokeResponse.status).toBe(200);
+
+      const isRemoteInboxCall = (
+        call: [string | URL | Request, RequestInit?],
+      ) =>
+        call[0] instanceof Request &&
+        call[0].url === "https://remote.test/inbox";
+      const findUpdate = async () => {
+        for (const call of fetch.mock.calls) {
+          if (!isRemoteInboxCall(call)) continue;
+          const request = call[0] as Request;
+          const body = await request.clone().json();
+          if (body?.type === "Update") return body;
+        }
+        return null;
+      };
+      let activity: Record<string, unknown> | null = null;
+      await vi.waitFor(async () => {
+        activity = await findUpdate();
+        if (activity == null) {
+          throw new Error("Update was not fanned out");
+        }
+      });
+      if (activity == null) throw new Error("Update activity not captured");
+      // The Note no longer carries `quoteAuthorization` since the revocation
+      // cleared `quoteAuthorizationIri`.
+      const object = (activity as { object: Record<string, unknown> }).object;
+      expect(object.quoteAuthorization).toBeUndefined();
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it("fans out an Update when revoking a legacy local quote without an authorization IRI", async () => {
+    expect.assertions(3);
+
+    const followerAccountId = uuidv7();
+    const quotedPostId = uuidv7();
+    const quotingPostId = uuidv7();
+    const quotedPostIri = `https://hollo.test/@quote-author/${quotedPostId}`;
+    const quotingPostIri = `https://hollo.test/@quote-quoter/${quotingPostId}`;
+    await db.insert(instances).values({ host: "remote.test" });
+    await db.insert(accounts).values({
+      id: followerAccountId,
+      iri: "https://remote.test/@quoter-follower",
+      type: "Person",
+      name: "Quoter follower",
+      handle: "@quoter-follower@remote.test",
+      bioHtml: "",
+      protected: false,
+      inboxUrl: "https://remote.test/@quoter-follower/inbox",
+      sharedInboxUrl: "https://remote.test/inbox",
+      instanceHost: "remote.test",
+    });
+    await db.insert(follows).values({
+      iri: `https://remote.test/@quoter-follower#follows/${crypto.randomUUID()}`,
+      followingId: quoter.id,
+      followerId: followerAccountId,
+      approved: new Date(),
+    });
+    await db.insert(posts).values([
+      {
+        id: quotedPostId,
+        iri: quotedPostIri,
+        type: "Note",
+        accountId: author.id,
+        visibility: "public",
+        content: "Legacy quoted post",
+        contentHtml: "<p>Legacy quoted post</p>\n",
+        url: quotedPostIri,
+        quotesCount: 1,
+        published: new Date(),
+      },
+      {
+        id: quotingPostId,
+        iri: quotingPostIri,
+        type: "Note",
+        accountId: quoter.id,
+        quoteTargetId: quotedPostId,
+        quoteTargetIri: quotedPostIri,
+        quoteState: "accepted",
+        quoteAuthorizationIri: null,
+        visibility: "public",
+        content: "Legacy local quote",
+        contentHtml: "<p>Legacy local quote</p>\n",
+        url: quotingPostIri,
+        published: new Date(),
+      },
+    ]);
+
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 202 }));
+    try {
+      const revokeResponse = await app.request(
+        `/api/v1/statuses/${quotedPostId}/quotes/${quotingPostId}/revoke`,
+        {
+          method: "POST",
+          headers: {
+            authorization: bearerAuthorization(authorToken),
+          },
+        },
+      );
+      expect(revokeResponse.status).toBe(200);
+
+      const isRemoteInboxCall = (
+        call: [string | URL | Request, RequestInit?],
+      ) =>
+        call[0] instanceof Request &&
+        call[0].url === "https://remote.test/inbox";
+      const findUpdate = async () => {
+        for (const call of fetch.mock.calls) {
+          if (!isRemoteInboxCall(call)) continue;
+          const request = call[0] as Request;
+          const body = await request.clone().json();
+          if (body?.type === "Update") return body;
+        }
+        return null;
+      };
+      let activity: Record<string, unknown> | null = null;
+      await vi.waitFor(async () => {
+        activity = await findUpdate();
+        if (activity == null) {
+          throw new Error("Update was not fanned out for legacy local quote");
+        }
+      });
+      if (activity == null) throw new Error("Update activity not captured");
+      const object = (activity as { object: Record<string, unknown> }).object;
+      expect(object).toBeDefined();
+      expect(object.quoteAuthorization).toBeUndefined();
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   it("sends a QuoteAuthorization deletion when revoking a remote quote", async () => {

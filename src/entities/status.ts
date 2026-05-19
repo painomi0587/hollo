@@ -31,6 +31,7 @@ import { serializePoll } from "./poll";
 type StatusAccount = Account & {
   successor: Account | null;
   followers?: Follow[];
+  owner?: Pick<AccountOwner, "id"> | null;
 };
 
 type StatusApplication = Pick<Application, "name" | "website">;
@@ -83,11 +84,11 @@ function serializeQuoteApproval(
   currentAccountOwner: { id: string } | undefined | null,
   post: Pick<Post, "accountId" | "visibility">,
   viewerIsApprovedFollower: boolean,
+  targetIsLocal: boolean,
 ) {
-  const effectivePolicy =
-    post.visibility === "direct" || post.visibility === "private"
-      ? "nobody"
-      : (policy ?? "public");
+  const isPrivateOrDirect =
+    post.visibility === "direct" || post.visibility === "private";
+  const effectivePolicy = isPrivateOrDirect ? "nobody" : (policy ?? "public");
   const automatic =
     effectivePolicy === "public"
       ? ["public"]
@@ -102,6 +103,10 @@ function serializeQuoteApproval(
       : {
           current_user:
             currentAccountOwner.id === post.accountId ||
+            // Same-instance accounts are always auto-approved regardless
+            // of the target's stated policy (see validateQuoteTarget), but
+            // private/direct posts remain off-limits to other accounts.
+            (targetIsLocal && !isPrivateOrDirect) ||
             effectivePolicy === "public" ||
             (effectivePolicy === "followers" && viewerIsApprovedFollower)
               ? "automatic"
@@ -172,6 +177,7 @@ function getTimelinePostRelationsBase(ownerId: Uuid | undefined | null) {
       with: {
         successor: true,
         followers: getViewerFollowerRelation(ownerId),
+        owner: { columns: { id: true } },
       },
     },
     application: {
@@ -241,6 +247,7 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
           with: {
             successor: true,
             followers: getViewerFollowerRelation(ownerId),
+            owner: { columns: { id: true } },
           },
         },
         application: true,
@@ -251,6 +258,7 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
               with: {
                 successor: true,
                 followers: getViewerFollowerRelation(ownerId),
+                owner: { columns: { id: true } },
               },
             },
             application: true,
@@ -297,6 +305,7 @@ export function getPostRelations(ownerId: Uuid | undefined | null) {
           with: {
             successor: true,
             followers: getViewerFollowerRelation(ownerId),
+            owner: { columns: { id: true } },
           },
         },
         application: true,
@@ -430,6 +439,7 @@ export function serializePost(
       currentAccountOwner,
       post,
       viewerIsApprovedFollower,
+      post.account.owner != null,
     ),
     application:
       post.application == null

@@ -1,4 +1,4 @@
-import type { InboxContext } from "@fedify/fedify";
+import type { Context, InboxContext } from "@fedify/fedify";
 import {
   Accept,
   type Add,
@@ -501,8 +501,8 @@ async function updateQuoteRequestState(
   return true;
 }
 
-async function sendQuoteUpdate(
-  ctx: InboxContext<void>,
+export async function sendQuoteUpdate(
+  ctx: Context<void>,
   quoteIri: string,
 ): Promise<void> {
   const quote = await db.query.posts.findFirst({
@@ -630,7 +630,10 @@ export async function onQuoteAuthorizationDeleted(
   await sendQuoteUpdate(ctx, quote.iri);
 }
 
-function getQuoteAuthorizationIri(target: Post, quote: Post): string {
+export function getQuoteAuthorizationIri(
+  target: Pick<Post, "iri">,
+  quote: Pick<Post, "id">,
+): string {
   return `${target.iri}/quote_authorizations/${quote.id}`;
 }
 

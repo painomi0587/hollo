@@ -24,6 +24,10 @@ import { getPostRelations, serializePost } from "../../entities/status";
 import federation from "../../federation";
 import { updateAccountStats } from "../../federation/account";
 import {
+  getQuoteAuthorizationIri,
+  sendQuoteUpdate,
+} from "../../federation/inbox";
+import {
   getRecipients,
   persistPost,
   toAnnounce,
@@ -46,6 +50,7 @@ import {
 import { normalizeHandle } from "../../patterns";
 import { fetchPreviewCard, type PreviewCard } from "../../previewcard";
 import {
+  type AccountOwner,
   blocks,
   bookmarks,
   type Like,
@@ -209,13 +214,14 @@ async function isBlockedBetween(accountId: Uuid, otherAccountId: Uuid) {
 
 async function validateQuoteTarget(
   quoteTargetId: Uuid,
-  owner: { id: Uuid },
+  owner: AccountOwner,
   mentionedIds: Uuid[],
   requestedVisibility: "public" | "unlisted" | "private" | "direct",
 ): Promise<
   | {
       ok: true;
       quoteTarget: typeof posts.$inferSelect;
+      localTargetOwner: AccountOwner | null;
       visibility: "public" | "unlisted" | "private" | "direct";
     }
   | { ok: false; status: 404 | 422; error: string }
@@ -233,6 +239,12 @@ async function validateQuoteTarget(
   if (quoteTarget == null) {
     return { ok: false, status: 404, error: "Quote target not found" };
   }
+  const localTargetOwner =
+    quoteTarget.accountId === owner.id
+      ? owner
+      : ((await db.query.accountOwners.findFirst({
+          where: { id: { eq: quoteTarget.accountId } },
+        })) ?? null);
   if (quoteTarget.visibility === "direct") {
     return { ok: false, status: 422, error: "Cannot quote a direct message" };
   }
@@ -264,7 +276,10 @@ async function validateQuoteTarget(
   if (await isBlockedBetween(owner.id, quoteTarget.accountId)) {
     return { ok: false, status: 422, error: "Quote target is not quotable" };
   }
-  if (quoteTarget.accountId !== owner.id) {
+  // Same-instance quotes always pass FEP-044f policy checks: Hollo is
+  // operated by a single person, so a cross-account quote between two
+  // local accountOwners is always self-authorized.
+  if (quoteTarget.accountId !== owner.id && localTargetOwner == null) {
     const policy = normalizeQuoteApprovalPolicy(
       quoteTarget.quoteApprovalPolicy,
     );
@@ -278,7 +293,7 @@ async function validateQuoteTarget(
       return { ok: false, status: 422, error: "Quote target is not quotable" };
     }
   }
-  return { ok: true, quoteTarget, visibility };
+  return { ok: true, quoteTarget, localTargetOwner, visibility };
 }
 
 const statusSchema = z.object({
@@ -386,6 +401,7 @@ app.post(
     }
     let quoteTargetId: Uuid | null = null;
     let quoteTarget: typeof posts.$inferSelect | null = null;
+    let localQuoteTargetOwner: AccountOwner | null = null;
     if (data.quoted_status_id != null) quoteTargetId = data.quoted_status_id;
     else if (data.quote_id != null) quoteTargetId = data.quote_id;
     else if (content?.quoteTarget != null) {
@@ -409,6 +425,7 @@ app.post(
         return c.json({ error: validation.error }, validation.status);
       }
       quoteTarget = validation.quoteTarget;
+      localQuoteTargetOwner = validation.localTargetOwner;
       effectiveVisibility = validation.visibility;
     }
     const quoteApprovalPolicy = normalizeQuoteApprovalPolicy(
@@ -416,12 +433,6 @@ app.post(
     );
     let quoteState: "accepted" | "pending" | null = null;
     if (quoteTarget != null) {
-      const localQuoteTargetOwner =
-        quoteTarget.accountId === owner.id
-          ? owner
-          : await db.query.accountOwners.findFirst({
-              where: { id: { eq: quoteTarget.accountId } },
-            });
       // Local targets are always accepted; only remote targets need policy
       // resolution.
       quoteState =
@@ -429,6 +440,15 @@ app.post(
           ? "accepted"
           : await determineQuoteState(quoteTarget, owner);
     }
+    // Same-instance accepted quotes never federate a QuoteRequest, so emit
+    // the FEP-044f authorization IRI inline so the published Note carries
+    // `quoteAuthorization` and remote servers can dereference it.
+    const quoteAuthorizationIri =
+      quoteState === "accepted" &&
+      quoteTarget != null &&
+      localQuoteTargetOwner != null
+        ? getQuoteAuthorizationIri(quoteTarget, { id })
+        : null;
     await db.transaction(async (tx) => {
       let poll: Poll | null = null;
       if (data.poll != null) {
@@ -464,6 +484,7 @@ app.post(
           quoteTargetId,
           quoteTargetIri: quoteTarget?.iri ?? null,
           quoteState,
+          quoteAuthorizationIri,
           quoteApprovalPolicy,
           sharingId: null,
           visibility: effectiveVisibility,
@@ -1808,8 +1829,10 @@ app.post(
       }
     });
 
+    const previouslyVisible =
+      quotingPost.quoteState == null || quotingPost.quoteState === "accepted";
+    const fedCtx = federation.createContext(c.req.raw, undefined);
     if (quotingPost.account.owner == null && quoteAuthorizationIri != null) {
-      const fedCtx = federation.createContext(c.req.raw, undefined);
       await fedCtx.sendActivity(
         { username: owner.handle },
         {
@@ -1838,6 +1861,12 @@ app.post(
           excludeBaseUris: [new URL(c.req.url)],
         },
       );
+    } else if (quotingPost.account.owner != null && previouslyVisible) {
+      // The quoting post belongs to a local accountOwner whose followers
+      // already received the original Note. Tell them the quote is no
+      // longer authorized by re-broadcasting it as an Update — even for
+      // legacy quotes that never stored a `quoteAuthorizationIri`.
+      await sendQuoteUpdate(fedCtx, quotingPost.iri);
     }
 
     const updatedPost = await db.query.posts.findFirst({
