@@ -3,6 +3,7 @@ import { and, desc, eq, gt, lt, lte, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { db } from "../../db";
+import { postgresQueryCancellationMiddleware } from "../../db-cancel";
 import {
   serializeAccount,
   serializeAccountOwner,
@@ -67,6 +68,7 @@ function parseNotificationId(compositeId: string): ParsedNotificationId {
 }
 
 const app = new Hono<{ Variables: AccountOwnerVariables }>();
+const cancelReadOnlyQueries = postgresQueryCancellationMiddleware();
 
 // set for O(1) access to all possible types
 const notificationTypeSet = new Set(notificationTypeEnum.enumValues);
@@ -76,6 +78,7 @@ function isNotificationType(value: string) {
 
 app.get(
   "/",
+  cancelReadOnlyQueries,
   tokenRequired,
   scopeRequired(["read:notifications"]),
   withAccountOwner,

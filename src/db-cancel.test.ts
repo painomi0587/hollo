@@ -5,7 +5,6 @@ import {
   DatabaseQueryAbortedError,
   isPostgresQueryCancelError,
   isPostgresQueryCancellationMethod,
-  isPostgresQueryCancellationRequest,
   isRequestAbortError,
   postgresQueryCancellationMiddleware,
   withPostgresQueryCancellation,
@@ -171,31 +170,6 @@ describe("postgresQueryCancellationMiddleware", () => {
     expect(queries[0].cancelCalls).toBe(1);
   });
 
-  it("does not cancel queries for mutating GET requests", async () => {
-    const controller = new AbortController();
-    const queries: FakeQuery<unknown>[] = [];
-    const client = wrapPostgresClient(createSqlClient(queries));
-    const middleware = postgresQueryCancellationMiddleware();
-
-    const response = await middleware(
-      {
-        req: {
-          url: "https://hollo.test/api/v2/search?resolve=true&q=https://example.com/@user",
-          raw: { method: "GET", signal: controller.signal },
-        },
-      } as never,
-      async () => {
-        const query = client.unsafe("insert into accounts values (1)");
-        controller.abort();
-        queries[0].resolve([]);
-        await query;
-      },
-    );
-
-    expect(response).toBeUndefined();
-    expect(queries[0].cancelCalls).toBe(0);
-  });
-
   it("does not cancel queries for mutation requests", async () => {
     const controller = new AbortController();
     const queries: FakeQuery<unknown>[] = [];
@@ -230,45 +204,6 @@ describe("query cancel error helpers", () => {
     expect(isPostgresQueryCancellationMethod("PUT")).toBe(false);
     expect(isPostgresQueryCancellationMethod("PATCH")).toBe(false);
     expect(isPostgresQueryCancellationMethod("DELETE")).toBe(false);
-  });
-
-  it("excludes GET routes that can persist remote data", () => {
-    expect(
-      isPostgresQueryCancellationRequest(
-        "GET",
-        "https://hollo.test/api/v2/search?resolve=true&q=https://example.com/@user",
-      ),
-    ).toBe(false);
-    expect(
-      isPostgresQueryCancellationRequest(
-        "GET",
-        "https://hollo.test/api/v2/search?resolve=false&q=test",
-      ),
-    ).toBe(true);
-    expect(
-      isPostgresQueryCancellationRequest(
-        "GET",
-        "https://hollo.test/api/v1/accounts/search?resolve=true&q=@user@example.com",
-      ),
-    ).toBe(false);
-    expect(
-      isPostgresQueryCancellationRequest(
-        "GET",
-        "https://hollo.test/api/v1/accounts/lookup?skip_webfinger=false&acct=user@example.com",
-      ),
-    ).toBe(false);
-    expect(
-      isPostgresQueryCancellationRequest(
-        "GET",
-        "https://hollo.test/api/v1/accounts/lookup?skip_webfinger=true&acct=user@example.com",
-      ),
-    ).toBe(true);
-    expect(
-      isPostgresQueryCancellationRequest(
-        "HEAD",
-        "https://hollo.test/api/v1/accounts/018f78c0-0000-7000-8000-000000000000/statuses",
-      ),
-    ).toBe(false);
   });
 
   it("detects SQLSTATE 57014 through wrapper error causes", () => {

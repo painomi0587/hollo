@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { db } from "../../db";
+import { postgresQueryCancellationMiddleware } from "../../db-cancel";
 import {
   serializeAccount,
   serializeAccountOwner,
@@ -25,6 +26,7 @@ import type { Uuid } from "../../uuid";
 const logger = getLogger(["hollo", "api", "v2", "notifications"]);
 
 const app = new Hono<{ Variables: AccountOwnerVariables }>();
+const cancelReadOnlyQueries = postgresQueryCancellationMiddleware();
 
 // Format notification ID to match v1 API format for consistency
 // This ensures markers work correctly across v1 and v2 APIs
@@ -41,6 +43,7 @@ function isNotificationType(value: string): value is NotificationType {
 // GET /api/v2/notifications - Get grouped notifications
 app.get(
   "/",
+  cancelReadOnlyQueries,
   tokenRequired,
   scopeRequired(["read:notifications"]),
   withAccountOwner,
@@ -290,6 +293,7 @@ app.get(
 // This MUST be defined before /:group_key to avoid route conflicts
 app.get(
   "/unread_count",
+  cancelReadOnlyQueries,
   tokenRequired,
   scopeRequired(["read:notifications"]),
   withAccountOwner,
@@ -330,6 +334,7 @@ app.get(
 // GET /api/v2/notifications/:group_key - Get a single notification group
 app.get(
   "/:group_key",
+  cancelReadOnlyQueries,
   tokenRequired,
   scopeRequired(["read:notifications"]),
   withAccountOwner,
@@ -467,6 +472,7 @@ app.post(
 // GET /api/v2/notifications/:group_key/accounts - Get all accounts in a group
 app.get(
   "/:group_key/accounts",
+  cancelReadOnlyQueries,
   tokenRequired,
   scopeRequired(["read:notifications"]),
   withAccountOwner,

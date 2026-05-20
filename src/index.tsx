@@ -10,10 +10,7 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 
 import api from "./api";
-import {
-  isRequestAbortError,
-  postgresQueryCancellationMiddleware,
-} from "./db-cancel";
+import { isRequestAbortError } from "./db-cancel";
 import fedi from "./federation";
 import image from "./image";
 import oauth from "./oauth";
@@ -34,8 +31,6 @@ app.onError((err, _) => {
   if (err instanceof HTTPException) return err.getResponse();
   throw err;
 });
-
-app.use("*", postgresQueryCancellationMiddleware());
 
 if (DRIVE_DISK === "fs") {
   app.use(

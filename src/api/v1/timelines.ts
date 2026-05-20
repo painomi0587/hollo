@@ -17,6 +17,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import { db, type DatabaseLike } from "../../db";
+import { postgresQueryCancellationMiddleware } from "../../db-cancel";
 import { getTimelinePostRelations, serializePost } from "../../entities/status";
 import {
   TIMELINE_INBOX_LIMIT,
@@ -46,6 +47,7 @@ import {
 } from "../visibility";
 
 const app = new Hono<{ Variables: AccountOwnerVariables }>();
+const cancelReadOnlyQueries = postgresQueryCancellationMiddleware();
 
 app.use(tokenRequired);
 
@@ -250,6 +252,7 @@ function getTimelinePostFilterConditions(ownerId: Uuid): (SQL | undefined)[] {
 
 app.get(
   "/public",
+  cancelReadOnlyQueries,
   withAccountOwner,
   zValidator("query", publicTimelineQuerySchema),
   async (c) => {
@@ -391,6 +394,7 @@ app.get(
 
 app.get(
   "/home",
+  cancelReadOnlyQueries,
   scopeRequired(["read:statuses"]),
   withAccountOwner,
   zValidator("query", timelineQuerySchema),
@@ -616,6 +620,7 @@ app.get(
 
 app.get(
   "/list/:list_id",
+  cancelReadOnlyQueries,
   tokenRequired,
   scopeRequired(["read:lists"]),
   withAccountOwner,
@@ -830,6 +835,7 @@ app.get(
 
 app.get(
   "/tag/:hashtag",
+  cancelReadOnlyQueries,
   tokenRequired,
   scopeRequired(["read:statuses"]),
   withAccountOwner,
