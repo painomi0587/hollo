@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.9.0
 -------------
 
-To be released.
+Released on May 20, 2026.
 
  -  Upgraded Drizzle ORM to 1.0.0-rc.2 and migrated Hollo's relational
     query definitions to the new relations API.  This has no intended
