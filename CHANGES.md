@@ -6,6 +6,12 @@ Version 0.7.17
 
 To be released.
 
+ -  Upgraded Fedify to 1.10.10 to fix a security vulnerability in Linked Data
+    Signature verification that could allow certain signed activities to be
+    interpreted differently than intended.  [[CVE-2026-42462]]
+
+[CVE-2026-42462]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-9rfg-v8g9-9367
+
 
 Version 0.7.16
 --------------
