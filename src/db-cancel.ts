@@ -13,7 +13,7 @@ import type postgres from "postgres";
  * wraps `unsafe()` once at the client boundary and records each Query created
  * while a request-scoped `AsyncLocalStorage` context is active.
  *
- * For safe read-only HTTP methods, when Hono's `Request.signal` aborts, the
+ * For safe read-only HTTP requests, when Hono's `Request.signal` aborts, the
  * active queries for that request are cancelled.  postgres.js sends a
  * PostgreSQL cancel request on a separate connection, which lets the backend
  * stop work instead of waiting for the role-level `statement_timeout`.
@@ -199,11 +199,12 @@ export async function withPostgresQueryCancellation<T>(
  * Hono middleware that connects the incoming Request signal to postgres.js
  * query cancellation.
  *
- * Cancellation is intentionally limited to `GET` and `HEAD`.  Aborting a
- * multi-query mutation halfway through a non-transactional handler can leave
- * durable partial state, while read-only request handlers can be cancelled
- * without changing application invariants.  Mutation handlers should opt into
- * cancellation only after their write sequences are made atomic.
+ * Cancellation is intentionally limited to `GET` and `HEAD` requests that are
+ * known to be read-only.  Aborting a multi-query mutation halfway through a
+ * non-transactional handler can leave durable partial state, while read-only
+ * request handlers can be cancelled without changing application invariants.
+ * Mutation handlers should opt into cancellation only after their write
+ * sequences are made atomic.
  *
  * A client disconnect is not an application error, so abort-normalized errors
  * are turned into the nginx-style 499 status.  If the connection is already
@@ -212,7 +213,7 @@ export async function withPostgresQueryCancellation<T>(
  */
 export function postgresQueryCancellationMiddleware(): MiddlewareHandler {
   return async (c, next) => {
-    if (!isPostgresQueryCancellationMethod(c.req.raw.method)) {
+    if (!isPostgresQueryCancellationRequest(c.req.raw.method, c.req.url)) {
       await next();
       return;
     }
@@ -227,6 +228,29 @@ export function postgresQueryCancellationMiddleware(): MiddlewareHandler {
 
 export function isPostgresQueryCancellationMethod(method: string): boolean {
   return method === "GET" || method === "HEAD";
+}
+
+export function isPostgresQueryCancellationRequest(
+  method: string,
+  requestUrl: string | URL,
+): boolean {
+  if (!isPostgresQueryCancellationMethod(method)) return false;
+  return !isMutatingGetRequest(requestUrl);
+}
+
+function isMutatingGetRequest(requestUrl: string | URL): boolean {
+  const url = new URL(requestUrl);
+  const { pathname, searchParams } = url;
+  if (pathname === "/api/v2/search") {
+    return searchParams.get("resolve") === "true";
+  }
+  if (pathname === "/api/v1/accounts/search") {
+    return searchParams.get("resolve") === "true";
+  }
+  if (pathname === "/api/v1/accounts/lookup") {
+    return searchParams.get("skip_webfinger") === "false";
+  }
+  return /^\/api\/v1\/accounts\/[^/]+\/statuses$/.test(pathname);
 }
 
 /**
