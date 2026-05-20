@@ -146,7 +146,6 @@ export function AccountForm(props: AccountFormProps) {
                   name={`fields[${i}][value]`}
                   value={existingFields[i]?.value ?? ""}
                   aria-label={`Field ${i + 1} value`}
-                  maxlength={255}
                   class={`${fieldBase} ${fieldValid}`}
                 />
               </div>

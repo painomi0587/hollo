@@ -65,15 +65,15 @@ const logger = getLogger(["hollo", "pages", "accounts"]);
 
 const allowedImageMimeTypes = ["image/gif", "image/jpeg", "image/png"];
 
-function parseFields(form: FormData): Array<{ name: string; value: string }> {
+export function parseFields(
+  form: FormData,
+): Array<{ name: string; value: string }> {
   const result: Array<{ name: string; value: string }> = [];
   for (let i = 0; i < 10; i++) {
     const name = (
       form.get(`fields[${i}][name]`)?.toString()?.trim() ?? ""
     ).slice(0, 255);
-    const value = (
-      form.get(`fields[${i}][value]`)?.toString()?.trim() ?? ""
-    ).slice(0, 255);
+    const value = form.get(`fields[${i}][value]`)?.toString()?.trim() ?? "";
     if (name !== "" && value !== "") result.push({ name, value });
   }
   return result;
