@@ -1,5 +1,18 @@
 import { zValidator } from "@hono/zod-validator";
-import { asc, desc, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  isNull,
+  lt,
+  lte,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -23,6 +36,7 @@ import {
   lists,
   mentions,
   mutes,
+  posts,
   timelinePosts,
 } from "../../schema";
 import { isUuid, uuid, type Uuid } from "../../uuid";
@@ -143,6 +157,95 @@ async function readTimelineSnapshot<T>(
     isolationLevel: "repeatable read",
     accessMode: "read only",
   });
+}
+
+function getTimelinePostFilterConditions(ownerId: Uuid): (SQL | undefined)[] {
+  return [
+    // Hide future posts
+    lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
+    // Hide the posts from the muted accounts:
+    notInArray(
+      posts.accountId,
+      db
+        .select({ accountId: mutes.mutedAccountId })
+        .from(mutes)
+        .where(
+          and(
+            eq(mutes.accountId, ownerId),
+            or(
+              isNull(mutes.duration),
+              gt(
+                sql`${mutes.created} + ${mutes.duration}`,
+                sql`CURRENT_TIMESTAMP`,
+              ),
+            ),
+          ),
+        ),
+    ),
+    // Hide the posts from the blocked accounts:
+    notInArray(
+      posts.accountId,
+      db
+        .select({ accountId: blocks.blockedAccountId })
+        .from(blocks)
+        .where(eq(blocks.accountId, ownerId)),
+    ),
+    // Hide the posts from the accounts who blocked the owner:
+    notInArray(
+      posts.accountId,
+      db
+        .select({ accountId: blocks.accountId })
+        .from(blocks)
+        .where(eq(blocks.blockedAccountId, ownerId)),
+    ),
+    // Hide the shared posts from the muted accounts:
+    or(
+      isNull(posts.sharingId),
+      notInArray(
+        posts.sharingId,
+        db
+          .select({ id: posts.id })
+          .from(posts)
+          .innerJoin(mutes, eq(mutes.mutedAccountId, posts.accountId))
+          .where(
+            and(
+              eq(mutes.accountId, ownerId),
+              or(
+                isNull(mutes.duration),
+                gt(
+                  sql`${mutes.created} + ${mutes.duration}`,
+                  sql`CURRENT_TIMESTAMP`,
+                ),
+              ),
+            ),
+          ),
+      ),
+    ),
+    // Hide the shared posts from the blocked accounts:
+    or(
+      isNull(posts.sharingId),
+      notInArray(
+        posts.sharingId,
+        db
+          .select({ id: posts.id })
+          .from(posts)
+          .innerJoin(blocks, eq(blocks.blockedAccountId, posts.accountId))
+          .where(eq(blocks.accountId, ownerId)),
+      ),
+    ),
+    // Hide the shared posts from the accounts who blocked the owner:
+    or(
+      isNull(posts.sharingId),
+      notInArray(
+        posts.sharingId,
+        db
+          .select({ id: posts.id })
+          .from(posts)
+          .innerJoin(blocks, eq(blocks.accountId, posts.accountId))
+          .where(eq(blocks.blockedAccountId, ownerId)),
+      ),
+    ),
+  ];
 }
 
 app.get(
@@ -298,134 +401,26 @@ app.get(
     const timeline = await readTimelineSnapshot(async (database) => {
       let timelineIds: { id: Uuid }[];
       if (TIMELINE_INBOXES) {
-        timelineIds = await database.query.posts.findMany({
-          columns: { id: true },
-          where: {
-            RAW: (
-              posts,
-              { and, eq, gt, inArray, isNull, lt, lte, notInArray, or, sql },
-            ) =>
-              and(
-                inArray(
-                  posts.id,
-                  db
-                    .select({ id: timelinePosts.postId })
-                    .from(timelinePosts)
-                    .where(
-                      and(
-                        eq(timelinePosts.accountId, owner.id),
-                        query.max_id == null
-                          ? undefined
-                          : lt(timelinePosts.postId, query.max_id),
-                        lowerBound == null
-                          ? undefined
-                          : gt(timelinePosts.postId, lowerBound),
-                      ),
-                    )
-                    .orderBy(
-                      useMinId
-                        ? asc(timelinePosts.postId)
-                        : desc(timelinePosts.postId),
-                    )
-                    .limit(Math.min(TIMELINE_INBOX_LIMIT, query.limit)),
-                ),
-                // Hide future posts
-                lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
-                // Hide the posts from the muted accounts:
-                notInArray(
-                  posts.accountId,
-                  db
-                    .select({ accountId: mutes.mutedAccountId })
-                    .from(mutes)
-                    .where(
-                      and(
-                        eq(mutes.accountId, owner.id),
-                        or(
-                          isNull(mutes.duration),
-                          gt(
-                            sql`${mutes.created} + ${mutes.duration}`,
-                            sql`CURRENT_TIMESTAMP`,
-                          ),
-                        ),
-                      ),
-                    ),
-                ),
-                // Hide the posts from the blocked accounts:
-                notInArray(
-                  posts.accountId,
-                  db
-                    .select({ accountId: blocks.blockedAccountId })
-                    .from(blocks)
-                    .where(eq(blocks.accountId, owner.id)),
-                ),
-                // Hide the posts from the accounts who blocked the owner:
-                notInArray(
-                  posts.accountId,
-                  db
-                    .select({ accountId: blocks.accountId })
-                    .from(blocks)
-                    .where(eq(blocks.blockedAccountId, owner.id)),
-                ),
-                // Hide the shared posts from the muted accounts:
-                or(
-                  isNull(posts.sharingId),
-                  notInArray(
-                    posts.sharingId,
-                    db
-                      .select({ id: posts.id })
-                      .from(posts)
-                      .innerJoin(
-                        mutes,
-                        eq(mutes.mutedAccountId, posts.accountId),
-                      )
-                      .where(
-                        and(
-                          eq(mutes.accountId, owner.id),
-                          or(
-                            isNull(mutes.duration),
-                            gt(
-                              sql`${mutes.created} + ${mutes.duration}`,
-                              sql`CURRENT_TIMESTAMP`,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ),
-                ),
-                // Hide the shared posts from the blocked accounts:
-                or(
-                  isNull(posts.sharingId),
-                  notInArray(
-                    posts.sharingId,
-                    db
-                      .select({ id: posts.id })
-                      .from(posts)
-                      .innerJoin(
-                        blocks,
-                        eq(blocks.blockedAccountId, posts.accountId),
-                      )
-                      .where(eq(blocks.accountId, owner.id)),
-                  ),
-                ),
-                // Hide the shared posts from the accounts who blocked the owner:
-                or(
-                  isNull(posts.sharingId),
-                  notInArray(
-                    posts.sharingId,
-                    db
-                      .select({ id: posts.id })
-                      .from(posts)
-                      .innerJoin(blocks, eq(blocks.accountId, posts.accountId))
-                      .where(eq(blocks.blockedAccountId, owner.id)),
-                  ),
-                ),
-              )!,
-          },
-          orderBy: (posts, { asc, desc }) => [
-            useMinId ? asc(posts.id) : desc(posts.id),
-          ],
-          limit: query.limit,
-        });
+        timelineIds = await database
+          .select({ id: posts.id })
+          .from(timelinePosts)
+          .innerJoin(posts, eq(posts.id, timelinePosts.postId))
+          .where(
+            and(
+              eq(timelinePosts.accountId, owner.id),
+              query.max_id == null
+                ? undefined
+                : lt(timelinePosts.postId, query.max_id),
+              lowerBound == null
+                ? undefined
+                : gt(timelinePosts.postId, lowerBound),
+              ...getTimelinePostFilterConditions(owner.id),
+            ),
+          )
+          .orderBy(
+            useMinId ? asc(timelinePosts.postId) : desc(timelinePosts.postId),
+          )
+          .limit(Math.min(TIMELINE_INBOX_LIMIT, query.limit));
       } else {
         const followingAccountIds = await getApprovedFollowingAccountIds(
           owner.id,
@@ -641,132 +636,22 @@ app.get(
     const timeline = await readTimelineSnapshot(async (database) => {
       let timelineIds: { id: Uuid }[];
       if (TIMELINE_INBOXES) {
-        timelineIds = await database.query.posts.findMany({
-          columns: { id: true },
-          where: {
-            RAW: (
-              posts,
-              { and, eq, gt, inArray, isNull, lt, lte, notInArray, or, sql },
-            ) =>
-              and(
-                inArray(
-                  posts.id,
-                  db
-                    .select({ id: listPosts.postId })
-                    .from(listPosts)
-                    .where(
-                      and(
-                        eq(listPosts.listId, list.id),
-                        query.max_id == null
-                          ? undefined
-                          : lt(listPosts.postId, query.max_id),
-                        lowerBound == null
-                          ? undefined
-                          : gt(listPosts.postId, lowerBound),
-                      ),
-                    )
-                    .orderBy(
-                      useMinId ? asc(listPosts.postId) : desc(listPosts.postId),
-                    )
-                    .limit(Math.min(TIMELINE_INBOX_LIMIT, query.limit)),
-                ),
-                // Hide future posts
-                lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
-                // Hide the posts from the muted accounts:
-                notInArray(
-                  posts.accountId,
-                  db
-                    .select({ accountId: mutes.mutedAccountId })
-                    .from(mutes)
-                    .where(
-                      and(
-                        eq(mutes.accountId, owner.id),
-                        or(
-                          isNull(mutes.duration),
-                          gt(
-                            sql`${mutes.created} + ${mutes.duration}`,
-                            sql`CURRENT_TIMESTAMP`,
-                          ),
-                        ),
-                      ),
-                    ),
-                ),
-                // Hide the posts from the blocked accounts:
-                notInArray(
-                  posts.accountId,
-                  db
-                    .select({ accountId: blocks.blockedAccountId })
-                    .from(blocks)
-                    .where(eq(blocks.accountId, owner.id)),
-                ),
-                // Hide the posts from the accounts who blocked the owner:
-                notInArray(
-                  posts.accountId,
-                  db
-                    .select({ accountId: blocks.accountId })
-                    .from(blocks)
-                    .where(eq(blocks.blockedAccountId, owner.id)),
-                ),
-                // Hide the shared posts from the muted accounts:
-                or(
-                  isNull(posts.sharingId),
-                  notInArray(
-                    posts.sharingId,
-                    db
-                      .select({ id: posts.id })
-                      .from(posts)
-                      .innerJoin(
-                        mutes,
-                        eq(mutes.mutedAccountId, posts.accountId),
-                      )
-                      .where(
-                        and(
-                          eq(mutes.accountId, owner.id),
-                          or(
-                            isNull(mutes.duration),
-                            gt(
-                              sql`${mutes.created} + ${mutes.duration}`,
-                              sql`CURRENT_TIMESTAMP`,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ),
-                ),
-                // Hide the shared posts from the blocked accounts:
-                or(
-                  isNull(posts.sharingId),
-                  notInArray(
-                    posts.sharingId,
-                    db
-                      .select({ id: posts.id })
-                      .from(posts)
-                      .innerJoin(
-                        blocks,
-                        eq(blocks.blockedAccountId, posts.accountId),
-                      )
-                      .where(eq(blocks.accountId, owner.id)),
-                  ),
-                ),
-                // Hide the shared posts from the accounts who blocked the owner:
-                or(
-                  isNull(posts.sharingId),
-                  notInArray(
-                    posts.sharingId,
-                    db
-                      .select({ id: posts.id })
-                      .from(posts)
-                      .innerJoin(blocks, eq(blocks.accountId, posts.accountId))
-                      .where(eq(blocks.blockedAccountId, owner.id)),
-                  ),
-                ),
-              )!,
-          },
-          orderBy: (posts, { asc, desc }) => [
-            useMinId ? asc(posts.id) : desc(posts.id),
-          ],
-          limit: query.limit,
-        });
+        timelineIds = await database
+          .select({ id: posts.id })
+          .from(listPosts)
+          .innerJoin(posts, eq(posts.id, listPosts.postId))
+          .where(
+            and(
+              eq(listPosts.listId, list.id),
+              query.max_id == null
+                ? undefined
+                : lt(listPosts.postId, query.max_id),
+              lowerBound == null ? undefined : gt(listPosts.postId, lowerBound),
+              ...getTimelinePostFilterConditions(owner.id),
+            ),
+          )
+          .orderBy(useMinId ? asc(listPosts.postId) : desc(listPosts.postId))
+          .limit(Math.min(TIMELINE_INBOX_LIMIT, query.limit));
       } else {
         const followingAccountIds = await getApprovedFollowingAccountIds(
           owner.id,

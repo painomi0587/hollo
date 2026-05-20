@@ -18,6 +18,7 @@ import {
   lists,
   media,
   mentions,
+  mutes,
   posts,
   timelinePosts,
 } from "../../schema";
@@ -225,6 +226,81 @@ describe.sequential("/api/v1/timelines/list/:list_id", () => {
     expect(Array.isArray(json)).toBe(true);
     expect(json).toHaveLength(0);
   });
+
+  it("fills list inbox pages after filtering muted posts", async () => {
+    expect.assertions(4);
+
+    const listId = uuidv7();
+    const visibleAuthor = await createAccount({ username: "list-visible" });
+    const mutedAuthor = await createAccount({ username: "list-muted" });
+    const visiblePostId = uuidv7();
+    const mutedPostId = uuidv7();
+
+    await db.insert(lists).values({
+      id: listId,
+      accountOwnerId: owner.id,
+      title: "Filtered list",
+      repliesPolicy: "list",
+      exclusive: false,
+    });
+
+    await db.insert(listMembers).values([
+      { listId, accountId: visibleAuthor.id },
+      { listId, accountId: mutedAuthor.id },
+    ]);
+
+    await db.insert(mutes).values({
+      id: uuidv7(),
+      accountId: owner.id,
+      mutedAccountId: mutedAuthor.id,
+    });
+
+    await db.insert(posts).values([
+      {
+        id: visiblePostId,
+        iri: `https://hollo.test/@list-visible/${visiblePostId}`,
+        type: "Note",
+        accountId: visibleAuthor.id,
+        visibility: "public",
+        content: "Visible list post",
+        contentHtml: "<p>Visible list post</p>",
+        published: new Date(),
+      },
+      {
+        id: mutedPostId,
+        iri: `https://hollo.test/@list-muted/${mutedPostId}`,
+        type: "Note",
+        accountId: mutedAuthor.id,
+        visibility: "public",
+        content: "Muted list post",
+        contentHtml: "<p>Muted list post</p>",
+        published: new Date(),
+      },
+    ]);
+
+    await db.insert(listPosts).values([
+      { listId, postId: visiblePostId },
+      { listId, postId: mutedPostId },
+    ]);
+
+    const response = await app.request(
+      `/api/v1/timelines/list/${listId}?limit=1`,
+      {
+        method: "GET",
+        headers: {
+          authorization: bearerAuthorization(accessToken),
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+
+    const json = await response.json();
+
+    expect(Array.isArray(json)).toBe(true);
+    expect(json).toHaveLength(1);
+    expect(json[0].id).toBe(visiblePostId);
+  });
 });
 describe.sequential("/api/v1/timelines/home", () => {
   let owner: Awaited<ReturnType<typeof createAccount>>;
@@ -307,6 +383,61 @@ describe.sequential("/api/v1/timelines/home", () => {
 
     expect(json).toHaveLength(1);
     expect(ids).toEqual([approvedPostId]);
+  });
+
+  it("fills home inbox pages after filtering muted posts", async () => {
+    expect.assertions(4);
+
+    const visiblePostId = uuidv7();
+    const mutedPostId = uuidv7();
+
+    await db.insert(mutes).values({
+      id: uuidv7(),
+      accountId: owner.id,
+      mutedAccountId: pendingAuthor.id,
+    });
+
+    await db.insert(posts).values([
+      {
+        id: visiblePostId,
+        iri: `https://hollo.test/@timeline-approved/${visiblePostId}`,
+        type: "Note",
+        accountId: approvedAuthor.id,
+        visibility: "public",
+        content: "Visible timeline post",
+        contentHtml: "<p>Visible timeline post</p>",
+        published: new Date(),
+      },
+      {
+        id: mutedPostId,
+        iri: `https://hollo.test/@timeline-pending/${mutedPostId}`,
+        type: "Note",
+        accountId: pendingAuthor.id,
+        visibility: "public",
+        content: "Muted timeline post",
+        contentHtml: "<p>Muted timeline post</p>",
+        published: new Date(),
+      },
+    ]);
+
+    await db.insert(timelinePosts).values([
+      { accountId: owner.id, postId: visiblePostId },
+      { accountId: owner.id, postId: mutedPostId },
+    ]);
+
+    const response = await app.request("/api/v1/timelines/home?limit=1", {
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+      },
+    });
+
+    expect(response.status).toBe(200);
+
+    const json = await response.json();
+
+    expect(Array.isArray(json)).toBe(true);
+    expect(json).toHaveLength(1);
+    expect(json[0].id).toBe(visiblePostId);
   });
 });
 
