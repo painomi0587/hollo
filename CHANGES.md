@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.7.17
 --------------
 
-To be released.
+Released on May 21, 2026.
 
  -  Upgraded Fedify to 1.10.10 to fix a security vulnerability in Linked Data
     Signature verification that could allow certain signed activities to be
