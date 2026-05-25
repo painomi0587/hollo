@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.9.2
 -------------
 
-To be released.
+Released on May 25, 2026.
 
  -  Fixed a bug where the media proxy returned `404 Not Found` for remote media
     whose upstream server labeled the payload as `application/octet-stream` or
