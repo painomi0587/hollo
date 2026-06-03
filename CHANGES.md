@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.9.3
 -------------
 
-To be released.
+Released on June 3, 2026.
 
  -  Fixed a bug where some remote accounts' custom profile fields were rendered
     as per-character entries (field names `0`, `1`, `2`, … with one character
