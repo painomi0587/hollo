@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.8.7
 -------------
 
-To be released.
+Released on June 4, 2026.
 
  -  Upgraded Fedify to 2.1.15 to address a security vulnerability in SSRF
     mitigation.  [[CVE-2026-50131]]
