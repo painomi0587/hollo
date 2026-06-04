@@ -6,6 +6,9 @@ Version 0.8.7
 
 To be released.
 
+ -  Upgraded Fedify to 2.1.15 to address a security vulnerability in SSRF
+    mitigation.  [[CVE-2026-50131]]
+
 
 Version 0.8.6
 -------------
@@ -340,6 +343,17 @@ Released on April 27, 2026.
 [#447]: https://github.com/fedify-dev/hollo/pull/447
 [#448]: https://github.com/fedify-dev/hollo/pull/448
 [Fedify debugger]: https://fedify.dev/manual/debug
+
+
+Version 0.7.18
+--------------
+
+Released on June 4, 2026.
+
+ -  Upgraded Fedify to 1.10.11 to address a security vulnerability in SSRF
+    mitigation.  [[CVE-2026-50131]]
+
+[CVE-2026-50131]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-xw9q-2mv6-9fr8
 
 
 Version 0.7.17
