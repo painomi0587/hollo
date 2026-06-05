@@ -157,7 +157,7 @@ export async function getApplication(
   client: Pick<Schema.Application, "id">,
 ): Promise<Schema.Application> {
   const application = await db.query.applications.findFirst({
-    where: eq(Schema.applications.id, client.id),
+    where: { id: { eq: client.id } },
   });
 
   // This should never happen, but can if the application lookup is wrong:
@@ -212,7 +212,7 @@ export async function getAccessToken(
 
   const accessToken = await db.transaction(async (tx) => {
     const accessGrant = await tx.query.accessGrants.findFirst({
-      where: eq(Schema.accessGrants.code, code),
+      where: { code: { eq: code } },
     });
 
     const accessToken = await createAccessToken(accessGrant!, tx);
@@ -295,7 +295,7 @@ export async function findAccessGrant(
   code: string,
 ): Promise<Schema.AccessGrant> {
   const accessGrant = await db.query.accessGrants.findFirst({
-    where: eq(Schema.accessGrants.code, code),
+    where: { code: { eq: code } },
   });
 
   // This should never happen, but can if the application lookup is wrong:
@@ -310,7 +310,7 @@ export async function findAccessToken(
   token: string,
 ): Promise<Schema.AccessToken | undefined> {
   const accessToken = await db.query.accessTokens.findFirst({
-    where: eq(Schema.accessTokens.code, token),
+    where: { code: { eq: token } },
   });
 
   return accessToken;

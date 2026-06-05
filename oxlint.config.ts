@@ -46,6 +46,7 @@ export default defineConfig({
     ],
     "jest/no-conditional-expect": "off",
     "jest/no-disabled-tests": "off",
+    "vitest/no-disabled-tests": "off",
     "jest/valid-describe-callback": "off",
     "jest/valid-expect": "off",
     "jsx-a11y/no-redundant-roles": "off",

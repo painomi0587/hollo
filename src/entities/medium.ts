@@ -1,16 +1,27 @@
-import { and, eq, exists, ilike, lt, not, notExists } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  ilike,
+  isNull,
+  lt,
+  not,
+  notExists,
+  or,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import db from "../db";
+import { proxyUrl } from "../media-proxy";
 import {
   accountOwners,
   accounts,
   bookmarks,
   likes,
-  type Medium,
   media,
   posts,
   reactions,
+  type Medium,
 } from "../schema";
 import { STORAGE_URL_BASE } from "../storage-config";
 
@@ -24,13 +35,17 @@ function normalizeAttachmentType(type: string): string {
   return "unknown";
 }
 
-// oxlint-disable-next-line typescript/no-explicit-any
-export function serializeMedium(medium: Medium): Record<string, any> {
+export function serializeMedium(
+  medium: Medium,
+  baseUrl: URL | string,
+  // oxlint-disable-next-line typescript/no-explicit-any
+): Record<string, any> {
+  const previewSource = medium.thumbnailCleaned ? null : medium.thumbnailUrl;
   return {
     id: medium.id,
     type: normalizeAttachmentType(medium.type),
-    url: medium.url,
-    preview_url: medium.thumbnailCleaned ? null : medium.thumbnailUrl,
+    url: proxyUrl(medium.url, baseUrl),
+    preview_url: proxyUrl(previewSource, baseUrl),
     remote_url: null,
     text_url: null,
     meta: {
@@ -149,6 +164,10 @@ export async function getMediaWithDeletableThumbnails(
             .where(
               and(
                 eq(posts.id, quotingPosts.quoteTargetId),
+                or(
+                  eq(quotingPosts.quoteState, "accepted"),
+                  isNull(quotingPosts.quoteState),
+                ),
                 exists(
                   db
                     .select()

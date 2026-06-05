@@ -1,19 +1,11 @@
-import {
-  and,
-  count,
-  eq,
-  type ExtractTablesWithRelations,
-  inArray,
-} from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+import { and, count, eq, inArray } from "drizzle-orm";
 
-import type * as schema from "../schema";
+import type { DatabaseLike } from "../db";
 import {
-  type RemoteReplyScrapeJob,
   remoteReplyScrapeJobs,
   remoteReplyScrapeOrigins,
   type Post,
+  type RemoteReplyScrapeJob,
 } from "../schema";
 import { uuidv7 } from "../uuid";
 
@@ -38,11 +30,7 @@ export const REMOTE_REPLIES_SCRAPE_COOLDOWN_SECONDS = parseNonNegativeInteger(
   300,
 );
 
-type Database = PgDatabase<
-  PostgresJsQueryResultHKT,
-  typeof schema,
-  ExtractTablesWithRelations<typeof schema>
->;
+type Database = DatabaseLike;
 
 export async function enqueueRemoteReplyScrape(
   db: Database,
@@ -78,7 +66,7 @@ export async function enqueueRemoteReplyScrape(
       .onConflictDoNothing();
 
     const existingJob = await tx.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.repliesIri, repliesIri.href),
+      where: { repliesIri: { eq: repliesIri.href } },
     });
 
     if (
@@ -123,7 +111,7 @@ export async function enqueueRemoteReplyScrape(
 
     if (targetJob == null) {
       const conflictingJob = await tx.query.remoteReplyScrapeJobs.findFirst({
-        where: eq(remoteReplyScrapeJobs.repliesIri, repliesIri.href),
+        where: { repliesIri: { eq: repliesIri.href } },
       });
 
       if (

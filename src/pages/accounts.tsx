@@ -11,10 +11,13 @@ import {
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { createObjectCsvStringifier } from "csv-writer-portable";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { uniq } from "es-toolkit";
+import type { Disk } from "flydrive";
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import { streamText } from "hono/streaming";
+import mime from "mime";
 import neatCsv from "neat-csv";
 
 import { AccountForm } from "../components/AccountForm.tsx";
@@ -33,6 +36,7 @@ import {
   REMOTE_ACTOR_FETCH_POSTS,
   unfollowAccount,
 } from "../federation/account.ts";
+import { getInstanceHost } from "../instance-host.ts";
 import { loginRequired } from "../login.ts";
 import {
   type Account,
@@ -52,21 +56,69 @@ import {
   type PostVisibility,
   type ThemeColor,
 } from "../schema.ts";
+import { STORAGE_URL_BASE } from "../storage-config.ts";
 import { isUuid, uuidv7 } from "../uuid.ts";
 
 const HOLLO_OFFICIAL_ACCOUNT = "@hollo@hollo.social";
 
 const logger = getLogger(["hollo", "pages", "accounts"]);
 
+const allowedImageMimeTypes = ["image/gif", "image/jpeg", "image/png"];
+
+export function parseFields(
+  form: FormData,
+): Array<{ name: string; value: string }> {
+  const result: Array<{ name: string; value: string }> = [];
+  for (let i = 0; i < 10; i++) {
+    const name = (
+      form.get(`fields[${i}][name]`)?.toString()?.trim() ?? ""
+    ).slice(0, 255);
+    const value = form.get(`fields[${i}][value]`)?.toString()?.trim() ?? "";
+    if (name !== "" && value !== "") result.push({ name, value });
+  }
+  return result;
+}
+
+async function uploadProfileImage(
+  disk: Disk,
+  prefix: "avatars" | "covers",
+  accountId: string,
+  file: File,
+): Promise<{ url: string; path: string } | undefined> {
+  if (!allowedImageMimeTypes.includes(file.type)) return undefined;
+  const ext = mime.getExtension(file.type)?.replace(/[/\\]/g, "");
+  if (ext == null) return undefined;
+  const path = `${prefix}/${accountId}/${crypto.randomUUID()}.${ext}`;
+  const content = new Uint8Array(await file.arrayBuffer());
+  await disk.put(path, content, {
+    contentType: file.type,
+    contentLength: content.byteLength,
+    visibility: "public",
+  });
+  return { url: await disk.getUrl(path), path };
+}
+
+function storageKeyFromUrl(url: string): string | undefined {
+  if (STORAGE_URL_BASE == null) return undefined;
+  // FS driver: new URL('/assets/' + key, STORAGE_URL_BASE)
+  const fsPrefix = new URL("/assets/", STORAGE_URL_BASE).href;
+  if (url.startsWith(fsPrefix)) return url.slice(fsPrefix.length);
+  // S3 CDN driver: STORAGE_URL_BASE + '/' + key
+  const s3Prefix = STORAGE_URL_BASE.replace(/\/?$/, "/");
+  if (url.startsWith(s3Prefix)) return url.slice(s3Prefix.length);
+  return undefined;
+}
+
 const accounts = new Hono();
 
+accounts.use(csrf());
 accounts.use(loginRequired);
 
 accounts.get("/", async (c) => {
   const owners = await db.query.accountOwners.findMany({
     with: { account: true },
   });
-  return c.html(<AccountListPage accountOwners={owners} />);
+  return c.html(<AccountListPage accountOwners={owners} baseUrl={c.req.url} />);
 });
 
 accounts.post("/", async (c) => {
@@ -77,6 +129,7 @@ accounts.post("/", async (c) => {
   const protected_ = form.get("protected") != null;
   const discoverable = form.get("discoverable") != null;
   const expandSpoilers = form.get("expandSpoilers") != null;
+  const followingListPublic = form.get("followingListPublic") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -84,6 +137,9 @@ accounts.post("/", async (c) => {
     ?.trim() as PostVisibility;
   const themeColor = form.get("themeColor")?.toString()?.trim() as ThemeColor;
   const news = form.get("news") != null;
+  const avatarFile = form.get("avatar");
+  const headerFile = form.get("header");
+  const parsedFields = parseFields(form);
   if (username == null || username === "" || name == null || name === "") {
     return c.html(
       <NewAccountPage
@@ -94,10 +150,12 @@ accounts.post("/", async (c) => {
           protected: protected_,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           language,
           visibility,
           themeColor,
           news,
+          fields: parsedFields,
         }}
         errors={{
           username:
@@ -110,65 +168,178 @@ accounts.post("/", async (c) => {
               : undefined,
         }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={getInstanceHost(new URL(c.req.url))}
       />,
       400,
     );
   }
+  if (
+    avatarFile instanceof File &&
+    avatarFile.size > 0 &&
+    !allowedImageMimeTypes.includes(avatarFile.type)
+  ) {
+    return c.html(
+      <NewAccountPage
+        values={{
+          username,
+          name,
+          bio,
+          protected: protected_,
+          discoverable,
+          expandSpoilers,
+          followingListPublic,
+          language,
+          visibility,
+          themeColor,
+          news,
+          fields: parsedFields,
+        }}
+        errors={{ avatar: "Avatar must be a JPEG, PNG, or GIF." }}
+        officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={getInstanceHost(new URL(c.req.url))}
+      />,
+      400,
+    );
+  }
+  if (
+    headerFile instanceof File &&
+    headerFile.size > 0 &&
+    !allowedImageMimeTypes.includes(headerFile.type)
+  ) {
+    return c.html(
+      <NewAccountPage
+        values={{
+          username,
+          name,
+          bio,
+          protected: protected_,
+          discoverable,
+          expandSpoilers,
+          followingListPublic,
+          language,
+          visibility,
+          themeColor,
+          news,
+          fields: parsedFields,
+        }}
+        errors={{ header: "Header image must be a JPEG, PNG, or GIF." }}
+        officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={getInstanceHost(new URL(c.req.url))}
+      />,
+      400,
+    );
+  }
+  const accountId = crypto.randomUUID();
   const { extractCustomEmojis, formatText } = await import("../text.ts");
   const fedCtx = federation.createContext(c.req.raw, undefined);
   const bioResult = await formatText(db, bio ?? "", fedCtx);
   const nameEmojis = await extractCustomEmojis(db, name);
   const emojis = { ...nameEmojis, ...bioResult.emojis };
-  const [account, owner] = await db.transaction(async (tx) => {
-    await tx
-      .insert(instances)
-      .values({
-        host: fedCtx.host,
-        software: "hollo",
-        softwareVersion: null,
-      })
-      .onConflictDoNothing();
-    const account = await tx
-      .insert(accountsTable)
-      .values({
-        id: crypto.randomUUID(),
-        iri: fedCtx.getActorUri(username).href,
-        instanceHost: fedCtx.host,
-        type: "Person",
-        name,
-        emojis,
-        handle: `@${username}@${fedCtx.host}`,
-        bioHtml: bioResult.html,
-        url: fedCtx.getActorUri(username).href,
-        protected: protected_,
-        inboxUrl: fedCtx.getInboxUri(username).href,
-        followersUrl: fedCtx.getFollowersUri(username).href,
-        sharedInboxUrl: fedCtx.getInboxUri().href,
-        featuredUrl: fedCtx.getFeaturedUri(username).href,
-        published: new Date(),
-      })
-      .returning();
-    const rsaKeyPair = await generateCryptoKeyPair("RSASSA-PKCS1-v1_5");
-    const ed25519KeyPair = await generateCryptoKeyPair("Ed25519");
-    const owner = await tx
-      .insert(accountOwners)
-      .values({
-        id: account[0].id,
-        handle: username,
-        rsaPrivateKeyJwk: await exportJwk(rsaKeyPair.privateKey),
-        rsaPublicKeyJwk: await exportJwk(rsaKeyPair.publicKey),
-        ed25519PrivateKeyJwk: await exportJwk(ed25519KeyPair.privateKey),
-        ed25519PublicKeyJwk: await exportJwk(ed25519KeyPair.publicKey),
-        bio: bio ?? "",
-        language: language ?? "en",
-        visibility: visibility ?? "public",
-        themeColor,
-        discoverable,
-        expandSpoilers,
-      })
-      .returning();
-    return [account[0], owner[0]];
-  });
+  const fieldHtmlsObj: Record<string, string> = {};
+  for (const { name: fieldName, value: fieldValue } of parsedFields) {
+    fieldHtmlsObj[fieldName] = (await formatText(db, fieldValue, fedCtx)).html;
+  }
+  const rawFieldsRecord = globalThis.Object.fromEntries(
+    parsedFields.map(({ name: n, value: v }) => [n, v]),
+  );
+  const { drive } = await import("../storage.ts");
+  const disk = drive.use();
+  const uploadedPaths: string[] = [];
+  let avatarUrl: string | undefined;
+  let coverUrl: string | undefined;
+  let dbResult: [
+    typeof accountsTable.$inferSelect,
+    typeof accountOwners.$inferSelect,
+  ];
+  try {
+    if (avatarFile instanceof File && avatarFile.size > 0) {
+      const result = await uploadProfileImage(
+        disk,
+        "avatars",
+        accountId,
+        avatarFile,
+      );
+      if (result != null) {
+        avatarUrl = result.url;
+        uploadedPaths.push(result.path);
+      }
+    }
+    if (headerFile instanceof File && headerFile.size > 0) {
+      const result = await uploadProfileImage(
+        disk,
+        "covers",
+        accountId,
+        headerFile,
+      );
+      if (result != null) {
+        coverUrl = result.url;
+        uploadedPaths.push(result.path);
+      }
+    }
+    const handleHost = getInstanceHost(fedCtx.host);
+    dbResult = await db.transaction(async (tx) => {
+      await tx
+        .insert(instances)
+        .values({
+          host: handleHost,
+          software: "hollo",
+          softwareVersion: null,
+        })
+        .onConflictDoNothing();
+      const account = await tx
+        .insert(accountsTable)
+        .values({
+          id: accountId,
+          iri: fedCtx.getActorUri(username).href,
+          instanceHost: handleHost,
+          type: "Person",
+          name,
+          emojis,
+          handle: `@${username}@${handleHost}`,
+          bioHtml: bioResult.html,
+          url: fedCtx.getActorUri(username).href,
+          protected: protected_,
+          inboxUrl: fedCtx.getInboxUri(username).href,
+          followersUrl: fedCtx.getFollowersUri(username).href,
+          sharedInboxUrl: fedCtx.getInboxUri().href,
+          featuredUrl: fedCtx.getFeaturedUri(username).href,
+          published: new Date(),
+          avatarUrl,
+          coverUrl,
+          fieldHtmls: fieldHtmlsObj,
+        })
+        .returning();
+      const rsaKeyPair = await generateCryptoKeyPair("RSASSA-PKCS1-v1_5");
+      const ed25519KeyPair = await generateCryptoKeyPair("Ed25519");
+      const owner = await tx
+        .insert(accountOwners)
+        .values({
+          id: account[0].id,
+          handle: username,
+          rsaPrivateKeyJwk: await exportJwk(rsaKeyPair.privateKey),
+          rsaPublicKeyJwk: await exportJwk(rsaKeyPair.publicKey),
+          ed25519PrivateKeyJwk: await exportJwk(ed25519KeyPair.privateKey),
+          ed25519PublicKeyJwk: await exportJwk(ed25519KeyPair.publicKey),
+          bio: bio ?? "",
+          language: language ?? "en",
+          visibility: visibility ?? "public",
+          themeColor,
+          discoverable,
+          expandSpoilers,
+          followingListPublic,
+          fields: rawFieldsRecord,
+        })
+        .returning();
+      return [account[0], owner[0]] as [
+        typeof accountsTable.$inferSelect,
+        typeof accountOwners.$inferSelect,
+      ];
+    });
+  } catch (err) {
+    await Promise.allSettled(uploadedPaths.map((p) => disk.delete(p)));
+    throw err;
+  }
+  const [account, owner] = dbResult;
   const owners = await db.query.accountOwners.findMany({
     with: { account: true },
   });
@@ -193,27 +364,36 @@ accounts.post("/", async (c) => {
       });
     }
   }
-  return c.html(<AccountListPage accountOwners={owners} />);
+  return c.html(<AccountListPage accountOwners={owners} baseUrl={c.req.url} />);
 });
 
 interface AccountListPageProps {
   accountOwners: (AccountOwner & { account: Account })[];
+  baseUrl: URL | string;
 }
 
-function AccountListPage({ accountOwners }: AccountListPageProps) {
+function AccountListPage({ accountOwners, baseUrl }: AccountListPageProps) {
   return (
     <DashboardLayout title="Hollo: Accounts" selectedMenu="accounts">
-      <hgroup>
-        <h1>Accounts</h1>
-        <p>
-          You can have more than one account. Each account has its own handle,
-          settings, and data, and you can switch between them at any time.
-        </p>
-      </hgroup>
-      <AccountList accountOwners={accountOwners} />
-      <a role="button" href="/accounts/new">
-        Create a new account
-      </a>
+      <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+            Accounts
+          </h1>
+          <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+            You can have more than one account. Each account has its own handle,
+            settings, and data, and you can switch between them at any time.
+          </p>
+        </div>
+        <a
+          href="/accounts/new"
+          class="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700 dark:bg-brand-700 dark:hover:bg-brand-800"
+        >
+          <span class="i-lucide-plus" aria-hidden="true" />
+          New account
+        </a>
+      </header>
+      <AccountList accountOwners={accountOwners} baseUrl={baseUrl} />
     </DashboardLayout>
   );
 }
@@ -226,8 +406,10 @@ accounts.get("/new", (c) => {
         themeColor: "azure",
         news: true,
         expandSpoilers: false,
+        followingListPublic: false,
       }}
       officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+      host={getInstanceHost(new URL(c.req.url))}
     />,
   );
 });
@@ -236,27 +418,31 @@ accounts.get("/:id", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
   const news = await db.query.follows.findFirst({
-    where: and(
-      eq(
-        follows.followingId,
-        db
-          .select({ id: accountsTable.id })
-          .from(accountsTable)
-          .where(eq(accountsTable.handle, HOLLO_OFFICIAL_ACCOUNT)),
-      ),
-      eq(follows.followerId, accountOwner.id),
-    ),
+    where: {
+      RAW: (follows, { and, eq }) =>
+        and(
+          eq(
+            follows.followingId,
+            db
+              .select({ id: accountsTable.id })
+              .from(accountsTable)
+              .where(eq(accountsTable.handle, HOLLO_OFFICIAL_ACCOUNT)),
+          ),
+          eq(follows.followerId, accountOwner.id),
+        )!,
+    },
   });
   return c.html(
     <AccountPage
       accountOwner={accountOwner}
       news={news != null}
       officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+      host={getInstanceHost(new URL(c.req.url))}
     />,
   );
 });
@@ -274,10 +460,25 @@ function AccountPage(props: AccountPageProps) {
       selectedMenu="accounts"
       themeColor={props.accountOwner.themeColor}
     >
-      <hgroup>
-        <h1>Edit {username}</h1>
-        <p>You can edit your account by filling out the form below.</p>
-      </hgroup>
+      <header class="mb-6">
+        <p class="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          <a
+            href="/accounts"
+            class="hover:text-neutral-700 dark:hover:text-neutral-300"
+          >
+            Accounts
+          </a>
+        </p>
+        <h1 class="mt-1 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+          Edit{" "}
+          <span class="font-mono text-brand-700 dark:text-brand-400">
+            {username}
+          </span>
+        </h1>
+        <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+          Update profile fields, defaults, and theme color for this account.
+        </p>
+      </header>
       <AccountForm
         action={`/accounts/${props.accountOwner.account.id}`}
         readOnly={{ username: true }}
@@ -291,13 +492,26 @@ function AccountPage(props: AccountPageProps) {
             props.values?.discoverable ?? props.accountOwner.discoverable,
           expandSpoilers:
             props.values?.expandSpoilers ?? props.accountOwner.expandSpoilers,
+          followingListPublic:
+            props.values?.followingListPublic ??
+            props.accountOwner.followingListPublic,
           language: props.values?.language ?? props.accountOwner.language,
           visibility: props.values?.visibility ?? props.accountOwner.visibility,
           themeColor: props.values?.themeColor ?? props.accountOwner.themeColor,
           news: props.values?.news ?? props.news,
+          avatarUrl:
+            props.values?.avatarUrl ?? props.accountOwner.account.avatarUrl,
+          coverUrl:
+            props.values?.coverUrl ?? props.accountOwner.account.coverUrl,
+          fields:
+            props.values?.fields ??
+            globalThis.Object.entries(props.accountOwner.fields).map(
+              ([n, v]) => ({ name: n, value: v }),
+            ),
         }}
         errors={props.errors}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={props.host}
         submitLabel="Save changes"
       />
     </DashboardLayout>
@@ -308,7 +522,7 @@ accounts.post("/:id", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -318,6 +532,7 @@ accounts.post("/:id", async (c) => {
   const protected_ = form.get("protected") != null;
   const discoverable = form.get("discoverable") != null;
   const expandSpoilers = form.get("expandSpoilers") != null;
+  const followingListPublic = form.get("followingListPublic") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -325,6 +540,9 @@ accounts.post("/:id", async (c) => {
     ?.trim() as PostVisibility;
   const themeColor = form.get("themeColor")?.toString()?.trim() as ThemeColor;
   const news = form.get("news") != null;
+  const avatarFile = form.get("avatar");
+  const headerFile = form.get("header");
+  const parsedFields = parseFields(form);
   if (name == null || name === "") {
     return c.html(
       <AccountPage
@@ -336,15 +554,82 @@ accounts.post("/:id", async (c) => {
           protected: protected_,
           discoverable,
           expandSpoilers,
+          followingListPublic,
           language,
           visibility,
           themeColor,
           news,
+          avatarUrl: accountOwner.account.avatarUrl,
+          coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
         }}
         errors={{
           name: name == null || name === "" ? "Display name is required." : "",
         }}
         officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={getInstanceHost(new URL(c.req.url))}
+      />,
+      400,
+    );
+  }
+  if (
+    avatarFile instanceof File &&
+    avatarFile.size > 0 &&
+    !allowedImageMimeTypes.includes(avatarFile.type)
+  ) {
+    return c.html(
+      <AccountPage
+        accountOwner={accountOwner}
+        news={news}
+        values={{
+          name,
+          bio,
+          protected: protected_,
+          discoverable,
+          expandSpoilers,
+          followingListPublic,
+          language,
+          visibility,
+          themeColor,
+          news,
+          avatarUrl: accountOwner.account.avatarUrl,
+          coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
+        }}
+        errors={{ avatar: "Avatar must be a JPEG, PNG, or GIF." }}
+        officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={getInstanceHost(new URL(c.req.url))}
+      />,
+      400,
+    );
+  }
+  if (
+    headerFile instanceof File &&
+    headerFile.size > 0 &&
+    !allowedImageMimeTypes.includes(headerFile.type)
+  ) {
+    return c.html(
+      <AccountPage
+        accountOwner={accountOwner}
+        news={news}
+        values={{
+          name,
+          bio,
+          protected: protected_,
+          discoverable,
+          expandSpoilers,
+          followingListPublic,
+          language,
+          visibility,
+          themeColor,
+          news,
+          avatarUrl: accountOwner.account.avatarUrl,
+          coverUrl: accountOwner.account.coverUrl,
+          fields: parsedFields,
+        }}
+        errors={{ header: "Header image must be a JPEG, PNG, or GIF." }}
+        officialAccount={HOLLO_OFFICIAL_ACCOUNT}
+        host={getInstanceHost(new URL(c.req.url))}
       />,
       400,
     );
@@ -361,28 +646,93 @@ accounts.post("/:id", async (c) => {
   const bioResult = await formatText(db, bio ?? "", fmtOpts);
   const nameEmojis = await extractCustomEmojis(db, name);
   const emojis = { ...nameEmojis, ...bioResult.emojis };
-  await db.transaction(async (tx) => {
-    await tx
-      .update(accountsTable)
-      .set({
-        name,
-        emojis,
-        bioHtml: bioResult.html,
-        protected: protected_,
-      })
-      .where(eq(accountsTable.id, accountId));
-    await tx
-      .update(accountOwners)
-      .set({
-        bio,
-        language,
-        visibility,
-        themeColor,
-        discoverable,
-        expandSpoilers,
-      })
-      .where(eq(accountOwners.id, accountId));
-  });
+  const updateFieldHtmlsObj: Record<string, string> = {};
+  for (const { name: fieldName, value: fieldValue } of parsedFields) {
+    updateFieldHtmlsObj[fieldName] = (
+      await formatText(db, fieldValue, fmtOpts)
+    ).html;
+  }
+  const updateRawFieldsRecord = globalThis.Object.fromEntries(
+    parsedFields.map(({ name: n, value: v }) => [n, v]),
+  );
+  const { drive } = await import("../storage.ts");
+  const disk = drive.use();
+  const uploadedPaths: string[] = [];
+  let avatarUrl: string | undefined;
+  let coverUrl: string | undefined;
+  const oldAvatarKey =
+    avatarFile instanceof File && avatarFile.size > 0
+      ? accountOwner.account.avatarUrl != null
+        ? storageKeyFromUrl(accountOwner.account.avatarUrl)
+        : undefined
+      : undefined;
+  const oldCoverKey =
+    headerFile instanceof File && headerFile.size > 0
+      ? accountOwner.account.coverUrl != null
+        ? storageKeyFromUrl(accountOwner.account.coverUrl)
+        : undefined
+      : undefined;
+  try {
+    if (avatarFile instanceof File && avatarFile.size > 0) {
+      const result = await uploadProfileImage(
+        disk,
+        "avatars",
+        accountId,
+        avatarFile,
+      );
+      if (result != null) {
+        avatarUrl = result.url;
+        uploadedPaths.push(result.path);
+      }
+    }
+    if (headerFile instanceof File && headerFile.size > 0) {
+      const result = await uploadProfileImage(
+        disk,
+        "covers",
+        accountId,
+        headerFile,
+      );
+      if (result != null) {
+        coverUrl = result.url;
+        uploadedPaths.push(result.path);
+      }
+    }
+    await db.transaction(async (tx) => {
+      await tx
+        .update(accountsTable)
+        .set({
+          name,
+          emojis,
+          bioHtml: bioResult.html,
+          protected: protected_,
+          fieldHtmls: updateFieldHtmlsObj,
+          ...(avatarUrl != null ? { avatarUrl } : {}),
+          ...(coverUrl != null ? { coverUrl } : {}),
+        })
+        .where(eq(accountsTable.id, accountId));
+      await tx
+        .update(accountOwners)
+        .set({
+          bio,
+          language,
+          visibility,
+          themeColor,
+          discoverable,
+          expandSpoilers,
+          followingListPublic,
+          fields: updateRawFieldsRecord,
+        })
+        .where(eq(accountOwners.id, accountId));
+    });
+  } catch (err) {
+    await Promise.allSettled(uploadedPaths.map((p) => disk.delete(p)));
+    throw err;
+  }
+  await Promise.allSettled(
+    [oldAvatarKey, oldCoverKey]
+      .filter((k): k is string => k != null)
+      .map((k) => disk.delete(k)),
+  );
   await fedCtx.sendActivity(
     { username: accountOwner.handle },
     "followers",
@@ -393,23 +743,48 @@ accounts.post("/:id", async (c) => {
     { preferSharedInbox: true, excludeBaseUris: [fedCtx.url] },
   );
   const account = { ...accountOwner.account, owner: accountOwner };
-  const newsActor = await fedCtx.lookupObject(HOLLO_OFFICIAL_ACCOUNT);
-  if (isActor(newsActor)) {
-    const newsAccount = await persistAccount(db, newsActor, c.req.url, fedCtx);
-    if (newsAccount != null) {
-      if (news) {
-        await followAccount(db, fedCtx, account, newsAccount);
-        await persistAccountPosts(
-          db,
-          newsAccount,
-          REMOTE_ACTOR_FETCH_POSTS,
-          c.req.url,
-          {
-            ...fedCtx,
-            suppressError: true,
-          },
-        );
-      } else await unfollowAccount(db, fedCtx, account, newsAccount);
+  const currentNews = await db.query.follows.findFirst({
+    where: {
+      RAW: (follows, { and, eq }) =>
+        and(
+          eq(
+            follows.followingId,
+            db
+              .select({ id: accountsTable.id })
+              .from(accountsTable)
+              .where(eq(accountsTable.handle, HOLLO_OFFICIAL_ACCOUNT)),
+          ),
+          eq(follows.followerId, accountId),
+        )!,
+    },
+  });
+  const isFollowingNews = currentNews != null;
+  if (news !== isFollowingNews) {
+    const newsActor = await fedCtx.lookupObject(HOLLO_OFFICIAL_ACCOUNT);
+    if (isActor(newsActor)) {
+      const newsAccount = await persistAccount(
+        db,
+        newsActor,
+        c.req.url,
+        fedCtx,
+      );
+      if (newsAccount != null) {
+        if (news) {
+          await followAccount(db, fedCtx, account, newsAccount);
+          await persistAccountPosts(
+            db,
+            newsAccount,
+            REMOTE_ACTOR_FETCH_POSTS,
+            c.req.url,
+            {
+              ...fedCtx,
+              suppressError: true,
+            },
+          );
+        } else {
+          await unfollowAccount(db, fedCtx, account, newsAccount);
+        }
+      }
     }
   }
   return c.redirect("/accounts");
@@ -419,7 +794,7 @@ accounts.post("/:id/delete", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
   });
   if (accountOwner == null) return c.notFound();
   const fedCtx = federation.createContext(c.req.raw, undefined);
@@ -436,7 +811,7 @@ accounts.post("/:id/delete", async (c) => {
   );
   const following = await db.query.follows.findMany({
     with: { following: true },
-    where: eq(follows.followerId, accountId),
+    where: { followerId: { eq: accountId } },
   });
   await fedCtx.sendActivity(
     { username: accountOwner.handle },
@@ -465,7 +840,7 @@ accounts.get("/:id/migrate", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: { with: { successor: true } } },
   });
   if (accountOwner == null) return c.notFound();
@@ -515,331 +890,424 @@ accounts.get("/:id/migrate", async (c) => {
   const activeJob =
     importJobId && isUuid(importJobId)
       ? await db.query.importJobs.findFirst({
-          where: and(
-            eq(importJobs.id, importJobId),
-            eq(importJobs.accountOwnerId, accountOwner.id),
-          ),
+          where: {
+            RAW: (importJobs, { and, eq }) =>
+              and(
+                eq(importJobs.id, importJobId),
+                eq(importJobs.accountOwnerId, accountOwner.id),
+              )!,
+          },
         })
       : await db.query.importJobs.findFirst({
-          where: and(
-            eq(importJobs.accountOwnerId, accountOwner.id),
-            inArray(importJobs.status, ["pending", "processing"]),
-          ),
+          where: {
+            RAW: (importJobs, { and, eq, inArray }) =>
+              and(
+                eq(importJobs.accountOwnerId, accountOwner.id),
+                inArray(importJobs.status, ["pending", "processing"]),
+              )!,
+          },
           orderBy: (importJobs, { desc }) => [desc(importJobs.created)],
         });
 
   // Check if we need to auto-refresh (job in progress)
   const shouldAutoRefresh =
     activeJob?.status === "pending" || activeJob?.status === "processing";
+  const sectionClass =
+    "rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900";
+  const inputClass =
+    "rounded-md border bg-white px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900";
+  const primaryButtonClass =
+    "rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-brand-700 dark:hover:bg-brand-800";
+  const secondaryButtonClass =
+    "rounded-md border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800";
+  const csvLinkClass =
+    "inline-flex items-center gap-1 text-sm text-brand-700 underline-offset-2 hover:underline dark:text-brand-400";
+  const dataRows = [
+    {
+      label: "Follows",
+      count: followsCount,
+      href: "migrate/following_accounts.csv",
+    },
+    { label: "Lists", count: listsCount, href: "migrate/lists.csv" },
+    {
+      label: "You mute",
+      count: mutesCount,
+      href: "migrate/muted_accounts.csv",
+    },
+    {
+      label: "You block",
+      count: blocksCount,
+      href: "migrate/blocked_accounts.csv",
+    },
+    {
+      label: "Bookmarks",
+      count: bookmarksCount,
+      href: "migrate/bookmarks.csv",
+    },
+  ];
   return c.html(
     <DashboardLayout
       title={`Hollo: Migrate ${username} from/to`}
       selectedMenu="accounts"
+      themeColor={accountOwner.themeColor}
     >
-      <hgroup>
-        <h1>Migrate {username} from/to</h1>
-        <p>
-          You can migrate your account from one instance to another by filling
-          out the form below.
+      <header class="mb-6">
+        <p class="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          <a
+            href="/accounts"
+            class="hover:text-neutral-700 dark:hover:text-neutral-300"
+          >
+            Accounts
+          </a>
         </p>
-      </hgroup>
+        <h1 class="mt-1 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+          Migrate{" "}
+          <span class="font-mono text-brand-700 dark:text-brand-400">
+            {username}
+          </span>
+        </h1>
+        <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+          Move data and aliases between fediverse accounts.
+        </p>
+      </header>
 
-      <article>
-        <header>
-          <hgroup>
-            <h2>Aliases</h2>
-            <p>
-              Configure aliases for your account. This purposes to migrate your
-              old account to <tt>{accountOwner.account.handle}</tt>.
+      <div class="space-y-6">
+        <section class={sectionClass}>
+          <header class="mb-4">
+            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              Aliases
+            </h2>
+            <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+              Add aliases that point to{" "}
+              <code class="font-mono text-brand-700 dark:text-brand-400">
+                {accountOwner.account.handle}
+              </code>{" "}
+              when migrating an old account here.
             </p>
-          </hgroup>
-        </header>
-        {aliases && (
-          <ul>
-            {aliases.map(({ iri, handle }) => (
-              <li>
-                {handle == null ? (
-                  <>
-                    <tt>{iri}</tt> (The server is not available.)
-                  </>
-                ) : (
-                  <>
-                    <tt>{handle}</tt> (<tt>{iri}</tt>)
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <form method="post" action="migrate/from">
-          <fieldset role="group">
-            <input
-              type="text"
-              name="handle"
-              placeholder="@hollo@hollo.social"
-              required
-              {...(aliasesError === "from"
-                ? { "aria-invalid": "true", value: aliasesHandle }
-                : {})}
-            />
-            <button type="submit">Add</button>
-          </fieldset>
-          <small>
-            A fediverse handle (e.g., <tt>@hollo@hollo.social</tt>) or an actor
-            URI (e.g., <tt>https://hollo.social/@hollo</tt>) is allowed.
-          </small>
-        </form>
-      </article>
-
-      <article>
-        <header>
-          <hgroup>
-            <h2>Migrating {username} to new account</h2>
-            <p>
-              Migrate <tt>{accountOwner.account.handle}</tt> to your new
-              account. Note that this action is <strong>irreversible</strong>.
-            </p>
-          </hgroup>
-        </header>
-        <form method="post" action="migrate/to">
-          <fieldset role="group">
-            <input
-              type="text"
-              name="handle"
-              placeholder={HOLLO_OFFICIAL_ACCOUNT}
-              required
-              {...(aliasesError === "to"
-                ? { "aria-invalid": "true", value: aliasesHandle }
-                : { value: accountOwner.account.successor?.handle })}
-              {...(accountOwner.account.successorId == null
-                ? {}
-                : { disabled: true })}
-            />
-            {accountOwner.account.successorId == null ? (
-              <button type="submit">Migrate</button>
-            ) : (
-              <button type="submit" disabled>
-                Migrated
+          </header>
+          {aliases && aliases.length > 0 && (
+            <ul class="mb-4 space-y-1 text-sm">
+              {aliases.map(({ iri, handle }) => (
+                <li class="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-1.5 font-mono text-neutral-800 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200">
+                  {handle == null ? (
+                    <>
+                      {iri}{" "}
+                      <span class="font-sans text-xs text-neutral-500 dark:text-neutral-400">
+                        (server unavailable)
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {handle}{" "}
+                      <span class="font-sans text-xs text-neutral-500 dark:text-neutral-400">
+                        ({iri})
+                      </span>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <form method="post" action="migrate/from">
+            <div class="flex gap-2">
+              <input
+                type="text"
+                name="handle"
+                placeholder="@hollo@hollo.social"
+                required
+                aria-label="Fediverse handle or actor URI to add as alias"
+                aria-invalid={aliasesError === "from" ? "true" : undefined}
+                value={aliasesError === "from" ? aliasesHandle : undefined}
+                class={`${inputClass} flex-1 ${
+                  aliasesError === "from"
+                    ? "border-red-500"
+                    : "border-neutral-300 dark:border-neutral-700"
+                }`}
+              />
+              <button type="submit" class={primaryButtonClass}>
+                Add alias
               </button>
-            )}
-          </fieldset>
-          <small>
-            A fediverse handle (e.g., <tt>@hollo@hollo.social</tt>) or an actor
-            URI (e.g., <tt>https://hollo.social/@hollo</tt>) is allowed.{" "}
-            <strong>
-              The new account must have an alias to this old account.
-            </strong>
-          </small>
-        </form>
-      </article>
-
-      <article>
-        <header>
-          <hgroup>
-            <h2>Export data</h2>
-            <p>
-              Export your account data into CSV files. Note that these files are
-              compatible with Mastodon.
+            </div>
+            <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+              A fediverse handle (e.g.{" "}
+              <code class="font-mono">@hollo@hollo.social</code>) or an actor
+              URI (e.g.{" "}
+              <code class="font-mono">https://hollo.social/@hollo</code>) is
+              allowed.
             </p>
-          </hgroup>
-        </header>
-        <table>
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Entries</th>
-              <th>Download</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Follows</td>
-              <td>{followsCount.toLocaleString("en-US")}</td>
-              <td>
-                <a href="migrate/following_accounts.csv">CSV</a>
-              </td>
-            </tr>
-            <tr>
-              <td>Lists</td>
-              <td>{listsCount.toLocaleString("en-US")}</td>
-              <td>
-                <a href="migrate/lists.csv">CSV</a>
-              </td>
-            </tr>
-            <tr>
-              <td>You mute</td>
-              <td>{mutesCount.toLocaleString("en-US")}</td>
-              <td>
-                <a href="migrate/muted_accounts.csv">CSV</a>
-              </td>
-            </tr>
-            <tr>
-              <td>You block</td>
-              <td>{blocksCount.toLocaleString("en-US")}</td>
-              <td>
-                <a href="migrate/blocked_accounts.csv">CSV</a>
-              </td>
-            </tr>
-            <tr>
-              <td>Bookmarks</td>
-              <td>{bookmarksCount.toLocaleString("en-US")}</td>
-              <td>
-                <a href="migrate/bookmarks.csv">CSV</a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </article>
+          </form>
+        </section>
 
-      {/* Import Progress Section */}
-      {activeJob && (
-        <article id="import-progress">
-          <header>
-            <hgroup>
-              <h2>
+        <section class={sectionClass}>
+          <header class="mb-4">
+            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              Move {username} to a new account
+            </h2>
+            <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+              Move{" "}
+              <code class="font-mono text-brand-700 dark:text-brand-400">
+                {accountOwner.account.handle}
+              </code>{" "}
+              to a new account.{" "}
+              <strong class="font-semibold text-red-700 dark:text-red-400">
+                This action is irreversible.
+              </strong>
+            </p>
+          </header>
+          <form method="post" action="migrate/to">
+            <div class="flex gap-2">
+              <input
+                type="text"
+                name="handle"
+                placeholder={HOLLO_OFFICIAL_ACCOUNT}
+                required
+                aria-label="Target account handle to move to"
+                aria-invalid={aliasesError === "to" ? "true" : undefined}
+                value={
+                  aliasesError === "to"
+                    ? aliasesHandle
+                    : accountOwner.account.successor?.handle
+                }
+                disabled={accountOwner.account.successorId != null}
+                class={`${inputClass} flex-1 ${
+                  aliasesError === "to"
+                    ? "border-red-500"
+                    : "border-neutral-300 dark:border-neutral-700"
+                }`}
+              />
+              <button
+                type="submit"
+                disabled={accountOwner.account.successorId != null}
+                class={primaryButtonClass}
+              >
+                {accountOwner.account.successorId == null ? "Move" : "Moved"}
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+              The new account must have an alias to this old account.
+            </p>
+          </form>
+        </section>
+
+        <section class={sectionClass}>
+          <header class="mb-4">
+            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              Export data
+            </h2>
+            <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+              Download your data as Mastodon-compatible CSV files.
+            </p>
+          </header>
+          <div class="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+            <table class="w-full text-sm">
+              <thead class="bg-neutral-50 text-xs uppercase tracking-wider text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400">
+                <tr>
+                  <th class="px-3 py-2 text-left font-semibold">Category</th>
+                  <th class="px-3 py-2 text-right font-semibold">Entries</th>
+                  <th class="px-3 py-2 text-right font-semibold">Download</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-900">
+                {dataRows.map((row) => (
+                  <tr>
+                    <td class="px-3 py-2 text-neutral-800 dark:text-neutral-200">
+                      {row.label}
+                    </td>
+                    <td class="px-3 py-2 text-right tabular-nums text-neutral-700 dark:text-neutral-300">
+                      {row.count.toLocaleString("en-US")}
+                    </td>
+                    <td class="px-3 py-2 text-right">
+                      <a href={row.href} class={csvLinkClass}>
+                        <span class="i-lucide-download" aria-hidden="true" />
+                        CSV
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {activeJob && (
+          <section id="import-progress" class={sectionClass}>
+            <header class="mb-3">
+              <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
                 {activeJob.status === "pending"
-                  ? "Import Queued"
+                  ? "Import queued"
                   : activeJob.status === "processing"
-                    ? "Import in Progress"
+                    ? "Import in progress"
                     : activeJob.status === "completed"
-                      ? "Import Completed"
+                      ? "Import completed"
                       : activeJob.status === "cancelled"
-                        ? "Import Cancelled"
-                        : "Import Failed"}
+                        ? "Import cancelled"
+                        : "Import failed"}
               </h2>
-              <p>
+              <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
                 Importing {activeJob.category.replace(/_/g, " ")}
                 {activeJob.status === "pending" && " (waiting to start)"}
                 {activeJob.status === "processing" && "..."}
               </p>
-            </hgroup>
-          </header>
+            </header>
 
-          <progress
-            value={activeJob.processedItems}
-            max={activeJob.totalItems}
-          />
+            <div class="h-2 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+              <div
+                class="h-full bg-brand-600 transition-all"
+                style={`width: ${
+                  activeJob.totalItems > 0
+                    ? Math.round(
+                        (activeJob.processedItems / activeJob.totalItems) * 100,
+                      )
+                    : 0
+                }%`}
+              />
+            </div>
 
-          <p>
-            <strong>{activeJob.processedItems.toLocaleString("en-US")}</strong>{" "}
-            / {activeJob.totalItems.toLocaleString("en-US")} items processed
-            {activeJob.processedItems > 0 && (
+            <p class="mt-3 text-sm text-neutral-700 dark:text-neutral-300">
+              <strong class="font-semibold text-neutral-900 dark:text-neutral-100">
+                {activeJob.processedItems.toLocaleString("en-US")}
+              </strong>{" "}
+              / {activeJob.totalItems.toLocaleString("en-US")} items processed
+              {activeJob.processedItems > 0 && (
+                <>
+                  {" "}
+                  (
+                  <strong class="font-semibold text-green-700 dark:text-green-400">
+                    {activeJob.successfulItems.toLocaleString("en-US")}
+                  </strong>{" "}
+                  successful
+                  {activeJob.failedItems > 0 && (
+                    <>
+                      ,{" "}
+                      <strong class="font-semibold text-red-700 dark:text-red-400">
+                        {activeJob.failedItems.toLocaleString("en-US")}
+                      </strong>{" "}
+                      failed
+                    </>
+                  )}
+                  )
+                </>
+              )}
+            </p>
+
+            {shouldAutoRefresh && (
               <>
-                {" "}
-                (
-                <strong style={{ color: "var(--pico-ins-color)" }}>
-                  {activeJob.successfulItems.toLocaleString("en-US")}
-                </strong>{" "}
-                successful
-                {activeJob.failedItems > 0 && (
-                  <>
-                    ,{" "}
-                    <strong style={{ color: "var(--pico-del-color)" }}>
-                      {activeJob.failedItems.toLocaleString("en-US")}
-                    </strong>{" "}
-                    failed
-                  </>
-                )}
-                )
+                <form
+                  method="post"
+                  action={`migrate/import/${activeJob.id}/cancel`}
+                  class="mt-4"
+                >
+                  <button type="submit" class={secondaryButtonClass}>
+                    Cancel import
+                  </button>
+                </form>
+                <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                  This page refreshes every 5 seconds. You can navigate away
+                  safely — the import keeps running in the background.
+                </p>
+                <script
+                  dangerouslySetInnerHTML={{
+                    __html: "setTimeout(() => location.reload(), 5000);",
+                  }}
+                />
               </>
             )}
-          </p>
 
-          {shouldAutoRefresh && (
-            <>
-              <form
-                method="post"
-                action={`migrate/import/${activeJob.id}/cancel`}
-              >
-                <button type="submit" class="secondary">
-                  Cancel Import
-                </button>
-              </form>
-              <small>
-                This page refreshes automatically every 5 seconds. You can
-                navigate away safely &mdash; the import will continue in the
-                background.
-              </small>
-              <script
-                dangerouslySetInnerHTML={{
-                  __html: "setTimeout(() => location.reload(), 5000);",
-                }}
-              />
-            </>
-          )}
-
-          {activeJob.status === "completed" && (
-            <p style={{ color: "var(--pico-ins-color)" }}>
-              Import completed successfully!
-            </p>
-          )}
-
-          {activeJob.status === "cancelled" && (
-            <p style={{ color: "var(--pico-del-color)" }}>
-              Import was cancelled.
-            </p>
-          )}
-
-          {activeJob.status === "failed" && activeJob.errorMessage && (
-            <p style={{ color: "var(--pico-del-color)" }}>
-              Error: {activeJob.errorMessage}
-            </p>
-          )}
-        </article>
-      )}
-
-      <article id="import-data">
-        <header>
-          <hgroup>
-            <h2>Import data</h2>
-            {importDataResult == null ? (
-              <p>
-                Import your account data from CSV files, which are exported from
-                other Hollo or Mastodon instances. The existing data won't be
-                overwritten, but the new data will be <strong>merged</strong>{" "}
-                with the existing data.
+            {activeJob.status === "completed" && (
+              <p class="mt-3 text-sm font-medium text-green-700 dark:text-green-400">
+                Import completed successfully.
               </p>
-            ) : (
-              <p>{importDataResult}</p>
             )}
-          </hgroup>
-        </header>
-        <form
-          method="post"
-          action="migrate/import"
-          encType="multipart/form-data"
-        >
-          <fieldset
-            class="grid"
-            {...(shouldAutoRefresh ? { disabled: true } : {})}
+
+            {activeJob.status === "cancelled" && (
+              <p class="mt-3 text-sm font-medium text-red-700 dark:text-red-400">
+                Import was cancelled.
+              </p>
+            )}
+
+            {activeJob.status === "failed" && activeJob.errorMessage && (
+              <p class="mt-3 text-sm font-medium text-red-700 dark:text-red-400">
+                Error: {activeJob.errorMessage}
+              </p>
+            )}
+          </section>
+        )}
+
+        <section id="import-data" class={sectionClass}>
+          <header class="mb-4">
+            <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              Import data
+            </h2>
+            <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+              {importDataResult ??
+                "Import account data from CSV files exported by other Hollo or Mastodon instances.  Existing data is preserved; new data is merged in."}
+            </p>
+          </header>
+          <form
+            method="post"
+            action="migrate/import"
+            encType="multipart/form-data"
+            class="space-y-4"
           >
-            <label>
-              Category
-              <select name="category">
-                <option value="following_accounts">Follows</option>
-                <option value="lists">Lists</option>
-                <option value="muted_accounts">Muted accounts</option>
-                <option value="blocked_accounts">Blocked accounts</option>
-                <option value="bookmarks">Bookmarks</option>
-              </select>
-              <small>The category of the data you want to import.</small>
-            </label>
-            <label>
-              CSV file
-              <input type="file" name="file" accept=".csv" required />
-              <small>
-                A CSV file exported from other Hollo or Mastodon instances.
-              </small>
-            </label>
-          </fieldset>
-          <button
-            type="submit"
-            {...(shouldAutoRefresh ? { disabled: true } : {})}
-          >
-            {shouldAutoRefresh ? "Import in progress..." : "Import"}
-          </button>
-        </form>
-      </article>
+            <fieldset
+              class="grid gap-4 sm:grid-cols-2"
+              {...(shouldAutoRefresh ? { disabled: true } : {})}
+            >
+              <div>
+                <label
+                  htmlFor="import-category"
+                  class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
+                >
+                  Category
+                </label>
+                <select
+                  id="import-category"
+                  name="category"
+                  class={`${inputClass} mt-1 w-full border-neutral-300 dark:border-neutral-700`}
+                >
+                  <option value="following_accounts">Follows</option>
+                  <option value="lists">Lists</option>
+                  <option value="muted_accounts">Muted accounts</option>
+                  <option value="blocked_accounts">Blocked accounts</option>
+                  <option value="bookmarks">Bookmarks</option>
+                </select>
+                <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  The category of the data you want to import.
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="import-file"
+                  class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
+                >
+                  CSV file
+                </label>
+                <input
+                  id="import-file"
+                  type="file"
+                  name="file"
+                  accept=".csv"
+                  required
+                  aria-label="CSV file"
+                  class="mt-1 block w-full text-sm text-neutral-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-600 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand-700 dark:text-neutral-300 dark:file:bg-brand-700 dark:hover:file:bg-brand-800"
+                />
+                <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  A CSV file exported from another Hollo or Mastodon instance.
+                </p>
+              </div>
+            </fieldset>
+            <div class="flex justify-end">
+              <button
+                type="submit"
+                disabled={shouldAutoRefresh}
+                class={primaryButtonClass}
+              >
+                {shouldAutoRefresh ? "Import in progress..." : "Import"}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
     </DashboardLayout>,
   );
 });
@@ -848,7 +1316,7 @@ accounts.post("/:id/migrate/from", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -887,7 +1355,7 @@ accounts.post("/:id/migrate/to", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -948,7 +1416,7 @@ accounts.get("/:id/migrate/following_accounts.csv", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -969,7 +1437,7 @@ accounts.get("/:id/migrate/following_accounts.csv", async (c) => {
     await stream.write(csv.getHeaderString() ?? "");
     const following = await db.query.follows.findMany({
       with: { following: true },
-      where: eq(follows.followerId, accountOwner.id),
+      where: { followerId: { eq: accountOwner.id } },
     });
     for (const f of following) {
       const record = {
@@ -987,7 +1455,7 @@ accounts.get("/:id/migrate/lists.csv", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -1002,7 +1470,7 @@ accounts.get("/:id/migrate/lists.csv", async (c) => {
   return streamText(c, async (stream) => {
     const listObjects = await db.query.lists.findMany({
       with: { members: { with: { account: true } } },
-      where: eq(lists.accountOwnerId, accountOwner.id),
+      where: { accountOwnerId: { eq: accountOwner.id } },
     });
     for (const list of listObjects) {
       const records = list.members.map((m) => ({
@@ -1018,7 +1486,7 @@ accounts.get("/:id/migrate/muted_accounts.csv", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -1034,7 +1502,7 @@ accounts.get("/:id/migrate/muted_accounts.csv", async (c) => {
     await stream.write(csv.getHeaderString() ?? "");
     const mutedAccounts = await db.query.mutes.findMany({
       with: { targetAccount: true },
-      where: eq(mutes.accountId, accountOwner.id),
+      where: { accountId: { eq: accountOwner.id } },
     });
     for (const muted of mutedAccounts) {
       const record = {
@@ -1050,7 +1518,7 @@ accounts.get("/:id/migrate/blocked_accounts.csv", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -1065,7 +1533,7 @@ accounts.get("/:id/migrate/blocked_accounts.csv", async (c) => {
   return streamText(c, async (stream) => {
     const blockedAccounts = await db.query.blocks.findMany({
       with: { blockedAccount: true },
-      where: eq(mutes.accountId, accountOwner.id),
+      where: { accountId: { eq: accountOwner.id } },
     });
     for (const blocked of blockedAccounts) {
       const record = {
@@ -1080,7 +1548,7 @@ accounts.get("/:id/migrate/bookmarks.csv", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -1092,7 +1560,7 @@ accounts.get("/:id/migrate/bookmarks.csv", async (c) => {
   return streamText(c, async (stream) => {
     const bookmarkList = await db.query.bookmarks.findMany({
       with: { post: true },
-      where: eq(bookmarks.accountOwnerId, accountOwner.id),
+      where: { accountOwnerId: { eq: accountOwner.id } },
     });
     for (const bookmark of bookmarkList) {
       const record = { iri: bookmark.post.iri };
@@ -1105,7 +1573,7 @@ accounts.post("/:id/migrate/import", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
     with: { account: true },
   });
   if (accountOwner == null) return c.notFound();
@@ -1253,16 +1721,19 @@ accounts.post("/:id/migrate/import/:jobId/cancel", async (c) => {
   if (!isUuid(accountId) || !isUuid(jobId)) return c.notFound();
 
   const accountOwner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.id, accountId),
+    where: { id: { eq: accountId } },
   });
   if (accountOwner == null) return c.notFound();
 
   // Verify job belongs to this account owner
   const job = await db.query.importJobs.findFirst({
-    where: and(
-      eq(importJobs.id, jobId),
-      eq(importJobs.accountOwnerId, accountId),
-    ),
+    where: {
+      RAW: (importJobs, { and, eq }) =>
+        and(
+          eq(importJobs.id, jobId),
+          eq(importJobs.accountOwnerId, accountId),
+        )!,
+    },
   });
 
   if (!job) return c.notFound();

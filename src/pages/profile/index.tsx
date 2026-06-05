@@ -1,31 +1,28 @@
-import { and, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, eq, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import xss from "xss";
 
 import { Layout } from "../../components/Layout.tsx";
-import { Post as PostView } from "../../components/Post.tsx";
+import { type PostForView, Post as PostView } from "../../components/Post.tsx";
 import { Profile } from "../../components/Profile.tsx";
 import { db } from "../../db.ts";
 import {
   type Account,
   type AccountOwner,
-  accountOwners,
   type FeaturedTag,
-  featuredTags,
-  type Medium,
-  type Poll,
-  type PollOption,
-  type Post,
-  pinnedPosts,
   posts,
-  type Reaction,
 } from "../../schema.ts";
 import { isUuid } from "../../uuid.ts";
+import follows from "./follows.tsx";
+import postReactions from "./postReactions.tsx";
+import { postViewRelations } from "./postRelations.ts";
 import profilePost from "./profilePost.tsx";
 
 const profile = new Hono();
 
+profile.route("/:id{[-a-f0-9]+}", postReactions);
 profile.route("/:id{[-a-f0-9]+}", profilePost);
+profile.route("/", follows);
 
 const PAGE_SIZE = 30;
 
@@ -33,7 +30,7 @@ profile.get<"/:handle">(async (c) => {
   let handle = c.req.param("handle");
   if (handle.startsWith("@")) handle = handle.substring(1);
   const owner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.handle, handle),
+    where: { handle: { eq: handle } },
     with: { account: true },
   });
   if (owner == null) return c.notFound();
@@ -66,95 +63,28 @@ profile.get<"/:handle">(async (c) => {
     return c.notFound();
   }
   const postList = await db.query.posts.findMany({
-    where: and(
-      eq(posts.accountId, owner.id),
-      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
-    ),
-    orderBy: desc(posts.id),
+    where: {
+      RAW: (posts, { and, eq, or }) =>
+        and(
+          eq(posts.accountId, owner.id),
+          or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+        )!,
+    },
+    orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
-    with: {
-      account: true,
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          quoteTarget: {
-            with: {
-              account: true,
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: true } },
-      quoteTarget: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   const pinnedPostList =
     cont == null
       ? await db.query.pinnedPosts.findMany({
-          where: and(eq(pinnedPosts.accountId, owner.id)),
-          orderBy: desc(pinnedPosts.index),
-          with: {
-            post: {
-              with: {
-                account: true,
-                media: true,
-                poll: { with: { options: true } },
-                sharing: {
-                  with: {
-                    account: true,
-                    media: true,
-                    poll: { with: { options: true } },
-                    replyTarget: { with: { account: true } },
-                    quoteTarget: {
-                      with: {
-                        account: true,
-                        media: true,
-                        poll: { with: { options: true } },
-                        replyTarget: { with: { account: true } },
-                        reactions: true,
-                      },
-                    },
-                    reactions: true,
-                  },
-                },
-                replyTarget: { with: { account: true } },
-                quoteTarget: {
-                  with: {
-                    account: true,
-                    media: true,
-                    poll: { with: { options: true } },
-                    replyTarget: { with: { account: true } },
-                    reactions: true,
-                  },
-                },
-                reactions: true,
-              },
-            },
-          },
+          where: { accountId: { eq: owner.id } },
+          orderBy: (pinnedPosts, { desc }) => [desc(pinnedPosts.index)],
+          with: { post: { with: postViewRelations } },
         })
       : [];
   const featuredTagList = await db.query.featuredTags.findMany({
-    where: eq(featuredTags.accountOwnerId, owner.id),
+    where: { accountOwnerId: { eq: owner.id } },
   });
   const atomUrl = new URL(c.req.url);
   atomUrl.pathname += "/atom.xml";
@@ -175,6 +105,7 @@ profile.get<"/:handle">(async (c) => {
       atomUrl={atomUrl.href}
       olderUrl={olderUrl}
       newerUrl={newerUrl}
+      baseUrl={c.req.url}
     />,
   );
 });
@@ -185,7 +116,7 @@ profile.get("/tagged/:tag", async (c) => {
   if (handle == null || tag == null) return c.notFound();
   if (handle.startsWith("@")) handle = handle.substring(1);
   const owner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.handle, handle),
+    where: { handle: { eq: handle } },
     with: { account: true },
   });
   if (owner == null) return c.notFound();
@@ -217,51 +148,21 @@ profile.get("/tagged/:tag", async (c) => {
     return c.notFound();
   }
   const postList = await db.query.posts.findMany({
-    where: and(
-      eq(posts.accountId, owner.id),
-      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
-      sql`${posts.tags} ? ${hashtag}`,
-    ),
-    orderBy: desc(posts.id),
+    where: {
+      RAW: (posts, { and, eq, or, sql }) =>
+        and(
+          eq(posts.accountId, owner.id),
+          or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+          sql`${posts.tags} ? ${hashtag}`,
+        )!,
+    },
+    orderBy: (posts, { desc }) => [desc(posts.id)],
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
-    with: {
-      account: true,
-      media: true,
-      poll: { with: { options: true } },
-      sharing: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          quoteTarget: {
-            with: {
-              account: true,
-              media: true,
-              poll: { with: { options: true } },
-              replyTarget: { with: { account: true } },
-              reactions: true,
-            },
-          },
-          reactions: true,
-        },
-      },
-      replyTarget: { with: { account: true } },
-      quoteTarget: {
-        with: {
-          account: true,
-          media: true,
-          poll: { with: { options: true } },
-          replyTarget: { with: { account: true } },
-          reactions: true,
-        },
-      },
-      reactions: true,
-    },
+    with: postViewRelations,
   });
   const featuredTagList = await db.query.featuredTags.findMany({
-    where: eq(featuredTags.accountOwnerId, owner.id),
+    where: { accountOwnerId: { eq: owner.id } },
   });
   const newerUrl = page > 1 ? `?page=${page - 1}` : undefined;
   const olderUrl =
@@ -275,6 +176,7 @@ profile.get("/tagged/:tag", async (c) => {
       featuredTags={featuredTagList}
       olderUrl={olderUrl}
       newerUrl={newerUrl}
+      baseUrl={c.req.url}
     />,
   );
 });
@@ -282,78 +184,13 @@ profile.get("/tagged/:tag", async (c) => {
 interface ProfilePageProps {
   readonly accountOwner: AccountOwner & { account: Account };
   readonly tag?: string;
-  readonly posts: (Post & {
-    account: Account;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          quoteTarget:
-            | (Post & {
-                account: Account;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: Account }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: Account }) | null;
-    quoteTarget:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  })[];
-  readonly pinnedPosts: (Post & {
-    account: Account;
-    media: Medium[];
-    poll: (Poll & { options: PollOption[] }) | null;
-    sharing:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          quoteTarget:
-            | (Post & {
-                account: Account;
-                media: Medium[];
-                poll: (Poll & { options: PollOption[] }) | null;
-                replyTarget: (Post & { account: Account }) | null;
-                reactions: Reaction[];
-              })
-            | null;
-          reactions: Reaction[];
-        })
-      | null;
-    replyTarget: (Post & { account: Account }) | null;
-    quoteTarget:
-      | (Post & {
-          account: Account;
-          media: Medium[];
-          poll: (Poll & { options: PollOption[] }) | null;
-          replyTarget: (Post & { account: Account }) | null;
-          reactions: Reaction[];
-        })
-      | null;
-    reactions: Reaction[];
-  })[];
+  readonly posts: PostForView[];
+  readonly pinnedPosts: PostForView[];
   readonly featuredTags: FeaturedTag[];
   readonly atomUrl?: string;
   readonly olderUrl?: string;
   readonly newerUrl?: string;
+  readonly baseUrl: URL | string;
 }
 
 function ProfilePage({
@@ -365,6 +202,7 @@ function ProfilePage({
   atomUrl,
   olderUrl,
   newerUrl,
+  baseUrl,
 }: ProfilePageProps) {
   return (
     <Layout
@@ -394,31 +232,65 @@ function ProfilePage({
       ]}
       themeColor={accountOwner.themeColor}
     >
-      <Profile accountOwner={accountOwner} />
-      {tag != null && <h2>Posts tagged #{tag}</h2>}
-      {featuredTags.length > 0 && (
-        <p>
-          Featured tags:{" "}
-          {featuredTags.map((tag) => (
-            <>
+      <main class="mx-auto w-full max-w-2xl px-4 py-8 sm:py-10">
+        <Profile accountOwner={accountOwner} baseUrl={baseUrl} />
+        {tag != null && (
+          <h2 class="mt-10 text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            Posts tagged{" "}
+            <span class="text-brand-700 dark:text-brand-400">#{tag}</span>
+          </h2>
+        )}
+        {featuredTags.length > 0 && (
+          <div class="mt-6 flex flex-wrap items-center gap-2 text-sm">
+            <span class="text-neutral-500 dark:text-neutral-400">
+              Featured tags:
+            </span>
+            {featuredTags.map((tag) => (
               <a
                 href={`/@${accountOwner.handle}/tagged/${encodeURIComponent(tag.name)}`}
+                class="rounded-full border border-brand-200 bg-brand-50 px-3 py-0.5 font-medium text-brand-700 transition-colors hover:bg-brand-100 hover:border-brand-300 dark:border-brand-900 dark:bg-brand-950/40 dark:text-brand-400 dark:hover:bg-brand-900/40 dark:hover:border-brand-800"
               >
                 #{tag.name}
-              </a>{" "}
-            </>
+              </a>
+            ))}
+          </div>
+        )}
+        <div class="mt-6 divide-y divide-neutral-200 dark:divide-neutral-800">
+          {tag == null &&
+            pinnedPosts.map((post) => (
+              <PostView post={post} pinned={true} baseUrl={baseUrl} />
+            ))}
+          {posts.map((post) => (
+            <PostView post={post} baseUrl={baseUrl} />
           ))}
-        </p>
-      )}
-      {tag == null &&
-        pinnedPosts.map((post) => <PostView post={post} pinned={true} />)}
-      {posts.map((post) => (
-        <PostView post={post} />
-      ))}
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <div>{newerUrl && <a href={newerUrl}>&larr; Newer</a>}</div>
-        <div>{olderUrl && <a href={olderUrl}>Older &rarr;</a>}</div>
-      </div>
+        </div>
+        {(newerUrl || olderUrl) && (
+          <nav class="mt-8 flex items-center justify-between gap-4">
+            <div>
+              {newerUrl && (
+                <a
+                  href={newerUrl}
+                  class="inline-flex items-center gap-1 text-sm text-neutral-600 hover:text-brand-700 dark:text-neutral-400 dark:hover:text-brand-400"
+                >
+                  <span class="i-lucide-arrow-left" aria-hidden="true" />
+                  Newer
+                </a>
+              )}
+            </div>
+            <div>
+              {olderUrl && (
+                <a
+                  href={olderUrl}
+                  class="inline-flex items-center gap-1 text-sm text-neutral-600 hover:text-brand-700 dark:text-neutral-400 dark:hover:text-brand-400"
+                >
+                  Older
+                  <span class="i-lucide-arrow-right" aria-hidden="true" />
+                </a>
+              )}
+            </div>
+          </nav>
+        )}
+      </main>
     </Layout>
   );
 }
@@ -428,17 +300,20 @@ profile.get("/atom.xml", async (c) => {
   if (handle == null) return c.notFound();
   if (handle.startsWith("@")) handle = handle.substring(1);
   const owner = await db.query.accountOwners.findFirst({
-    where: eq(accountOwners.handle, handle),
+    where: { handle: { eq: handle } },
     with: { account: true },
   });
   if (owner == null) return c.notFound();
   const postList = await db.query.posts.findMany({
     with: { account: true },
-    where: and(
-      eq(posts.accountId, owner.id),
-      or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
-    ),
-    orderBy: desc(posts.published),
+    where: {
+      RAW: (posts, { and, eq, or }) =>
+        and(
+          eq(posts.accountId, owner.id),
+          or(eq(posts.visibility, "public"), eq(posts.visibility, "unlisted")),
+        )!,
+    },
+    orderBy: (posts, { desc }) => [desc(posts.published)],
     limit: 100,
   });
   const canonicalUrl = new URL(c.req.url);

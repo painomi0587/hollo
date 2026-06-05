@@ -1,16 +1,8 @@
 import { Temporal } from "@js-temporal/polyfill";
 import { getLogger } from "@logtape/logtape";
-import {
-  and,
-  desc,
-  type ExtractTablesWithRelations,
-  eq,
-  inArray,
-  lt,
-} from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
+import type { DatabaseLike } from "../db";
 import type {
   Account,
   AccountOwner,
@@ -27,7 +19,7 @@ import type { Uuid } from "../uuid";
 
 export const TIMELINE_INBOXES =
   // oxlint-disable-next-line typescript/dot-notation
-  process.env["TIMELINE_INBOXES"]?.trim()?.toLowerCase() === "true";
+  process.env["TIMELINE_INBOXES"]?.trim()?.toLowerCase() !== "false";
 
 export const TIMELINE_INBOX_LIMIT = 1000;
 
@@ -201,11 +193,7 @@ export function shouldIncludePostInList(
 }
 
 export async function appendPostToTimelines(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   post: Post & {
     sharing: (Post & { mentions: Mention[] }) | null;
     mentions: Mention[];
@@ -266,13 +254,7 @@ export async function appendPostToTimelines(
   logger.debug("Appended post {postId} to timelines.", { postId: post.id });
 }
 
-export async function pruneOldPostsFromTimelines(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
-) {
+export async function pruneOldPostsFromTimelines(db: DatabaseLike) {
   const owners = await db.query.accountOwners.findMany();
   for (const owner of owners) {
     await db
@@ -314,11 +296,7 @@ export async function pruneOldPostsFromTimelines(
 }
 
 export async function rebuildTimelines(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   window = TIMELINE_INBOX_LIMIT * 10,
 ): Promise<void> {
   const owners = await db.query.accountOwners.findMany({
@@ -375,7 +353,10 @@ export async function rebuildTimelines(
       });
     }
     posts = await db.query.posts.findMany({
-      where: lastPostId == null ? undefined : lt(schema.posts.id, lastPostId),
+      where: {
+        RAW: (posts, { lt, sql }) =>
+          lastPostId == null ? sql`true` : lt(posts.id, lastPostId),
+      },
       with: {
         sharing: {
           with: { mentions: true },
@@ -383,7 +364,7 @@ export async function rebuildTimelines(
         mentions: true,
         replyTarget: true,
       },
-      orderBy: desc(schema.posts.id),
+      orderBy: (posts, { desc }) => [desc(posts.id)],
       limit: window,
     });
     for (const post of posts) {

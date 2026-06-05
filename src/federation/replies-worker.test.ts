@@ -1,5 +1,5 @@
 import type { RemoteDocument } from "@fedify/vocab";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { cleanDatabase } from "../../tests/helpers";
@@ -54,7 +54,7 @@ async function seedRemoteAccount(username: string, host = "remote.test") {
     })
     .onConflictDoNothing();
   const account = await db.query.accounts.findFirst({
-    where: eq(accounts.iri, iri),
+    where: { iri: { eq: iri } },
   });
   if (account == null) throw new Error("Failed to seed remote account");
   return account;
@@ -194,12 +194,12 @@ describe("remote replies scrape worker", () => {
     });
 
     const replyPosts = await db.query.posts.findMany({
-      where: isNotNull(posts.replyTargetId),
-      orderBy: posts.iri,
+      where: { replyTargetId: { isNotNull: true } },
+      orderBy: (posts) => [posts.iri],
     });
     const job = await db.query.remoteReplyScrapeJobs.findFirst();
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
     });
     expect(processed).toBe(1);
     expect(replyPosts.map((post) => post.iri)).toEqual([firstReply]);
@@ -248,11 +248,11 @@ describe("remote replies scrape worker", () => {
     });
 
     const replyPosts = await db.query.posts.findMany({
-      where: isNotNull(posts.replyTargetId),
-      orderBy: posts.iri,
+      where: { replyTargetId: { isNotNull: true } },
+      orderBy: (posts) => [posts.iri],
     });
     const jobs = await db.query.remoteReplyScrapeJobs.findMany({
-      orderBy: remoteReplyScrapeJobs.depth,
+      orderBy: (remoteReplyScrapeJobs) => [remoteReplyScrapeJobs.depth],
     });
     expect(replyPosts.map((post) => post.iri)).toEqual([
       directReply,
@@ -295,7 +295,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     expect(processed).toBe(0);
     expect(fetches).toBe(0);
@@ -316,7 +316,7 @@ describe("remote replies scrape worker", () => {
     const reclaimed = await claimRemoteReplyScrapeJob(reclaimedAt, 60);
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, first.jobId),
+      where: { id: { eq: first.jobId } },
     });
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(claimed?.id).toBe(first.jobId);
@@ -360,7 +360,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     expect(processed).toBe(1);
     expect(reclaimedDuringSleep).toBe(false);
@@ -414,7 +414,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     expect(processed).toBe(1);
     expect(reclaimedDuringSleep).toBe(false);
@@ -453,7 +453,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     expect(processed).toBe(0);
     expect(reclaimedDuringFetch).toBe(false);
@@ -509,7 +509,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     expect(processed).toBe(1);
     expect(reclaimedDuringPersistence).toBe(false);
@@ -593,7 +593,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     expect(reclaimedDuringCrossOriginFetch).toBe(false);
     expect(job?.status).toBe("completed");
@@ -651,7 +651,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(processed).toBe(0);
@@ -702,7 +702,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(processed).toBe(0);
@@ -810,10 +810,10 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     const post = await db.query.posts.findFirst({
-      where: eq(posts.id, postId),
+      where: { id: { eq: postId } },
     });
     expect(job?.status).toBe("pending");
     expect(job?.fetchedItems).toBe(0);
@@ -843,7 +843,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(processed).toBe(0);
@@ -868,7 +868,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     expect(processed).toBe(0);
     expect(job?.status).toBe("failed");
@@ -913,7 +913,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(job?.status).toBe("pending");
@@ -962,7 +962,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const staleJob = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(staleJob?.status).toBe("completed");
@@ -1009,7 +1009,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const job = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();
     expect(job?.status).toBe("processing");
@@ -1054,7 +1054,7 @@ describe("remote replies scrape worker", () => {
     });
 
     const deletedJob = await db.query.remoteReplyScrapeJobs.findFirst({
-      where: eq(remoteReplyScrapeJobs.id, jobId),
+      where: { id: { eq: jobId } },
     });
     const claimed = await claimRemoteReplyScrapeJob(completedAt);
     const origin = await db.query.remoteReplyScrapeOrigins.findFirst();

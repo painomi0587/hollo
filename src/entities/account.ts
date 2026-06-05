@@ -1,3 +1,5 @@
+import { getInstanceHost } from "../instance-host";
+import { proxyUrl } from "../media-proxy";
 import type { Account, AccountOwner, Block, Follow, Mute } from "../schema";
 import type { Uuid } from "../uuid";
 import { sanitizeHtml } from "../xss";
@@ -18,9 +20,11 @@ export function serializeAccount(
     baseUrl,
   ).href;
   let acct = account.handle.replace(/^@/, "");
-  if (acct.endsWith(`@${baseUrl.host}`)) {
+  if (acct.endsWith(`@${getInstanceHost(baseUrl)}`)) {
     acct = acct.replace(/@[^@]+$/, "");
   }
+  const avatar = proxyUrl(account.avatarUrl, baseUrl) ?? defaultAvatarUrl;
+  const header = proxyUrl(account.coverUrl, baseUrl) ?? defaultHeaderUrl;
   return {
     id: account.id,
     username,
@@ -31,10 +35,10 @@ export function serializeAccount(
     created_at: account.published ?? account.updated,
     note: sanitizeHtml(account.bioHtml ?? ""),
     url: account.url ?? account.iri,
-    avatar: account.avatarUrl ?? defaultAvatarUrl,
-    avatar_static: account.avatarUrl ?? defaultAvatarUrl,
-    header: account.coverUrl ?? defaultHeaderUrl,
-    header_static: account.coverUrl ?? defaultHeaderUrl,
+    avatar,
+    avatar_static: avatar,
+    header,
+    header_static: header,
     followers_count: account.followersCount,
     following_count: account.followingCount,
     statuses_count: account.postsCount,
@@ -43,7 +47,7 @@ export function serializeAccount(
         ? null
         : serializeAccount({ ...account.successor, successor: null }, baseUrl),
     last_status_at: null,
-    emojis: serializeEmojis(account.emojis),
+    emojis: serializeEmojis(account.emojis, baseUrl),
     fields: Object.entries(account.fieldHtmls).map(([name, value]) => ({
       name,
       value,
@@ -61,6 +65,7 @@ export function serializeAccountOwner(
   return {
     ...serializeAccount(accountOwner.account, baseUrl),
     discoverable: accountOwner.discoverable,
+    hide_collections: !accountOwner.followingListPublic,
     source: accountOwner && {
       note: accountOwner.bio,
       privacy: accountOwner.visibility,

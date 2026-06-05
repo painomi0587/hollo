@@ -6,7 +6,7 @@ template: splash
 hero:
   tagline: >-
     1인 사용자용 연합 마이크로블로그 소프트웨어.
-    ActivityPub, Mastodon 호환 API, CommonMark 및 Misskey 스타일 인용 지원.
+    ActivityPub, Mastodon 호환 API, CommonMark 및 FEP-044f 준수 인용 지원.
   image:
     light: ../../../assets/logo-black.svg
     dark: ../../../assets/logo-white.svg
@@ -52,12 +52,14 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
 
     [CommonMark]: https://commonmark.org/
   </Card>
-  <Card title="Misskey 스타일 인용" icon="comment">
-    Hollo는 [Misskey] 스타일의 인용 기능을 지원하므로,
+  <Card title="인용 게시물" icon="comment">
+    Hollo는 [FEP-044f] 준수 인용 기능을 지원하므로,
     다른 게시물을 인용하여 자신의 게시물에 포함시킬 수 있습니다.
-    이는 Misskey, [Akkoma], [Fedibird], [Threads] 등 Misskey 스타일 인용을 지원하는
-    다른 연합우주 소프트웨어들과도 호환됩니다.
+    Misskey 스타일과 Mastodon 스타일 인용 형식 모두와 호환되며,
+    [Mastodon], [Misskey], [Akkoma], [Fedibird], [Threads] 등과 호환됩니다.
 
+    [FEP-044f]: https://w3id.org/fep/044f
+    [Mastodon]: https://joinmastodon.org/ko
     [Misskey]: https://misskey-hub.net/ko/
     [Akkoma]: https://akkoma.social/
     [Fedibird]: https://github.com/fedibird/mastodon

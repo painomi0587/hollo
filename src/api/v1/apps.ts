@@ -113,14 +113,17 @@ app.post("/", async (c) => {
 
 app.get("/verify_credentials", tokenRequired, async (c) => {
   const token = c.get("token");
-  const app = token.application;
+  const application = await db.query.applications.findFirst({
+    where: { id: { eq: token.applicationId } },
+  });
+  if (application == null) return c.json({ error: "invalid_token" }, 401);
   return c.json({
-    id: app.id,
-    name: app.name,
-    website: app.website,
-    scopes: app.scopes,
-    redirect_uris: app.redirectUris,
-    redirect_uri: app.redirectUris.join(" "),
+    id: application.id,
+    name: application.name,
+    website: application.website,
+    scopes: application.scopes,
+    redirect_uris: application.redirectUris,
+    redirect_uri: application.redirectUris.join(" "),
   });
 });
 

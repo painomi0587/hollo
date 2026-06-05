@@ -96,6 +96,7 @@ describe.sequential("federation force refresh", () => {
       body: form,
       headers: {
         Cookie: cookie,
+        "Sec-Fetch-Site": "same-origin",
       },
     });
 

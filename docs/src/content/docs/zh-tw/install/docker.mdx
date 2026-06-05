@@ -1,0 +1,41 @@
+---
+title: 使用 Docker 部署
+description: 如何使用 Docker 部署 Hollo。
+---
+
+Hollo 在 [GitHub Packages] 上提供了官方的 Docker 映像檔。您可以使用這些映像檔在您的伺服器或本機上部署 Hollo：
+
+~~~~ sh frame="none"
+docker pull ghcr.io/fedify-dev/hollo:latest
+~~~~
+
+要執行 Hollo，您需要設定一個 PostgreSQL 資料庫和一個用於媒體儲存的 S3 相容物件儲存。您可以使用 [PostgreSQL] 的官方 Docker 映像檔，也可以使用 [MinIO] 作為 S3 相容物件儲存。或者，您也可以使用其他託管服務，如 AWS 的 [RDS]、[ElastiCache] 和 [S3]。
+
+要將 Hollo 連接到這些服務，您需要透過 `docker run` 指令的 [`-e`/`--env` 選項或 `--env-file` 選項][1] 設定環境變數。要查看 Hollo 支援的環境變數，請參閱 [**環境變數**](/zh-tw/install/env) 章節。
+
+[GitHub Packages]: https://github.com/fedify-dev/hollo/pkgs/container/hollo
+[PostgreSQL]: https://hub.docker.com/_/postgres
+[MinIO]: https://hub.docker.com/r/minio/minio
+[RDS]: https://aws.amazon.com/rds/
+[ElastiCache]: https://aws.amazon.com/elasticache/
+[S3]: https://aws.amazon.com/s3/
+[1]: https://docs.docker.com/reference/cli/docker/container/run/#env
+
+
+Docker Compose
+--------------
+
+import { Code } from "@astrojs/starlight/components";
+import composeYaml from "../../install/docker/compose-yaml?raw";
+
+要連接這些服務，您可以使用 [Docker Compose]。以下是一個範例 *compose.yaml* 檔案：
+
+<Code code={composeYaml} lang="yaml" title="compose.yaml" />
+
+將此檔案儲存為 *compose.yaml* 到您的工作目錄中，然後執行以下指令：
+
+~~~~ sh frame="none"
+docker compose up -d
+~~~~
+
+[Docker Compose]: https://docs.docker.com/compose/

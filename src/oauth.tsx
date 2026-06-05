@@ -2,10 +2,11 @@ import { zValidator } from "@hono/zod-validator";
 import { getLogger } from "@logtape/logtape";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import { z } from "zod";
 
 import { db } from "./db.ts";
-import { requestBody } from "./helpers.ts";
+import { requestBody, timingSafeEqualString } from "./helpers.ts";
 import { loginRequired } from "./login.ts";
 import { OOB_REDIRECT_URI } from "./oauth/constants.ts";
 import revokeEndpoint from "./oauth/endpoints/revoke.ts";
@@ -23,7 +24,7 @@ import {
 import { scopesSchema } from "./oauth/validators.ts";
 import { AuthorizationPage } from "./pages/oauth/authorization.tsx";
 import { AuthorizationCodePage } from "./pages/oauth/authorization_code.tsx";
-import { accessGrants, accountOwners, applications } from "./schema.ts";
+import { accessGrants } from "./schema.ts";
 import { uuid } from "./uuid.ts";
 
 const logger = getLogger(["hollo", "oauth"]);
@@ -79,7 +80,7 @@ app.get(
     const data = c.req.valid("query");
 
     const application = await db.query.applications.findFirst({
-      where: eq(applications.clientId, data.client_id),
+      where: { clientId: { eq: data.client_id } },
     });
     if (application == null) {
       return c.json({ error: "invalid_client_id" }, 400);
@@ -115,13 +116,23 @@ app.get(
         state={data.state}
         codeChallenge={data.code_challenge}
         codeChallengeMethod={data.code_challenge_method}
+        baseUrl={c.req.url}
       />,
     );
   },
 );
 
+// The OAuth authorization consent form is cookie-authenticated and runs
+// at the same origin as Hollo's web UI. Without an `Origin`/Sec-Fetch-Site
+// check, a malicious page could submit a hidden cross-site POST to
+// silently grant itself access to a logged-in admin's account.
+// `/token`, `/revoke`, and `/userinfo` are intentionally not behind csrf()
+// because client apps (including browser SPAs on arbitrary origins)
+// authenticate to them with client credentials or bearer tokens, not
+// session cookies.
 app.post(
   "/authorize",
+  csrf(),
   loginRequired,
   zValidator(
     "form",
@@ -141,14 +152,14 @@ app.post(
     const form = c.req.valid("form");
 
     const application = await db.query.applications.findFirst({
-      where: eq(applications.id, form.application_id),
+      where: { id: { eq: form.application_id } },
     });
     if (application == null) {
       return c.notFound();
     }
 
     const accountOwner = await db.query.accountOwners.findFirst({
-      where: eq(accountOwners.id, form.account_id),
+      where: { id: { eq: form.account_id } },
     });
     if (accountOwner == null) {
       return c.notFound();
@@ -320,7 +331,12 @@ app.post("/token", clientAuthentication, async (c) => {
               form.code_verifier,
             );
 
-            if (expectedCodeChallenge !== accessGrant.codeChallenge) {
+            if (
+              !timingSafeEqualString(
+                expectedCodeChallenge,
+                accessGrant.codeChallenge,
+              )
+            ) {
               return c.json(INVALID_GRANT_ERROR, 400);
             }
           }
