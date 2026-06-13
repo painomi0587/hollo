@@ -1,0 +1,164 @@
+---
+title: 分域 WebFinger
+description: 在一个域名运行 Hollo 的同时，使用另一个域名作为账号句柄。
+---
+
+import { Aside, Code, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Hollo 支持*分域 WebFinger* 配置：联邦宇宙账号句柄使用一个域名
+（例如 `@alice@example.com`），而实际的 ActivityPub 服务器运行在
+另一个域名（例如 `https://ap.example.com`）上。这与 Mastodon 文档中
+"[在根域名上托管 WebFinger][mastodon-webfinger]" 描述的模式，以及
+GoToSocial 所称的基于 *host-meta* 的主机互换模式相同。
+
+此功能基于 [Fedify 的 `origin` 配置选项] 实现。
+
+[mastodon-webfinger]: https://docs.joinmastodon.org/admin/config/#web_domain
+[Fedify 的 `origin` 配置选项]: https://fedify.dev/manual/federation#separating-webfinger-host-from-the-server-origin
+
+
+为什么要分域？
+--------------
+
+最常见的动机是：你已经拥有一个简短好记的域名（`example.com`），
+希望句柄看起来像 `@alice@example.com`，但又不想把 Hollo 部署在该
+域名的根上——根域名往往被首页、其他 Web 应用或既有服务占用。
+
+在分域配置下:
+
+ -  用户在联邦宇宙的任何地方都以 `@alice@example.com` 称呼你。
+ -  Hollo 本身运行在 `https://ap.example.com`。Web UI、
+    Mastodon 兼容 API、OAuth 和 actor URI 都位于此域名。
+ -  根域名 `example.com` 只需做一件事：把
+    `/.well-known/webfinger` 请求重定向到 `ap.example.com`。
+
+<Aside type="caution">
+  请谨慎选择句柄域名。联邦一旦开始，就无法在不破坏所有远程关注
+  关系的情况下更改域名。请务必阅读本页底部的警告。
+</Aside>
+
+
+配置方法
+--------
+
+在 Hollo 实例上设置以下两个环境变量:
+
+ -  [`HANDLE_HOST`](/zh-cn/install/env/#handle_host) — 用于句柄的
+    主机名（不含 scheme，也不含路径），例如 `example.com`。
+ -  [`WEB_ORIGIN`](/zh-cn/install/env/#web_origin) — Hollo 实际运行的
+    scheme + host，例如 `https://ap.example.com`。
+
+两者必须同时设置；只设置其中一个会导致 Hollo 启动失败。
+
+~~~~ env
+HANDLE_HOST=example.com
+WEB_ORIGIN=https://ap.example.com
+~~~~
+
+完成此配置后，剩下的由 Fedify 处理:
+
+ -  WebFinger 响应的 `subject` 为 `acct:alice@example.com`。
+ -  Actor URI 形如 `https://ap.example.com/@alice`。
+ -  Mastodon 兼容的 `/api/v1/instance` 与 `/api/v2/instance`
+    端点将实例域名报告为 `example.com`，因此客户端会显示正确的句柄。
+
+
+反向代理重定向
+--------------
+
+Hollo 自身只监听 `WEB_ORIGIN` 主机。解析 `@alice@example.com` 的
+远程服务器会向 `https://example.com/.well-known/webfinger` 发送
+WebFinger 请求，因此你需要在该域名的反向代理上把这些请求重定向到
+Hollo。
+
+保留查询字符串的 301 重定向即可。一些实现会在发现阶段探测
+`/.well-known/nodeinfo` 和 `/.well-known/host-meta`，建议一并
+重定向。
+
+<Tabs>
+  <TabItem label="nginx">
+~~~~ nginx
+server {
+  listen 443 ssl;
+  server_name example.com;
+  # … 你的常规站点配置 …
+
+  location /.well-known/webfinger {
+    return 301 https://ap.example.com$request_uri;
+  }
+  location /.well-known/nodeinfo {
+    return 301 https://ap.example.com$request_uri;
+  }
+  location /.well-known/host-meta {
+    return 301 https://ap.example.com$request_uri;
+  }
+}
+~~~~
+  </TabItem>
+  <TabItem label="Caddy">
+~~~~ caddy
+example.com {
+  # … 你的常规站点配置 …
+
+  redir /.well-known/webfinger* https://ap.example.com{uri} permanent
+  redir /.well-known/nodeinfo*  https://ap.example.com{uri} permanent
+  redir /.well-known/host-meta* https://ap.example.com{uri} permanent
+}
+~~~~
+  </TabItem>
+</Tabs>
+
+**不需要**重定向 `/@username` 路径或任何 actor URL；这些 URL 位于
+`ap.example.com`，远程服务器在解析 WebFinger 响应后会直接访问那里。
+
+
+验证配置
+--------
+
+部署后，以下三项检查可以快速确认是否一切正常:
+
+ 1.  句柄域名上的 WebFinger 是否被重定向:
+
+     ~~~~ sh frame="none"
+     curl -i "https://example.com/.well-known/webfinger?resource=acct:alice@example.com"
+     ~~~~
+
+     应返回 `https://ap.example.com/.well-known/webfinger?...` 的
+     301 响应。
+
+ 2.  服务器域名上的 WebFinger 是否响应:
+
+     ~~~~ sh frame="none"
+     curl "https://ap.example.com/.well-known/webfinger?resource=acct:alice@example.com"
+     ~~~~
+
+     应返回 JRD，其中 `subject` 为 `acct:alice@example.com`，
+     `self` 链接指向 `https://ap.example.com/@alice`。
+
+ 3.  实例端点是否报告句柄域名:
+
+     ~~~~ sh frame="none"
+     curl https://ap.example.com/api/v2/instance | jq .domain
+     ~~~~
+
+     应输出 `"example.com"`。
+
+若需更全面的审计，可以用 Julian Fietkau 的 [WebFinger Canary] 对
+你的句柄域名进行检查。目前 Mastodon 与基于 Fedify 的服务器能够
+正确处理分域配置；Misskey 和 Pixelfed 尚不支持。
+
+[WebFinger Canary]: https://correct.webfinger-canary.fietkau.software/
+
+
+<Aside type="danger">
+  **请在创建第一个账号之前完成 `HANDLE_HOST` 和 `WEB_ORIGIN` 的配置。**
+
+  Hollo 在创建本地账号时会把完整的 `@user@host` 句柄保存到数据库。
+  其他 ActivityPub 实现也会在首次接触时缓存你的句柄。事后更改
+  句柄域名意味着既有关注者再也无法解析到你，且没有任何迁移方案
+  能保留既有的关注关系。
+
+  启动时，如果 `HANDLE_HOST` 与现有账号存储的句柄不一致，Hollo
+  会输出警告日志。请把这条警告视为需要立刻调查的问题，调查清楚
+  之前不要继续运行实例。
+</Aside>

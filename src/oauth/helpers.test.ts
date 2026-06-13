@@ -1,4 +1,3 @@
-import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -21,7 +20,7 @@ describe("OAuth Helpers", () => {
   describe("generatePKCECodeVerifier", () => {
     it("returns a URL safe string", () => {
       const codeVerifier = generatePKCECodeVerifier();
-      expect(codeVerifier).to.match(URL_SAFE_REGEXP);
+      expect(codeVerifier).toMatch(URL_SAFE_REGEXP);
     });
   });
 
@@ -63,7 +62,7 @@ describe("OAuth Helpers", () => {
       });
       const { token } = await oauthHelpers.getAccessToken(client, account);
       accessToken = await db.query.accessTokens.findFirst({
-        where: eq(schema.accessTokens.code, token),
+        where: { code: { eq: token } },
         with: {
           accountOwner: { with: { account: { with: { successor: true } } } },
           application: true,

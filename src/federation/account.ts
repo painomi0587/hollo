@@ -18,19 +18,11 @@ import {
 } from "@fedify/vocab";
 import { lookupWebFinger } from "@fedify/webfinger";
 import { getLogger } from "@logtape/logtape";
-import {
-  and,
-  count,
-  type ExtractTablesWithRelations,
-  eq,
-  inArray,
-  isNotNull,
-  ne,
-  sql,
-} from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
+import type { DatabaseLike } from "../db";
+import { MEDIA_PROXY, type MediaProxyMode } from "../media-proxy";
+import { scheduleProxyCachePrefetchForMode } from "../proxy-cache";
 import type { NewPinnedPost, Post } from "../schema";
 import * as schema from "../schema";
 import { type Uuid, uuidv7 } from "../uuid";
@@ -65,6 +57,7 @@ export const REFRESH_ACTORS_ON_INTERACTION =
   refreshOnInteractionEnv === "yes";
 
 export type PersistAccountHandleConflictPolicy = "throw" | "skip";
+export type AvatarCachePrefetchPolicy = "always" | "related" | "never";
 
 export class AccountHandleConflictError extends Error {
   readonly actorIri: string;
@@ -100,6 +93,8 @@ export type PersistAccountOptions = {
   documentLoader?: DocumentLoader;
   skipUpdate?: boolean;
   handleConflictPolicy?: PersistAccountHandleConflictPolicy;
+  mediaProxyMode?: MediaProxyMode;
+  avatarCachePrefetch?: AvatarCachePrefetchPolicy;
 };
 
 function getAcctUri(handle: string): string {
@@ -139,11 +134,7 @@ async function verifyCanonicalHandleOwnership(
 }
 
 async function deleteRemoteAccountForHandleReassignment(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: schema.Account,
 ): Promise<void> {
   const affectedFollowings = await db
@@ -179,6 +170,56 @@ function skipAccountConflict(error: AccountHandleConflictError): void {
   );
 }
 
+async function hasApprovedLocalFollowRelationship(
+  db: DatabaseLike,
+  accountId: Uuid,
+): Promise<boolean> {
+  const followedByLocal = await db
+    .select({ iri: schema.follows.iri })
+    .from(schema.follows)
+    .innerJoin(
+      schema.accountOwners,
+      eq(schema.follows.followerId, schema.accountOwners.id),
+    )
+    .where(
+      and(
+        eq(schema.follows.followingId, accountId),
+        isNotNull(schema.follows.approved),
+      ),
+    )
+    .limit(1);
+  if (followedByLocal.length > 0) return true;
+
+  const followingLocal = await db
+    .select({ iri: schema.follows.iri })
+    .from(schema.follows)
+    .innerJoin(
+      schema.accountOwners,
+      eq(schema.follows.followingId, schema.accountOwners.id),
+    )
+    .where(
+      and(
+        eq(schema.follows.followerId, accountId),
+        isNotNull(schema.follows.approved),
+      ),
+    )
+    .limit(1);
+  return followingLocal.length > 0;
+}
+
+async function shouldPrefetchAvatar(
+  db: DatabaseLike,
+  account: schema.Account & { owner: schema.AccountOwner | null },
+  mode: MediaProxyMode,
+  avatarUrl: string | null | undefined,
+  policy: AvatarCachePrefetchPolicy,
+): Promise<boolean> {
+  if (mode !== "cache" || avatarUrl == null) return false;
+  if (account.owner != null || policy === "never") return false;
+  if (policy === "always") return true;
+  return await hasApprovedLocalFollowRelationship(db, account.id);
+}
+
 export function getFollowOrderingKey(
   followerIri: string,
   followingIri: string,
@@ -194,11 +235,7 @@ export function getBlockOrderingKey(
 }
 
 export async function persistAccount(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   actor: Actor,
   baseUrl: string | URL,
   options: PersistAccountOptions = {},
@@ -214,7 +251,7 @@ export async function persistAccount(
   const actorId = actor.id;
   const existingAccount = await db.query.accounts.findFirst({
     with: { owner: true },
-    where: eq(schema.accounts.iri, actorId.href),
+    where: { iri: { eq: actorId.href } },
   });
   if (options.skipUpdate && existingAccount != null) return existingAccount;
   if (existingAccount?.owner != null) return existingAccount;
@@ -227,10 +264,10 @@ export async function persistAccount(
   }
   const conflictingAccount = await db.query.accounts.findFirst({
     with: { owner: true },
-    where: and(
-      eq(schema.accounts.handle, handle),
-      ne(schema.accounts.iri, actorId.href),
-    ),
+    where: {
+      RAW: (accounts, { and, eq, ne }) =>
+        and(eq(accounts.handle, handle), ne(accounts.iri, actorId.href))!,
+    },
   });
   if (conflictingAccount?.owner != null) {
     const error = new AccountHandleConflictError(
@@ -362,9 +399,23 @@ export async function persistAccount(
   });
   const account = await db.query.accounts.findFirst({
     with: { owner: true },
-    where: eq(schema.accounts.iri, actorId.href),
+    where: { iri: { eq: actorId.href } },
   });
   if (account == null) return null;
+  const mediaProxyMode = options.mediaProxyMode ?? MEDIA_PROXY;
+  if (
+    await shouldPrefetchAvatar(
+      db,
+      account,
+      mediaProxyMode,
+      values.avatarUrl,
+      options.avatarCachePrefetch ?? "related",
+    )
+  ) {
+    // This is cache warming only.  Account persistence should not wait for a
+    // slow remote avatar CDN after the database row has already been stored.
+    scheduleProxyCachePrefetchForMode(mediaProxyMode, values.avatarUrl);
+  }
   const [{ posts }] = await db
     .select({ posts: count() })
     .from(schema.posts)
@@ -397,11 +448,7 @@ export async function persistAccount(
 }
 
 export async function persistAccountPosts(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: schema.Account & { owner: schema.AccountOwner | null },
   fetchPosts: number,
   baseUrl: URL | string,
@@ -441,17 +488,13 @@ export async function persistAccountPosts(
 }
 
 export async function persistAccountByIri(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   iri: string,
   baseUrl: URL | string,
   options: PersistAccountOptions = {},
 ): Promise<schema.Account | null> {
   const account = await db.query.accounts.findFirst({
-    where: eq(schema.accounts.iri, iri),
+    where: { iri: { eq: iri } },
   });
   if (account != null) return account;
   const actor = await lookupObject(iri, options);
@@ -460,11 +503,7 @@ export async function persistAccountByIri(
 }
 
 export async function updateAccountStats(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: { id: Uuid } | { iri: string },
 ): Promise<void> {
   const id =
@@ -517,11 +556,7 @@ export async function updateAccountStats(
 }
 
 export async function followAccount(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ctx: Context<unknown>,
   follower: schema.Account & { owner: schema.AccountOwner | null },
   following: schema.Account & { owner: schema.AccountOwner | null },
@@ -577,11 +612,7 @@ export async function followAccount(
 }
 
 export async function unfollowAccount(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ctx: Context<unknown>,
   follower: schema.Account & { owner: schema.AccountOwner | null },
   following: schema.Account & { owner: schema.AccountOwner | null },
@@ -630,11 +661,7 @@ export async function unfollowAccount(
 }
 
 export async function removeFollower(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ctx: Context<unknown>,
   following: schema.Account & { owner: schema.AccountOwner | null },
   follower: schema.Account & { owner: schema.AccountOwner | null },
@@ -683,11 +710,7 @@ export async function removeFollower(
 }
 
 export async function blockAccount(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   ctx: Context<unknown>,
   blocker: schema.AccountOwner & { account: schema.Account },
   blockee: schema.Account & { owner: schema.AccountOwner | null },
@@ -756,11 +779,7 @@ export function isActorStale(account: schema.Account): boolean {
  * @param options Document loader options
  */
 export function refreshActorAsync(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: schema.Account,
   baseUrl: URL | string,
   options: Omit<PersistAccountOptions, "handleConflictPolicy"> = {},
@@ -788,11 +807,7 @@ export function refreshActorAsync(
  * @param options Document loader options
  */
 export function refreshActorIfStale(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   account: schema.Account,
   baseUrl: URL | string,
   options: {

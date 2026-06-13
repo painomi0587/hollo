@@ -10,3 +10,15 @@
  */
 export const HANDLE_PATTERN =
   /^@?[\p{L}\p{N}._-]+@(?:[\p{L}\p{N}][\p{L}\p{N}_-]*\.)+[\p{L}\p{N}]{2,}$/u;
+
+/**
+ * Strip a single leading `@` from a handle-like value.
+ *
+ * Use this on values that came from user input before further parsing: many
+ * fediverse clients send handles in the user-typed `@user@domain` form, but
+ * Hollo's lookup paths build their own leading `@`, which would otherwise
+ * produce `@@user@domain` and miss every stored handle.
+ */
+export function normalizeHandle(handle: string): string {
+  return handle.replace(/^@/, "");
+}

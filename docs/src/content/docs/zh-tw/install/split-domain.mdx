@@ -1,0 +1,164 @@
+---
+title: 分域 WebFinger
+description: 在一個網域名稱執行 Hollo 的同時，使用另一個網域名稱作為帳號句柄。
+---
+
+import { Aside, Code, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Hollo 支援*分域 WebFinger* 設定：聯邦宇宙帳號句柄使用一個網域名稱
+（例如 `@alice@example.com`），而實際的 ActivityPub 伺服器執行在
+另一個網域名稱（例如 `https://ap.example.com`）上。這與 Mastodon 文件中
+「[在根網域名稱上託管 WebFinger][mastodon-webfinger]」描述的模式，以及
+GoToSocial 所稱的基於 *host-meta* 的主機互換模式相同。
+
+此功能基於 [Fedify 的 `origin` 設定選項] 實作。
+
+[mastodon-webfinger]: https://docs.joinmastodon.org/admin/config/#web_domain
+[Fedify 的 `origin` 設定選項]: https://fedify.dev/manual/federation#separating-webfinger-host-from-the-server-origin
+
+
+為什麼要分域？
+--------------
+
+最常見的動機是：你已經擁有一個簡短好記的網域名稱（`example.com`），
+希望句柄看起來像 `@alice@example.com`，但又不想把 Hollo 部署在該
+網域名稱的根上——根網域名稱往往被首頁、其他 Web 應用程式或既有服務占用。
+
+在分域設定下：
+
+ -  用戶在聯邦宇宙的任何地方都以 `@alice@example.com` 稱呼你。
+ -  Hollo 本身執行在 `https://ap.example.com`。Web UI、
+    Mastodon 相容 API、OAuth 和 actor URI 都位於此網域名稱。
+ -  根網域名稱 `example.com` 只需做一件事：把
+    `/.well-known/webfinger` 請求重新導向到 `ap.example.com`。
+
+<Aside type="caution">
+  請謹慎選擇句柄網域名稱。聯邦一旦開始，就無法在不破壞所有遠端追蹤
+  關係的情況下更改網域名稱。請務必閱讀本頁底部的警告。
+</Aside>
+
+
+設定方法
+--------
+
+在 Hollo 實例上設定以下兩個環境變數：
+
+ -  [`HANDLE_HOST`](/zh-tw/install/env/#handle_host) — 用於句柄的
+    主機名稱（不含 scheme，也不含路徑），例如 `example.com`。
+ -  [`WEB_ORIGIN`](/zh-tw/install/env/#web_origin) — Hollo 實際執行的
+    scheme + host，例如 `https://ap.example.com`。
+
+兩者必須同時設定；只設定其中一個會導致 Hollo 啟動失敗。
+
+~~~~ env
+HANDLE_HOST=example.com
+WEB_ORIGIN=https://ap.example.com
+~~~~
+
+完成此設定後，剩下的由 Fedify 處理：
+
+ -  WebFinger 回應的 `subject` 為 `acct:alice@example.com`。
+ -  Actor URI 形如 `https://ap.example.com/@alice`。
+ -  Mastodon 相容的 `/api/v1/instance` 與 `/api/v2/instance`
+    端點將實例網域名稱回報為 `example.com`，因此用戶端會顯示正確的句柄。
+
+
+反向代理重新導向
+----------------
+
+Hollo 自身只監聽 `WEB_ORIGIN` 主機。解析 `@alice@example.com` 的
+遠端伺服器會向 `https://example.com/.well-known/webfinger` 發送
+WebFinger 請求，因此你需要在該網域名稱的反向代理上把這些請求重新導向到
+Hollo。
+
+保留查詢字串的 301 重新導向即可。一些實作會在發現階段探測
+`/.well-known/nodeinfo` 和 `/.well-known/host-meta`，建議一併
+重新導向。
+
+<Tabs>
+  <TabItem label="nginx">
+~~~~ nginx
+server {
+  listen 443 ssl;
+  server_name example.com;
+  # … 你的常規站台設定 …
+
+  location /.well-known/webfinger {
+    return 301 https://ap.example.com$request_uri;
+  }
+  location /.well-known/nodeinfo {
+    return 301 https://ap.example.com$request_uri;
+  }
+  location /.well-known/host-meta {
+    return 301 https://ap.example.com$request_uri;
+  }
+}
+~~~~
+  </TabItem>
+  <TabItem label="Caddy">
+~~~~ caddy
+example.com {
+  # … 你的常規站台設定 …
+
+  redir /.well-known/webfinger* https://ap.example.com{uri} permanent
+  redir /.well-known/nodeinfo*  https://ap.example.com{uri} permanent
+  redir /.well-known/host-meta* https://ap.example.com{uri} permanent
+}
+~~~~
+  </TabItem>
+</Tabs>
+
+**不需要**重新導向 `/@username` 路徑或任何 actor URL；這些 URL 位於
+`ap.example.com`，遠端伺服器在解析 WebFinger 回應後會直接存取那裡。
+
+
+驗證設定
+--------
+
+部署後，以下三項檢查可以快速確認是否一切正常：
+
+ 1.  句柄網域名稱上的 WebFinger 是否被重新導向：
+
+     ~~~~ sh frame="none"
+     curl -i "https://example.com/.well-known/webfinger?resource=acct:alice@example.com"
+     ~~~~
+
+     應回傳 `https://ap.example.com/.well-known/webfinger?...` 的
+     301 回應。
+
+ 2.  伺服器網域名稱上的 WebFinger 是否回應：
+
+     ~~~~ sh frame="none"
+     curl "https://ap.example.com/.well-known/webfinger?resource=acct:alice@example.com"
+     ~~~~
+
+     應回傳 JRD，其中 `subject` 為 `acct:alice@example.com`，
+     `self` 連結指向 `https://ap.example.com/@alice`。
+
+ 3.  實例端點是否回報句柄網域名稱：
+
+     ~~~~ sh frame="none"
+     curl https://ap.example.com/api/v2/instance | jq .domain
+     ~~~~
+
+     應輸出 `"example.com"`。
+
+若需更全面的稽核，可以用 Julian Fietkau 的 [WebFinger Canary] 對
+你的句柄網域名稱進行檢查。目前 Mastodon 與基於 Fedify 的伺服器能夠
+正確處理分域設定；Misskey 和 Pixelfed 尚不支援。
+
+[WebFinger Canary]: https://correct.webfinger-canary.fietkau.software/
+
+
+<Aside type="danger">
+  **請在建立第一個帳號之前完成 `HANDLE_HOST` 和 `WEB_ORIGIN` 的設定。**
+
+  Hollo 在建立本地帳號時會把完整的 `@user@host` 句柄儲存到資料庫。
+  其他 ActivityPub 實作也會在首次接觸時快取你的句柄。事後更改
+  句柄網域名稱意味著既有追蹤者再也無法解析到你，且沒有任何遷移方案
+  能保留既有的追蹤關係。
+
+  啟動時，如果 `HANDLE_HOST` 與現有帳號儲存的句柄不一致，Hollo
+  會輸出警告記錄。請把這條警告視為需要立刻調查的問題，調查清楚
+  之前不要繼續執行實例。
+</Aside>

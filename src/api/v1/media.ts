@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { type Context, Hono } from "hono";
+import { Hono, type Context } from "hono";
 import mime from "mime";
 
 import { db } from "../../db";
@@ -8,23 +8,22 @@ import { makeVideoScreenshot, uploadThumbnail } from "../../media";
 import {
   scopeRequired,
   tokenRequired,
-  type Variables,
+  withAccountOwner,
+  type AccountOwnerVariables,
 } from "../../oauth/middleware";
 import { media } from "../../schema";
 import { isUuid, uuidv7 } from "../../uuid";
 
-const app = new Hono<{ Variables: Variables }>();
+const app = new Hono<{ Variables: AccountOwnerVariables }>();
 
-export async function postMedia(c: Context<{ Variables: Variables }>) {
+export async function postMedia(
+  c: Context<{ Variables: AccountOwnerVariables }>,
+) {
   const [{ drive }, { default: sharp }] = await Promise.all([
     import("../../storage"),
     import("sharp"),
   ]);
   const disk = drive.use();
-  const owner = c.get("token").accountOwner;
-  if (owner == null) {
-    return c.json({ error: "This method requires an authenticated user" }, 422);
-  }
   const form = await c.req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
@@ -76,19 +75,25 @@ export async function postMedia(c: Context<{ Variables: Variables }>) {
   if (result.length < 1) {
     return c.json({ error: "Failed to insert media" }, 500);
   }
-  return c.json(serializeMedium(result[0]));
+  return c.json(serializeMedium(result[0], c.req.url));
 }
 
-app.post("/", tokenRequired, scopeRequired(["write:media"]), postMedia);
+app.post(
+  "/",
+  tokenRequired,
+  scopeRequired(["write:media"]),
+  withAccountOwner,
+  postMedia,
+);
 
 app.get("/:id", async (c) => {
   const mediumId = c.req.param("id");
   if (!isUuid(mediumId)) return c.json({ error: "Not found" }, 404);
   const medium = await db.query.media.findFirst({
-    where: eq(media.id, mediumId),
+    where: { id: { eq: mediumId } },
   });
   if (medium == null) return c.json({ error: "Not found" }, 404);
-  return c.json(serializeMedium(medium));
+  return c.json(serializeMedium(medium, c.req.url));
 });
 
 app.put("/:id", tokenRequired, scopeRequired(["write:media"]), async (c) => {
@@ -111,7 +116,7 @@ app.put("/:id", tokenRequired, scopeRequired(["write:media"]), async (c) => {
     .where(eq(media.id, mediumId))
     .returning();
   if (result.length < 1) return c.json({ error: "Not found" }, 404);
-  return c.json(serializeMedium(result[0]));
+  return c.json(serializeMedium(result[0], c.req.url));
 });
 
 export default app;

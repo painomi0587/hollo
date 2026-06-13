@@ -6,7 +6,7 @@ template: splash
 hero:
   tagline: >-
     一款面向单用户的联邦式微博软件。
-    支持 ActivityPub，兼容 Mastodon API，支持 CommonMark 和 Misskey 风格的引用。
+    支持 ActivityPub，兼容 Mastodon API，支持 CommonMark 和符合 FEP-044f 标准的引用。
   image:
     light: ../../../assets/logo-black.svg
     dark: ../../../assets/logo-white.svg
@@ -47,10 +47,13 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
 
     [CommonMark]: https://commonmark.org/
   </Card>
-  <Card title="支持 Misskey 风格引用" icon="comment">
-    Hollo 支持 [Misskey] 风格的引用，您可以在自己的贴文中引用其他贴文。
-    它与支持 Misskey 风格引用的其他联邦宇宙软件兼容，例如 Misskey、[Akkoma]、[Fedibird]、[Threads]。
+  <Card title="引用帖文" icon="comment">
+    Hollo 支持符合 [FEP-044f] 标准的引用，您可以在自己的贴文中引用其他贴文。
+    它同时兼容 Misskey 风格和 Mastodon 风格的引用实现，
+    包括 [Mastodon]、[Misskey]、[Akkoma]、[Fedibird] 和 [Threads]。
 
+    [FEP-044f]: https://w3id.org/fep/044f
+    [Mastodon]: https://joinmastodon.org/zh
     [Misskey]: https://misskey-hub.net/cn/
     [Akkoma]: https://akkoma.social/
     [Fedibird]: https://github.com/fedibird/mastodon

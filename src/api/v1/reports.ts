@@ -1,6 +1,5 @@
 import * as vocab from "@fedify/vocab";
 import { zValidator } from "@hono/zod-validator";
-import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -8,21 +7,15 @@ import { db } from "../../db";
 import { serializeReport } from "../../entities/report";
 import federation from "../../federation";
 import {
+  type AccountOwnerVariables,
   scopeRequired,
   tokenRequired,
-  type Variables,
+  withAccountOwner,
 } from "../../oauth/middleware";
-import {
-  accountOwners,
-  accounts,
-  type Post,
-  posts,
-  type Report,
-  reports,
-} from "../../schema";
+import { accountOwners, type Post, type Report, reports } from "../../schema";
 import { uuid, uuidv7 } from "../../uuid";
 
-const app = new Hono<{ Variables: Variables }>();
+const app = new Hono<{ Variables: AccountOwnerVariables }>();
 
 const reportSchema = z.object({
   comment: z.string().trim().min(1).max(1000).optional().default(""),
@@ -39,15 +32,10 @@ app.post(
   "/",
   tokenRequired,
   scopeRequired(["write:reports"]),
+  withAccountOwner,
   zValidator("json", reportSchema),
   async (c) => {
-    const accountOwner = c.get("token").accountOwner;
-    if (accountOwner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const accountOwner = c.get("accountOwner");
 
     const data = c.req.valid("json");
 
@@ -58,13 +46,16 @@ app.post(
 
     // Check we actually have the account we want to report:
     const targetAccount = await db.query.accounts.findFirst({
-      where: and(
-        eq(accounts.id, data.account_id),
-        notInArray(
-          accounts.id,
-          db.select({ id: accountOwners.id }).from(accountOwners),
-        ),
-      ),
+      where: {
+        RAW: (accounts, { and, eq, notInArray }) =>
+          and(
+            eq(accounts.id, data.account_id),
+            notInArray(
+              accounts.id,
+              db.select({ id: accountOwners.id }).from(accountOwners),
+            ),
+          )!,
+      },
       with: { owner: true, successor: true },
     });
 
@@ -78,10 +69,10 @@ app.post(
     let targetPosts: Post[] = [];
     if (data.status_ids != null && data.status_ids.length > 0) {
       targetPosts = await db.query.posts.findMany({
-        where: and(
-          inArray(posts.id, data.status_ids),
-          eq(posts.accountId, targetAccount.id),
-        ),
+        where: {
+          id: { in: data.status_ids },
+          accountId: { eq: targetAccount.id },
+        },
       });
 
       if (targetPosts.length !== data.status_ids.length) {

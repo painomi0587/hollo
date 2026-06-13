@@ -1,5 +1,5 @@
 Hollo coding guidelines for AI assistants
-==========================================
+=========================================
 
 Hollo is a federated single-user microblogging software powered by [Fedify].
 It implements the [ActivityPub] protocol for federation with other platforms
@@ -115,17 +115,19 @@ Key architectural components
     responses
  -  *Pages* (*src/pages/*): Web UI pages (profile, setup, dashboard, etc.)
  -  *Import system* (*src/import/*): Background job processing for data imports
- -  *Cleanup system* (*src/cleanup/*): Background job processing for cleanup actions
+ -  *Cleanup system* (*src/cleanup/*): Background job processing for cleanup
+    actions
 
 ### Key files
 
-| File                        | Purpose                                   |
-| --------------------------- | ----------------------------------------- |
-| *src/index.tsx*             | Main Hono app that composes all routes    |
-| *src/schema.ts*             | Complete Drizzle ORM schema (~1300 lines) |
-| *src/federation/index.ts*   | Federation setup with inbox listeners     |
-| *src/oauth/middleware.ts*   | Authentication middleware                 |
-| *src/entities/status.ts*    | Status entity serialization               |
+| File                      | Purpose                                   |
+| ------------------------- | ----------------------------------------- |
+| *src/index.tsx*           | Main Hono app that composes all routes    |
+| *src/schema.ts*           | Complete Drizzle ORM schema (~1300 lines) |
+| *src/federation/index.ts* | Federation setup with inbox listeners     |
+| *src/oauth/middleware.ts* | Authentication middleware                 |
+| *src/entities/status.ts*  | Status entity serialization               |
+| *DESIGN.md*               | Design system and front-end conventions   |
 
 
 Technology stack
@@ -133,32 +135,32 @@ Technology stack
 
 ### Core dependencies
 
-| Category      | Package           | Version | Purpose                        |
-| ------------- | ----------------- | ------- | ------------------------------ |
-| Runtime       | tsx               | ^4.21   | TypeScript executor            |
-| Web framework | hono              | ^4.11   | HTTP server with JSX support   |
-| Federation    | @fedify/fedify    | ~1.10   | ActivityPub implementation     |
-| Database      | drizzle-orm       | ^0.45   | ORM for PostgreSQL             |
-| Database      | postgres          | ^3.4    | PostgreSQL client              |
-| Storage       | flydrive          | ^1.3    | S3/filesystem abstraction      |
-| Validation    | zod               | ^4.2    | Schema validation (v4, not v3) |
-| Auth          | argon2            | ^0.44   | Password hashing               |
-| Auth          | otpauth           | ^9.4    | TOTP two-factor authentication |
-| Media         | sharp             | ^0.34   | Image processing               |
-| Media         | fluent-ffmpeg     | ^2.1    | Video processing               |
-| Logging       | @logtape/logtape  | ~1.3    | Structured logging             |
-| Monitoring    | @sentry/node      | ^10.26  | Error tracking                 |
+| Category      | Package          | Version | Purpose                        |
+| ------------- | ---------------- | ------- | ------------------------------ |
+| Runtime       | tsx              | ^4.21   | TypeScript executor            |
+| Web framework | hono             | ^4.11   | HTTP server with JSX support   |
+| Federation    | @fedify/fedify   | ~1.10   | ActivityPub implementation     |
+| Database      | drizzle-orm      | ^0.45   | ORM for PostgreSQL             |
+| Database      | postgres         | ^3.4    | PostgreSQL client              |
+| Storage       | flydrive         | ^1.3    | S3/filesystem abstraction      |
+| Validation    | zod              | ^4.2    | Schema validation (v4, not v3) |
+| Auth          | argon2           | ^0.44   | Password hashing               |
+| Auth          | otpauth          | ^9.4    | TOTP two-factor authentication |
+| Media         | sharp            | ^0.34   | Image processing               |
+| Media         | fluent-ffmpeg    | ^2.1    | Video processing               |
+| Logging       | @logtape/logtape | ~1.3    | Structured logging             |
+| Monitoring    | @sentry/node     | ^10.26  | Error tracking                 |
 
 ### Development dependencies
 
-| Package            | Purpose               |
-| ------------------ | --------------------- |
-| oxlint             | Linting               |
-| oxfmt              | Formatting            |
-| vitest             | Test runner           |
-| @vitest/coverage-v8| Code coverage         |
-| linkedom           | DOM testing           |
-| timekeeper         | Time mocking          |
+| Package             | Purpose       |
+| ------------------- | ------------- |
+| oxlint              | Linting       |
+| oxfmt               | Formatting    |
+| vitest              | Test runner   |
+| @vitest/coverage-v8 | Code coverage |
+| linkedom            | DOM testing   |
+| timekeeper          | Time mocking  |
 
 
 Development guidelines
@@ -186,6 +188,24 @@ export function MyComponent({ name }: { name: string }) {
 // Incorrect - React style
 import React from 'react';  // Don't do this
 ~~~~
+
+### Design system and front-end conventions
+
+When working on any user-facing page (admin dashboard, profile, post,
+auth, OAuth screens, etc.), read *DESIGN.md* first.  It defines:
+
+ -  the visual design principles (simplicity, modernness, content first,
+    lightweight SSR, accessibility),
+ -  the color system (achromatic neutrals plus per-account theme color
+    via CSS custom properties on `<html>`),
+ -  typography, spacing, iconography, and component recipes,
+ -  the UnoCSS toolchain conventions (preset choices, prose application
+    areas, theme token injection, variant groups).
+
+Treat *DESIGN.md* as the single source of truth for front-end decisions
+that aren't directly answered by the source code.  Never introduce ad-hoc
+CSS or inline styling that contradicts it; if the document is missing
+guidance on a real case, update *DESIGN.md* in the same change.
 
 ### Database guidelines
 
@@ -226,7 +246,7 @@ The OAuth system supports:
 
 ### Testing
 
- -  *Test files*: Co-located with source (*src/**/*.test.ts*)
+ -  *Test files*: Co-located with source (_src/\*\*/_.test.ts\*)
  -  *Runner*: Vitest with `requireAssertions: true`
  -  *Database*: Uses separate test database (*.env.test*)
  -  *Helpers*: Use *tests/helpers/* for common test utilities
@@ -272,15 +292,15 @@ Development commands
 
 ### Common commands
 
-| Command               | Description                             |
-| --------------------- | --------------------------------------- |
-| `pnpm dev`            | Start development server with hot reload|
-| `pnpm prod`           | Start production server                 |
-| `pnpm typecheck`      | Run type check with tsgo                |
-| `pnpm check`          | Run type check, Oxlint, and Oxfmt check |
-| `pnpm test`           | Run tests with Vitest                   |
-| `pnpm test:ci`        | Run tests without migrations (for CI)   |
-| `pnpm check:coverage` | Run tests with coverage report          |
+| Command               | Description                              |
+| --------------------- | ---------------------------------------- |
+| `pnpm dev`            | Start development server with hot reload |
+| `pnpm prod`           | Start production server                  |
+| `pnpm typecheck`      | Run type check with tsgo                 |
+| `mise run check`      | Run type check, Oxlint, and Oxfmt check  |
+| `pnpm test`           | Run tests with Vitest                    |
+| `pnpm test:ci`        | Run tests without migrations (for CI)    |
+| `pnpm check:coverage` | Run tests with coverage report           |
 
 ### Utility commands
 
@@ -295,8 +315,8 @@ Development commands
 ### Formatting
 
 ~~~~ bash
-# Format code with Oxfmt
-pnpm run fmt
+# Format code with Oxfmt and Markdown docs with Hongdown
+mise run fmt
 
 # Check formatting without writing
 pnpm run fmt:check
@@ -314,8 +334,9 @@ in *drizzle/* directory.
 
 ### Creating a new migration
 
- 1. Modify the schema in *src/schema.ts*
- 2. Generate a migration:
+1.  Modify the schema in *src/schema.ts*
+
+2.  Generate a migration:
 
     ~~~~ bash
     pnpm migrate:generate
@@ -323,6 +344,11 @@ in *drizzle/* directory.
 
 This compares *src/schema.ts* with the current database state and generates
 a SQL migration file.
+
+Schema migrations MUST be generated with `pnpm migrate:generate`.  Do not
+hand-write schema migration SQL files; use a generated migration and then
+edit only when a custom data backfill or other non-schema operation is
+needed.
 
 Optional flags:
 
@@ -343,7 +369,7 @@ pnpm migrate:test
 > Migrations run automatically with `pnpm dev` and `pnpm prod`.
 > Never edit migrations after they've been applied to production.
 > Migration files are numbered sequentially
-> (e.g., *0075_cleanup_duplicate_notifications.sql*).
+> (e.g., *0075\_cleanup\_duplicate\_notifications.sql*).
 
 
 Environment variables
@@ -351,12 +377,12 @@ Environment variables
 
 ### Required variables
 
-| Variable          | Description                           |
-| ----------------- | ------------------------------------- |
-| `DATABASE_URL`    | PostgreSQL connection string          |
-| `SECRET_KEY`      | Session signing key (min 44 chars)    |
-| `DRIVE_DISK`      | Storage driver: `fs` or `s3`          |
-| `STORAGE_URL_BASE`| Public URL base for assets            |
+| Variable           | Description                        |
+| ------------------ | ---------------------------------- |
+| `DATABASE_URL`     | PostgreSQL connection string       |
+| `SECRET_KEY`       | Session signing key (min 44 chars) |
+| `DRIVE_DISK`       | Storage driver: `fs` or `s3`       |
+| `STORAGE_URL_BASE` | Public URL base for assets         |
 
 ### Storage configuration
 
@@ -382,26 +408,31 @@ STORAGE_URL_BASE=https://your-bucket.s3.amazonaws.com
 
 ### Optional variables
 
-| Variable                                 | Default | Description                              |
-| ---------------------------------------- | ------- | ---------------------------------------- |
-| `PORT`                                   | 3000    | Server port                              |
-| `BIND`                                   | -       | Bind address                             |
-| `NODE_TYPE`                              | all     | Node type: `all`, `web`, or `worker`     |
-| `BEHIND_PROXY`                           | false   | Trust proxy headers                      |
-| `LOG_LEVEL`                              | info    | Logging level                            |
-| `LOG_QUERY`                              | false   | Log database queries                     |
-| `LOG_FILE`                               | -       | JSON log file path                       |
-| `SENTRY_DSN`                             | -       | Sentry error tracking                    |
-| `HOME_URL`                               | -       | Home page redirect URL                   |
-| `ALLOW_PRIVATE_ADDRESS`                  | false   | Disable SSRF protection                  |
-| `REMOTE_ACTOR_FETCH_POSTS`               | 10      | Posts to fetch from remote actors        |
-| `REMOTE_ACTOR_STALENESS_DAYS`            | 7       | Days before remote actor data is stale   |
-| `REFRESH_ACTORS_ON_INTERACTION`          | false   | Refresh actors on all activity types     |
-| `REMOTE_REPLIES_SCRAPE_DEPTH`            | 2       | Reply scraping depth for remote posts    |
-| `REMOTE_REPLIES_SCRAPE_MAX_ITEMS`        | 100     | Replies to process per scraping job      |
-| `REMOTE_REPLIES_SCRAPE_INTERVAL_SECONDS` | 5       | Delay between scrape requests per origin |
-| `REMOTE_REPLIES_SCRAPE_BACKOFF_SECONDS`  | 300     | Backoff for 429 without `Retry-After`    |
-| `REMOTE_REPLIES_SCRAPE_COOLDOWN_SECONDS` | 300     | Completed scrape deduplication window    |
+| Variable                                 | Default | Description                                                                                                     |
+| ---------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                   | 3000    | Server port                                                                                                     |
+| `BIND`                                   | -       | Bind address                                                                                                    |
+| `NODE_TYPE`                              | all     | Node type: `all`, `web`, or `worker`                                                                            |
+| `BEHIND_PROXY`                           | false   | Trust proxy headers                                                                                             |
+| `LOG_LEVEL`                              | info    | Logging level                                                                                                   |
+| `LOG_QUERY`                              | false   | Log database queries                                                                                            |
+| `LOG_FILE`                               | -       | Log file path                                                                                                   |
+| `LOG_FILE_FORMAT`                        | jsonl   | Log file format: `jsonl` or `logfmt`                                                                            |
+| `SENTRY_DSN`                             | -       | Sentry error tracking                                                                                           |
+| `HOME_URL`                               | -       | Home page redirect URL                                                                                          |
+| `ALLOW_PRIVATE_ADDRESS`                  | false   | Disable SSRF protection                                                                                         |
+| `REMOTE_ACTOR_FETCH_POSTS`               | 10      | Posts to fetch from remote actors                                                                               |
+| `REMOTE_ACTOR_STALENESS_DAYS`            | 7       | Days before remote actor data is stale                                                                          |
+| `REFRESH_ACTORS_ON_INTERACTION`          | false   | Refresh actors on all activity types                                                                            |
+| `REMOTE_REPLIES_SCRAPE_DEPTH`            | 2       | Reply scraping depth for remote posts                                                                           |
+| `REMOTE_REPLIES_SCRAPE_MAX_ITEMS`        | 100     | Replies to process per scraping job                                                                             |
+| `REMOTE_REPLIES_SCRAPE_INTERVAL_SECONDS` | 5       | Delay between scrape requests per origin                                                                        |
+| `REMOTE_REPLIES_SCRAPE_BACKOFF_SECONDS`  | 300     | Backoff for 429 without `Retry-After`                                                                           |
+| `REMOTE_REPLIES_SCRAPE_COOLDOWN_SECONDS` | 300     | Completed scrape deduplication window                                                                           |
+| `MEDIA_PROXY`                            | off     | Remote media proxy: `off`, `proxy`, `cache` (booleans accepted: `true`→`proxy`, `false`→`off`)                  |
+| `REMOTE_MEDIA_THUMBNAILS`                | on      | Generate local sharp thumbnails for remote attachments (boolean)                                                |
+| `HANDLE_HOST`                            | -       | Split-domain WebFinger handle host (e.g. `example.com`); must be set together with `WEB_ORIGIN`                 |
+| `WEB_ORIGIN`                             | -       | Split-domain ActivityPub server origin (e.g. `https://ap.example.com`); must be set together with `HANDLE_HOST` |
 
 
 Adding new environment variables
@@ -409,26 +440,27 @@ Adding new environment variables
 
 When adding a new environment variable to Hollo, update these locations:
 
- 1. *Source code*: Add the environment variable reading logic in
+1.  *Source code*: Add the environment variable reading logic in
     the appropriate source file (e.g., *src/logging.ts*, *src/storage.ts*).
 
- 2. *AGENTS.md* (this file): Add the variable to the environment variables
+2.  *AGENTS.md* (this file): Add the variable to the environment variables
     tables above (required or optional section as appropriate).
 
- 3. *Documentation site*: Update the installation guides in
+3.  *Documentation site*: Update the installation guides in
     *docs/src/content/docs/install/* for all languages:
 
      -  *docs/src/content/docs/install/* (English)
      -  *docs/src/content/docs/ja/install/* (Japanese)
      -  *docs/src/content/docs/ko/install/* (Korean)
      -  *docs/src/content/docs/zh-cn/install/* (Simplified Chinese)
+     -  *docs/src/content/docs/zh-tw/install/* (Traditional Chinese)
 
- 4. *Docker Compose files*: If the variable is relevant for Docker deployments:
+4.  *Docker Compose files*: If the variable is relevant for Docker deployments:
 
      -  *compose.yaml*: For S3 storage configuration
      -  *compose-fs.yaml*: For filesystem storage configuration
 
- 5. *Changelog*: Document the new variable in *CHANGES.md* under the current
+5.  *Changelog*: Document the new variable in *CHANGES.md* under the current
     version section.
 
 
@@ -496,7 +528,9 @@ documentation:
 ### Lists
 
  -  Use ` -  ` (space-hyphen-two spaces) for unordered list items
+
  -  Indent nested items with 4 spaces
+
  -  Align continuation text with the item content:
 
     ~~~~
@@ -508,6 +542,7 @@ documentation:
 ### Code blocks
 
  -  Use four tildes (`~~~~`) for code fences instead of backticks
+
  -  Always specify the language identifier:
 
     ~~~~~
@@ -528,6 +563,7 @@ documentation:
 
  -  Use reference-style links placed at the *end of each section*
     (not at document end)
+
  -  Format reference links with consistent spacing:
 
     ~~~~

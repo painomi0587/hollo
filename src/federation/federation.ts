@@ -17,6 +17,7 @@ import {
 
 import metadata from "../../package.json" with { type: "json" };
 import { postgres } from "../db";
+import { FEDIFY_ORIGIN } from "../env";
 
 // oxlint-disable-next-line typescript/dot-notation
 const nodeType = process.env["NODE_TYPE"] ?? "all";
@@ -54,6 +55,7 @@ let federation: Federation<void> & { sink?: Sink } = createFederation<void>({
   // oxlint-disable-next-line typescript/dot-notation
   allowPrivateAddress: process.env["ALLOW_PRIVATE_ADDRESS"] === "true",
   tracerProvider,
+  origin: FEDIFY_ORIGIN,
 });
 
 if (fedifyDebug && exporter != null) {

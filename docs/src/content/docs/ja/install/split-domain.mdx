@@ -1,0 +1,180 @@
+---
+title: ドメイン分離 WebFinger
+description: Holloをあるドメインで運用しつつ、別のドメインでアカウントハンドルを公開する方法。
+---
+
+import { Aside, Code, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Holloは*ドメイン分離 WebFinger*の設定をサポートしています。
+フェディバースのハンドルは1つのドメイン（例: `@alice@example.com`）
+にあり、実際のActivityPubサーバーは別のドメイン
+（例: `https://ap.example.com`）で動作する形式です。
+Mastodonが「[ルートドメインでのWebFingerホスティング][mastodon-webfinger]」
+として説明し、GoToSocialが*host-meta*ベースのホストスワッピングと
+呼ぶパターンと同じです。
+
+この機能は [Fedifyの `origin` オプション] の上に実装されています。
+
+[mastodon-webfinger]: https://docs.joinmastodon.org/admin/config/#web_domain
+[Fedifyの `origin` オプション]: https://fedify.dev/manual/federation#separating-webfinger-host-from-the-server-origin
+
+
+なぜドメインを分離するのか？
+----------------------------
+
+典型的な動機は、すでに短くて良いドメイン（`example.com`）を持っていて、
+ハンドルを`@alice@example.com`のように見せたいけれども、そのドメインの
+ルートにHolloを置くわけにはいかない場合です。ルートドメインは
+ホームページや別のWebアプリ、既存サービスが使っていることが多いものです。
+
+ドメイン分離設定では:
+
+ -  ユーザーはフェディバースのどこでも`@alice@example.com`という
+    形で呼んでくれます。
+ -  Hollo自体は`https://ap.example.com`で動作します。Web UI、
+    Mastodon互換 API、OAuth、アクターURIはすべてこちらにあります。
+ -  ルートドメイン`example.com`はたった一つの仕事をすればよいです:
+    `/.well-known/webfinger`リクエストを`ap.example.com`に
+    リダイレクトすることです。
+
+<Aside type="caution">
+  ハンドルドメインは慎重に選びましょう。連合が始まった後にドメインを
+  変更することはできず、変更するとすべてのリモートフォロー関係が
+  壊れます。ページ下部の警告を必ずお読みください。
+</Aside>
+
+
+設定方法
+--------
+
+以下の2つの環境変数をHolloインスタンスに設定してください:
+
+ -  [`HANDLE_HOST`](/ja/install/env/#handle_host) — ハンドルに使う
+    ホスト名のみ（スキームなし、パスなし）。例: `example.com`。
+ -  [`WEB_ORIGIN`](/ja/install/env/#web_origin) — Holloが実際に
+    動作するスキーム+ホスト。例: `https://ap.example.com`。
+
+両方を一緒に設定する必要があります。片方だけ設定するとHolloは
+起動に失敗します。
+
+~~~~ env
+HANDLE_HOST=example.com
+WEB_ORIGIN=https://ap.example.com
+~~~~
+
+これで残りはFedifyが処理してくれます:
+
+ -  WebFingerレスポンスの`subject`は`acct:alice@example.com`。
+ -  アクターURIは`https://ap.example.com/@alice`の形式で構築されます。
+ -  Mastodon互換の`/api/v1/instance`、`/api/v2/instance`エンドポイントは
+    インスタンスドメインを`example.com`として返すため、クライアントは
+    正しいハンドルを表示します。
+
+
+リバースプロキシのリダイレクト
+------------------------------
+
+Hollo自体は`WEB_ORIGIN`ホストでしかリッスンしません。
+リモートサーバーが`@alice@example.com`を解決する際は
+`https://example.com/.well-known/webfinger`にWebFingerクエリを
+送るので、そのドメインのリバースプロキシでHolloへリダイレクト
+させる必要があります。
+
+クエリ文字列を保持する301リダイレクトで十分です。
+一部の実装はディスカバリ時に`/.well-known/nodeinfo`と
+`/.well-known/host-meta`も探るので、これらも一緒に
+リダイレクトしておくのが良いでしょう。
+
+<Tabs>
+  <TabItem label="nginx">
+~~~~ nginx
+server {
+  listen 443 ssl;
+  server_name example.com;
+  # … 通常のサイト設定 …
+
+  location /.well-known/webfinger {
+    return 301 https://ap.example.com$request_uri;
+  }
+  location /.well-known/nodeinfo {
+    return 301 https://ap.example.com$request_uri;
+  }
+  location /.well-known/host-meta {
+    return 301 https://ap.example.com$request_uri;
+  }
+}
+~~~~
+  </TabItem>
+  <TabItem label="Caddy">
+~~~~ caddy
+example.com {
+  # … 通常のサイト設定 …
+
+  redir /.well-known/webfinger* https://ap.example.com{uri} permanent
+  redir /.well-known/nodeinfo*  https://ap.example.com{uri} permanent
+  redir /.well-known/host-meta* https://ap.example.com{uri} permanent
+}
+~~~~
+  </TabItem>
+</Tabs>
+
+`/@username`パスやアクターURLはリダイレクト**不要**です。
+これらのURLは`ap.example.com`上にあり、リモートサーバーは
+WebFingerレスポンスを解決した後そちらに直接アクセスします。
+
+
+設定の検証
+----------
+
+デプロイ後、次の3つを確認すればすべて正しく接続されていることが
+わかります:
+
+ 1.  ハンドルドメインからのWebFingerがリダイレクトされるか:
+
+     ~~~~ sh frame="none"
+     curl -i "https://example.com/.well-known/webfinger?resource=acct:alice@example.com"
+     ~~~~
+
+     `https://ap.example.com/.well-known/webfinger?...`への301を
+     返す必要があります。
+
+ 2.  サーバードメインからのWebFingerが応答するか:
+
+     ~~~~ sh frame="none"
+     curl "https://ap.example.com/.well-known/webfinger?resource=acct:alice@example.com"
+     ~~~~
+
+     `subject`が`acct:alice@example.com`で、`self`リンクが
+     `https://ap.example.com/@alice`を指すJRDが返ってくる必要があります。
+
+ 3.  インスタンスエンドポイントがハンドルドメインを返すか:
+
+     ~~~~ sh frame="none"
+     curl https://ap.example.com/api/v2/instance | jq .domain
+     ~~~~
+
+     `"example.com"`が出力されるはずです。
+
+より入念に監査したい場合は、Julian Fietkau の [WebFinger Canary] を
+ハンドルドメインに対して実行してみてください。現在 Mastodon と
+Fedify ベースのサーバーはドメイン分離設定を正しく扱えますが、
+Misskey と Pixelfed は今のところそうではありません。
+
+[WebFinger Canary]: https://correct.webfinger-canary.fietkau.software/
+
+
+<Aside type="danger">
+  **最初のアカウントを作成する前に`HANDLE_HOST`と`WEB_ORIGIN`を
+  設定してください。**
+
+  Holloは、ローカルアカウントが作成されるときに`@user@host`形式の
+  完全なハンドルをデータベースに保存します。他の ActivityPub
+  実装も最初に接触した時点であなたのハンドルをキャッシュします。
+  あとからハンドルドメインを変更すると既存のフォロワーはあなたを
+  解決できなくなり、既存のフォロー関係を保ったまま移行する方法は
+  ありません。
+
+  Hollo は起動時に、`HANDLE_HOST`が既存アカウントに保存されている
+  ハンドルと一致しない場合に警告ログを出します。この警告が見えたら、
+  インスタンスの運用を続ける前に必ず原因を調べてください。
+</Aside>

@@ -4,8 +4,8 @@ import { and, asc, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 
 import db from "../db";
 import {
-  type RemoteReplyScrapeJob,
   posts,
+  type RemoteReplyScrapeJob,
   remoteReplyScrapeJobs,
   remoteReplyScrapeOrigins,
 } from "../schema";
@@ -211,7 +211,7 @@ async function processRemoteReplyScrapeJob(
 ): Promise<number> {
   const clock = options.clock ?? (() => options.now ?? new Date());
   const post = await db.query.posts.findFirst({
-    where: eq(posts.id, job.postId),
+    where: { id: { eq: job.postId } },
   });
 
   if (post == null) {

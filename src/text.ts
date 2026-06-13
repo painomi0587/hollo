@@ -2,14 +2,13 @@ import { hashtag } from "@fedify/markdown-it-hashtag";
 import { mention } from "@fedify/markdown-it-mention";
 import { type DocumentLoader, isActor, lookupObject } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
-import { type ExtractTablesWithRelations, inArray } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+import { inArray } from "drizzle-orm";
 import { escape } from "es-toolkit";
 import MarkdownIt from "markdown-it";
 import replaceLink from "markdown-it-replace-link";
 
 import { CUSTOM_EMOJI_REGEXP } from "./custom-emoji";
+import type { DatabaseLike } from "./db";
 import { persistAccount } from "./federation/account";
 import { type ASPost, isPost } from "./federation/post";
 import * as schema from "./schema";
@@ -66,11 +65,7 @@ function containsCodeBlock(text: string): boolean {
 }
 
 export async function formatText(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   text: string,
   options: {
     url: URL | string;
@@ -122,7 +117,7 @@ export async function formatText(
   const customEmojis =
     emojis.length > 0
       ? await db.query.customEmojis.findMany({
-          where: inArray(schema.customEmojis.shortcode, emojis),
+          where: { shortcode: { in: emojis } },
         })
       : [];
 
@@ -214,11 +209,7 @@ export function cleanupRedundantWhitespacesInHtml(html: string): string {
 }
 
 export async function extractCustomEmojis(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   text: string,
 ): Promise<Record<string, string>> {
   const emojis = new Set<string>();
@@ -226,7 +217,7 @@ export async function extractCustomEmojis(
   const customEmojis =
     emojis.size > 0
       ? await db.query.customEmojis.findMany({
-          where: inArray(schema.customEmojis.shortcode, [...emojis]),
+          where: { shortcode: { in: [...emojis] } },
         })
       : [];
   return Object.fromEntries(
@@ -238,11 +229,7 @@ export async function extractCustomEmojis(
 const SEONBI_URL = process.env["SEONBI_URL"];
 
 export async function formatPostContent(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   text: string,
   language: string | null | undefined,
   options: {

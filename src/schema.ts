@@ -1,4 +1,4 @@
-import { isNotNull, relations, sql } from "drizzle-orm";
+import { isNotNull, sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   bigint,
@@ -53,6 +53,52 @@ export const totps = pgTable("totps", {
 export type Totp = typeof totps.$inferSelect;
 export type NewTotp = typeof totps.$inferInsert;
 
+export const passkeys = pgTable("passkeys", {
+  id: text("id").primaryKey(),
+  credentialEmail: varchar("credential_email", { length: 254 })
+    .notNull()
+    .references(() => credentials.email, { onDelete: "cascade" }),
+  publicKey: text("public_key").notNull(),
+  counter: bigint("counter", { mode: "number" }).notNull(),
+  transports: text("transports")
+    .array()
+    .notNull()
+    .default(sql`(ARRAY[]::text[])`),
+  deviceType: text("device_type").notNull(),
+  backedUp: boolean("backed_up").notNull(),
+  nickname: text("nickname").notNull(),
+  lastUsed: timestamp("last_used", { withTimezone: true }),
+  created: timestamp("created", { withTimezone: true })
+    .notNull()
+    .default(currentTimestamp),
+});
+
+export type Passkey = typeof passkeys.$inferSelect;
+export type NewPasskey = typeof passkeys.$inferInsert;
+
+// One row per in-flight passkey *login* ceremony.  The signed cookie sent
+// to the browser holds just `id`; the actual WebAuthn challenge lives
+// here so /finish can atomically `DELETE … WHERE id AND expires_at > now()
+// RETURNING challenge`, making a captured cookie + assertion pair good
+// for at most one /finish call even within the TTL.  Registration is
+// already bound to the logged-in session, so it doesn't need this.
+export const passkeyLoginChallenges = pgTable(
+  "passkey_login_challenges",
+  {
+    id: text("id").primaryKey(),
+    challenge: text("challenge").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    created: timestamp("created", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+  },
+  (table) => [index().on(table.expiresAt)],
+);
+
+export type PasskeyLoginChallenge = typeof passkeyLoginChallenges.$inferSelect;
+export type NewPasskeyLoginChallenge =
+  typeof passkeyLoginChallenges.$inferInsert;
+
 export const accountTypeEnum = pgEnum("account_type", [
   "Application",
   "Group",
@@ -63,70 +109,67 @@ export const accountTypeEnum = pgEnum("account_type", [
 
 export type AccountType = (typeof accountTypeEnum.enumValues)[number];
 
-export const accounts = pgTable("accounts", {
-  id: uuid("id").$type<Uuid>().primaryKey(),
-  iri: text("iri").notNull().unique(),
-  type: accountTypeEnum("type").notNull(),
-  name: varchar("name", { length: 100 }).notNull(),
-  handle: text("handle").notNull().unique(),
-  bioHtml: text("bio_html"),
-  url: text("url"),
-  protected: boolean("protected").notNull().default(false),
-  avatarUrl: text("avatar_url"),
-  coverUrl: text("cover_url"),
-  inboxUrl: text("inbox_url").notNull(),
-  followersUrl: text("followers_url"),
-  sharedInboxUrl: text("shared_inbox_url"),
-  featuredUrl: text("featured_url"),
-  followingCount: bigint("following_count", { mode: "number" }).default(0),
-  followersCount: bigint("followers_count", { mode: "number" }).default(0),
-  postsCount: bigint("posts_count", { mode: "number" }).default(0),
-  fieldHtmls: json("field_htmls")
-    .notNull()
-    .default({})
-    .$type<Record<string, string>>(),
-  emojis: jsonb("emojis").notNull().default({}).$type<Record<string, string>>(),
-  sensitive: boolean("sensitive").notNull().default(false),
-  successorId: uuid("successor_id")
-    .$type<Uuid>()
-    .references((): AnyPgColumn => accounts.id, { onDelete: "cascade" }),
-  aliases: text("aliases")
-    .array()
-    .notNull()
-    .default(sql`(ARRAY[]::text[])`),
-  instanceHost: text("instance_host")
-    .notNull()
-    .references(() => instances.host),
-  published: timestamp("published", { withTimezone: true }),
-  updated: timestamp("updated", { withTimezone: true })
-    .notNull()
-    .default(currentTimestamp),
-  fetched: timestamp("fetched", { withTimezone: true }),
-});
-
-export const accountRelations = relations(accounts, ({ one, many }) => ({
-  owner: one(accountOwners, {
-    fields: [accounts.id],
-    references: [accountOwners.id],
-  }),
-  successor: one(accounts, {
-    fields: [accounts.successorId],
-    references: [accounts.id],
-    relationName: "successor",
-  }),
-  predecessors: many(accounts, { relationName: "successor" }),
-  following: many(follows, { relationName: "following" }),
-  followers: many(follows, { relationName: "follower" }),
-  posts: many(posts),
-  mentions: many(mentions),
-  likes: many(likes),
-  pinnedPosts: many(pinnedPosts),
-  mutes: many(mutes, { relationName: "muter" }),
-  mutedBy: many(mutes, { relationName: "muted" }),
-  blocks: many(blocks, { relationName: "blocker" }),
-  blockedBy: many(blocks, { relationName: "blocked" }),
-  instance: one(instances),
-}));
+export const accounts = pgTable(
+  "accounts",
+  {
+    id: uuid("id").$type<Uuid>().primaryKey(),
+    iri: text("iri").notNull().unique(),
+    type: accountTypeEnum("type").notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    handle: text("handle").notNull().unique(),
+    bioHtml: text("bio_html"),
+    url: text("url"),
+    protected: boolean("protected").notNull().default(false),
+    avatarUrl: text("avatar_url"),
+    coverUrl: text("cover_url"),
+    inboxUrl: text("inbox_url").notNull(),
+    followersUrl: text("followers_url"),
+    sharedInboxUrl: text("shared_inbox_url"),
+    featuredUrl: text("featured_url"),
+    followingCount: bigint("following_count", { mode: "number" }).default(0),
+    followersCount: bigint("followers_count", { mode: "number" }).default(0),
+    postsCount: bigint("posts_count", { mode: "number" }).default(0),
+    fieldHtmls: json("field_htmls")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
+    emojis: jsonb("emojis")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
+    sensitive: boolean("sensitive").notNull().default(false),
+    successorId: uuid("successor_id")
+      .$type<Uuid>()
+      .references((): AnyPgColumn => accounts.id, { onDelete: "cascade" }),
+    aliases: text("aliases")
+      .array()
+      .notNull()
+      .default(sql`(ARRAY[]::text[])`),
+    instanceHost: text("instance_host")
+      .notNull()
+      .references(() => instances.host),
+    published: timestamp("published", { withTimezone: true }),
+    updated: timestamp("updated", { withTimezone: true })
+      .notNull()
+      .default(currentTimestamp),
+    fetched: timestamp("fetched", { withTimezone: true }),
+  },
+  (table) => [
+    index("accounts_handle_trgm_idx").using(
+      "gin",
+      table.handle.op("gin_trgm_ops"),
+    ),
+    index("accounts_name_trgm_idx").using("gin", table.name.op("gin_trgm_ops")),
+    check(
+      "ck_accounts_field_htmls_object",
+      sql`json_typeof(${table.fieldHtmls}) = 'object'`,
+    ),
+    check(
+      "ck_accounts_emojis_object",
+      sql`jsonb_typeof(${table.emojis}) = 'object'`,
+    ),
+  ],
+);
 
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
@@ -139,6 +182,25 @@ export const postVisibilityEnum = pgEnum("post_visibility", [
 ]);
 
 export type PostVisibility = (typeof postVisibilityEnum.enumValues)[number];
+
+export const quoteStateEnum = pgEnum("quote_state", [
+  "pending",
+  "accepted",
+  "rejected",
+  "revoked",
+  "unauthorized",
+]);
+
+export type QuoteState = (typeof quoteStateEnum.enumValues)[number];
+
+export const quoteApprovalPolicyEnum = pgEnum("quote_approval_policy", [
+  "public",
+  "followers",
+  "nobody",
+]);
+
+export type QuoteApprovalPolicy =
+  (typeof quoteApprovalPolicyEnum.enumValues)[number];
 
 export const themeColorEnum = pgEnum("theme_color", [
   "amber",
@@ -167,48 +229,65 @@ export type ThemeColor = (typeof themeColorEnum.enumValues)[number];
 
 export const THEME_COLORS: readonly ThemeColor[] = themeColorEnum.enumValues;
 
-export const accountOwners = pgTable("account_owners", {
-  id: uuid("id")
-    .$type<Uuid>()
-    .primaryKey()
-    .references(() => accounts.id, { onDelete: "cascade" }),
-  handle: text("handle").notNull().unique(),
-  rsaPrivateKeyJwk: jsonb("rsa_private_key_jwk").$type<JsonWebKey>().notNull(),
-  rsaPublicKeyJwk: jsonb("rsa_public_key_jwk").$type<JsonWebKey>().notNull(),
-  ed25519PrivateKeyJwk: jsonb("ed25519_private_key_jwk")
-    .$type<JsonWebKey>()
-    .notNull(),
-  ed25519PublicKeyJwk: jsonb("ed25519_public_key_jwk")
-    .$type<JsonWebKey>()
-    .notNull(),
-  fields: json("fields").notNull().default({}).$type<Record<string, string>>(),
-  bio: text("bio"),
-  followedTags: text("followed_tags").array().notNull().default([]),
-  visibility: postVisibilityEnum("visibility").notNull().default("public"),
-  language: text("language").notNull().default("en"),
-  discoverable: boolean().notNull().default(false),
-  expandSpoilers: boolean("expand_spoilers").notNull().default(false),
-  themeColor: themeColorEnum("theme_color").notNull(),
-});
+export const accountOwners = pgTable(
+  "account_owners",
+  {
+    id: uuid("id")
+      .$type<Uuid>()
+      .primaryKey()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    handle: text("handle").notNull().unique(),
+    rsaPrivateKeyJwk: jsonb("rsa_private_key_jwk")
+      .$type<JsonWebKey>()
+      .notNull(),
+    rsaPublicKeyJwk: jsonb("rsa_public_key_jwk").$type<JsonWebKey>().notNull(),
+    ed25519PrivateKeyJwk: jsonb("ed25519_private_key_jwk")
+      .$type<JsonWebKey>()
+      .notNull(),
+    ed25519PublicKeyJwk: jsonb("ed25519_public_key_jwk")
+      .$type<JsonWebKey>()
+      .notNull(),
+    fields: json("fields")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
+    bio: text("bio"),
+    followedTags: text("followed_tags").array().notNull().default([]),
+    visibility: postVisibilityEnum("visibility").notNull().default("public"),
+    language: text("language").notNull().default("en"),
+    discoverable: boolean().notNull().default(false),
+    expandSpoilers: boolean("expand_spoilers").notNull().default(false),
+    followingListPublic: boolean("following_list_public")
+      .notNull()
+      .default(false),
+    themeColor: themeColorEnum("theme_color").notNull(),
+  },
+  (table) => [
+    check(
+      "ck_account_owners_rsa_private_key_jwk_object",
+      sql`jsonb_typeof(${table.rsaPrivateKeyJwk}) = 'object'`,
+    ),
+    check(
+      "ck_account_owners_rsa_public_key_jwk_object",
+      sql`jsonb_typeof(${table.rsaPublicKeyJwk}) = 'object'`,
+    ),
+    check(
+      "ck_account_owners_ed25519_private_key_jwk_object",
+      sql`jsonb_typeof(${table.ed25519PrivateKeyJwk}) = 'object'`,
+    ),
+    check(
+      "ck_account_owners_ed25519_public_key_jwk_object",
+      sql`jsonb_typeof(${table.ed25519PublicKeyJwk}) = 'object'`,
+    ),
+    check(
+      "ck_account_owners_fields_object",
+      sql`json_typeof(${table.fields}) = 'object'`,
+    ),
+  ],
+);
 
 export type AccountOwner = typeof accountOwners.$inferSelect;
 export type NewAccountOwner = typeof accountOwners.$inferInsert;
-
-export const accountOwnerRelations = relations(
-  accountOwners,
-  ({ one, many }) => ({
-    account: one(accounts, {
-      fields: [accountOwners.id],
-      references: [accounts.id],
-    }),
-    accessTokens: many(accessTokens),
-    bookmarks: many(bookmarks),
-    markers: many(markers),
-    featuredTags: many(featuredTags),
-    lists: many(lists),
-    importJobs: many(importJobs),
-  }),
-);
 
 export const instances = pgTable("instances", {
   host: text("host").notNull().primaryKey(),
@@ -221,10 +300,6 @@ export const instances = pgTable("instances", {
 
 export type Instance = typeof instances.$inferSelect;
 export type NewInstance = typeof instances.$inferInsert;
-
-export const instanceRelations = relations(instances, ({ many }) => ({
-  accounts: many(accounts),
-}));
 
 export const follows = pgTable(
   "follows",
@@ -261,19 +336,6 @@ export const follows = pgTable(
 
 export type Follow = typeof follows.$inferSelect;
 export type NewFollow = typeof follows.$inferInsert;
-
-export const followRelations = relations(follows, ({ one }) => ({
-  following: one(accounts, {
-    fields: [follows.followingId],
-    references: [accounts.id],
-    relationName: "follower",
-  }),
-  follower: one(accounts, {
-    fields: [follows.followerId],
-    references: [accounts.id],
-    relationName: "following",
-  }),
-}));
 
 export const scopeEnum = pgEnum("scope", [
   "read",
@@ -326,10 +388,6 @@ export const applications = pgTable("applications", {
 export type Application = typeof applications.$inferSelect;
 export type NewApplication = typeof applications.$inferInsert;
 
-export const applicationRelations = relations(applications, ({ many }) => ({
-  accessTokens: many(accessTokens),
-}));
-
 export const accessGrants = pgTable(
   "access_grants",
   {
@@ -359,17 +417,6 @@ export const accessGrants = pgTable(
 export type AccessGrant = typeof accessGrants.$inferSelect;
 export type NewAccessGrant = typeof accessGrants.$inferInsert;
 
-export const accessGrantRelations = relations(accessGrants, ({ one }) => ({
-  application: one(applications, {
-    fields: [accessGrants.applicationId],
-    references: [applications.id],
-  }),
-  accountOwner: one(accountOwners, {
-    fields: [accessGrants.resourceOwnerId],
-    references: [accountOwners.id],
-  }),
-}));
-
 export const grantTypeEnum = pgEnum("grant_type", [
   "authorization_code",
   "client_credentials",
@@ -397,17 +444,6 @@ export const accessTokens = pgTable("access_tokens", {
 
 export type AccessToken = typeof accessTokens.$inferSelect;
 export type NewAccessToken = typeof accessTokens.$inferInsert;
-
-export const accessTokenRelations = relations(accessTokens, ({ one }) => ({
-  application: one(applications, {
-    fields: [accessTokens.applicationId],
-    references: [applications.id],
-  }),
-  accountOwner: one(accountOwners, {
-    fields: [accessTokens.accountOwnerId],
-    references: [accountOwners.id],
-  }),
-}));
 
 export const postTypeEnum = pgEnum("post_type", [
   "Article",
@@ -439,6 +475,12 @@ export const posts = pgTable(
     quoteTargetId: uuid("quote_target_id")
       .$type<Uuid>()
       .references((): AnyPgColumn => posts.id, { onDelete: "set null" }),
+    quoteTargetIri: text("quote_target_iri"),
+    quoteState: quoteStateEnum("quote_state"),
+    quoteAuthorizationIri: text("quote_authorization_iri"),
+    quoteApprovalPolicy: quoteApprovalPolicyEnum(
+      "quote_approval_policy",
+    ).default("public"),
     visibility: postVisibilityEnum("visibility").notNull(),
     summary: text("summary"),
     contentHtml: text("content_html"),
@@ -482,53 +524,25 @@ export const posts = pgTable(
     index()
       .on(table.visibility, table.accountId, table.replyTargetId)
       .where(isNotNull(table.replyTargetId)),
+    index("posts_content_html_trgm_idx").using(
+      "gin",
+      table.contentHtml.op("gin_trgm_ops"),
+    ),
+    index("posts_updated_index").on(table.updated),
+    index("posts_actor_id_updated_index").on(table.accountId, table.updated),
+    index("posts_actor_id_published_index").on(
+      table.accountId,
+      table.published,
+    ),
+    index("posts_actor_id_language_index")
+      .on(table.accountId, table.language)
+      .where(isNotNull(table.language)),
+    index("posts_tags_gin_idx").using("gin", table.tags),
   ],
 );
 
 export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
-
-export const postRelations = relations(posts, ({ one, many }) => ({
-  account: one(accounts, {
-    fields: [posts.accountId],
-    references: [accounts.id],
-  }),
-  application: one(applications, {
-    fields: [posts.applicationId],
-    references: [applications.id],
-  }),
-  replyTarget: one(posts, {
-    fields: [posts.replyTargetId],
-    references: [posts.id],
-    relationName: "reply",
-  }),
-  replies: many(posts, { relationName: "reply" }),
-  likes: many(likes),
-  reactions: many(reactions),
-  sharing: one(posts, {
-    fields: [posts.sharingId],
-    references: [posts.id],
-    relationName: "share",
-  }),
-  shares: many(posts, { relationName: "share" }),
-  quoteTarget: one(posts, {
-    fields: [posts.quoteTargetId],
-    references: [posts.id],
-    relationName: "quote",
-  }),
-  quotes: many(posts, { relationName: "quote" }),
-  media: many(media),
-  poll: one(polls, {
-    fields: [posts.pollId],
-    references: [polls.id],
-  }),
-  mentions: many(mentions),
-  bookmarks: many(bookmarks),
-  pin: one(pinnedPosts, {
-    fields: [posts.id, posts.accountId],
-    references: [pinnedPosts.postId, pinnedPosts.accountId],
-  }),
-}));
 
 export const media = pgTable(
   "media",
@@ -557,13 +571,6 @@ export const media = pgTable(
 export type Medium = typeof media.$inferSelect;
 export type NewMedium = typeof media.$inferInsert;
 
-export const mediumRelations = relations(media, ({ one }) => ({
-  post: one(posts, {
-    fields: [media.postId],
-    references: [posts.id],
-  }),
-}));
-
 export const polls = pgTable("polls", {
   id: uuid("id").$type<Uuid>().primaryKey(),
   multiple: boolean("multiple").notNull().default(false),
@@ -576,12 +583,6 @@ export const polls = pgTable("polls", {
 
 export type Poll = typeof polls.$inferSelect;
 export type NewPoll = typeof polls.$inferInsert;
-
-export const pollRelations = relations(polls, ({ many }) => ({
-  posts: many(posts),
-  options: many(pollOptions),
-  votes: many(pollVotes),
-}));
 
 export const pollOptions = pgTable(
   "poll_options",
@@ -602,14 +603,6 @@ export const pollOptions = pgTable(
 
 export type PollOption = typeof pollOptions.$inferSelect;
 export type NewPollOption = typeof pollOptions.$inferInsert;
-
-export const pollOptionRelations = relations(pollOptions, ({ one, many }) => ({
-  poll: one(polls, {
-    fields: [pollOptions.pollId],
-    references: [polls.id],
-  }),
-  votes: many(pollVotes),
-}));
 
 export const pollVotes = pgTable(
   "poll_votes",
@@ -642,21 +635,6 @@ export const pollVotes = pgTable(
 export type PollVote = typeof pollVotes.$inferSelect;
 export type NewPollVote = typeof pollVotes.$inferInsert;
 
-export const pollVoteRelations = relations(pollVotes, ({ one }) => ({
-  poll: one(polls, {
-    fields: [pollVotes.pollId],
-    references: [polls.id],
-  }),
-  option: one(pollOptions, {
-    fields: [pollVotes.pollId, pollVotes.optionIndex],
-    references: [pollOptions.pollId, pollOptions.index],
-  }),
-  account: one(accounts, {
-    fields: [pollVotes.accountId],
-    references: [accounts.id],
-  }),
-}));
-
 export const mentions = pgTable(
   "mentions",
   {
@@ -677,17 +655,6 @@ export const mentions = pgTable(
 
 export type Mention = typeof mentions.$inferSelect;
 export type NewMention = typeof mentions.$inferInsert;
-
-export const mentionRelations = relations(mentions, ({ one }) => ({
-  post: one(posts, {
-    fields: [mentions.postId],
-    references: [posts.id],
-  }),
-  account: one(accounts, {
-    fields: [mentions.accountId],
-    references: [accounts.id],
-  }),
-}));
 
 export const pinnedPosts = pgTable(
   "pinned_posts",
@@ -711,17 +678,6 @@ export const pinnedPosts = pgTable(
     index().on(table.accountId, table.postId),
   ],
 );
-
-export const pinnedPostRelations = relations(pinnedPosts, ({ one }) => ({
-  post: one(posts, {
-    fields: [pinnedPosts.postId, pinnedPosts.accountId],
-    references: [posts.id, posts.accountId],
-  }),
-  account: one(accounts, {
-    fields: [pinnedPosts.accountId],
-    references: [accounts.id],
-  }),
-}));
 
 export type PinnedPost = typeof pinnedPosts.$inferSelect;
 export type NewPinnedPost = typeof pinnedPosts.$inferInsert;
@@ -750,17 +706,6 @@ export const likes = pgTable(
 
 export type Like = typeof likes.$inferSelect;
 export type NewLike = typeof likes.$inferInsert;
-
-export const likeRelations = relations(likes, ({ one }) => ({
-  post: one(posts, {
-    fields: [likes.postId],
-    references: [posts.id],
-  }),
-  account: one(accounts, {
-    fields: [likes.accountId],
-    references: [accounts.id],
-  }),
-}));
 
 export const reactions = pgTable(
   "reactions",
@@ -791,17 +736,6 @@ export const reactions = pgTable(
 export type Reaction = typeof reactions.$inferSelect;
 export type NewReaction = typeof reactions.$inferInsert;
 
-export const reactionRelations = relations(reactions, ({ one }) => ({
-  post: one(posts, {
-    fields: [reactions.postId],
-    references: [posts.id],
-  }),
-  account: one(accounts, {
-    fields: [reactions.accountId],
-    references: [accounts.id],
-  }),
-}));
-
 export const bookmarks = pgTable(
   "bookmarks",
   {
@@ -825,17 +759,6 @@ export const bookmarks = pgTable(
 
 export type Bookmark = typeof bookmarks.$inferSelect;
 export type NewBookmark = typeof bookmarks.$inferInsert;
-
-export const bookmarkRelations = relations(bookmarks, ({ one }) => ({
-  post: one(posts, {
-    fields: [bookmarks.postId],
-    references: [posts.id],
-  }),
-  accountOwner: one(accountOwners, {
-    fields: [bookmarks.accountOwnerId],
-    references: [accountOwners.id],
-  }),
-}));
 
 export const markerTypeEnum = pgEnum("marker_type", ["notifications", "home"]);
 
@@ -861,13 +784,6 @@ export const markers = pgTable(
 export type Marker = typeof markers.$inferSelect;
 export type NewMarker = typeof markers.$inferInsert;
 
-export const markerRelations = relations(markers, ({ one }) => ({
-  accountOwner: one(accountOwners, {
-    fields: [markers.accountOwnerId],
-    references: [accountOwners.id],
-  }),
-}));
-
 export const featuredTags = pgTable(
   "featured_tags",
   {
@@ -884,13 +800,6 @@ export const featuredTags = pgTable(
 
 export type FeaturedTag = typeof featuredTags.$inferSelect;
 export type NewFeaturedTag = typeof featuredTags.$inferInsert;
-
-export const featuredTagRelations = relations(featuredTags, ({ one }) => ({
-  accountOwner: one(accountOwners, {
-    fields: [featuredTags.accountOwnerId],
-    references: [accountOwners.id],
-  }),
-}));
 
 export const listRepliesPolicyEnum = pgEnum("list_replies_policy", [
   "followed",
@@ -920,14 +829,6 @@ export const lists = pgTable("lists", {
 export type List = typeof lists.$inferSelect;
 export type NewList = typeof lists.$inferInsert;
 
-export const listRelations = relations(lists, ({ one, many }) => ({
-  accountOwner: one(accountOwners, {
-    fields: [lists.accountOwnerId],
-    references: [accountOwners.id],
-  }),
-  members: many(listMembers),
-}));
-
 export const listMembers = pgTable(
   "list_members",
   {
@@ -948,17 +849,6 @@ export const listMembers = pgTable(
 
 export type ListMember = typeof listMembers.$inferSelect;
 export type NewListMember = typeof listMembers.$inferInsert;
-
-export const listMemberRelations = relations(listMembers, ({ one }) => ({
-  list: one(lists, {
-    fields: [listMembers.listId],
-    references: [lists.id],
-  }),
-  account: one(accounts, {
-    fields: [listMembers.accountId],
-    references: [accounts.id],
-  }),
-}));
 
 export const mutes = pgTable(
   "mutes",
@@ -990,19 +880,6 @@ export const mutes = pgTable(
 export type Mute = typeof mutes.$inferSelect;
 export type NewMute = typeof mutes.$inferInsert;
 
-export const muteRelations = relations(mutes, ({ one }) => ({
-  account: one(accounts, {
-    fields: [mutes.accountId],
-    references: [accounts.id],
-    relationName: "muter",
-  }),
-  targetAccount: one(accounts, {
-    fields: [mutes.mutedAccountId],
-    references: [accounts.id],
-    relationName: "muted",
-  }),
-}));
-
 export const blocks = pgTable(
   "blocks",
   {
@@ -1027,19 +904,6 @@ export const blocks = pgTable(
 
 export type Block = typeof blocks.$inferSelect;
 export type NewBlock = typeof blocks.$inferInsert;
-
-export const blockRelations = relations(blocks, ({ one }) => ({
-  account: one(accounts, {
-    fields: [blocks.accountId],
-    references: [accounts.id],
-    relationName: "blocker",
-  }),
-  blockedAccount: one(accounts, {
-    fields: [blocks.blockedAccountId],
-    references: [accounts.id],
-    relationName: "blocked",
-  }),
-}));
 
 export const customEmojis = pgTable("custom_emojis", {
   shortcode: text("shortcode").primaryKey(),
@@ -1071,24 +935,13 @@ export const reports = pgTable("reports", {
   // No relationship, we're just storing a set of Post IDs in here:
   posts: uuid("posts")
     .array()
-    .$type<Uuid[]>()
+    .$type<Uuid>()
     .notNull()
     .default(sql`'{}'::uuid[]`),
 });
 
 export type Report = typeof reports.$inferSelect;
 export type NewReport = typeof reports.$inferInsert;
-
-export const reportRelations = relations(reports, ({ one }) => ({
-  account: one(accounts, {
-    fields: [reports.accountId],
-    references: [accounts.id],
-  }),
-  targetAccount: one(accounts, {
-    fields: [reports.targetAccountId],
-    references: [accounts.id],
-  }),
-}));
 
 export const notificationTypeEnum = pgEnum("notification_type", [
   "mention",
@@ -1146,29 +999,6 @@ export const notifications = pgTable(
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
 
-export const notificationRelations = relations(notifications, ({ one }) => ({
-  accountOwner: one(accountOwners, {
-    fields: [notifications.accountOwnerId],
-    references: [accountOwners.id],
-  }),
-  actorAccount: one(accounts, {
-    fields: [notifications.actorAccountId],
-    references: [accounts.id],
-  }),
-  targetPost: one(posts, {
-    fields: [notifications.targetPostId],
-    references: [posts.id],
-  }),
-  targetAccount: one(accounts, {
-    fields: [notifications.targetAccountId],
-    references: [accounts.id],
-  }),
-  targetPoll: one(polls, {
-    fields: [notifications.targetPollId],
-    references: [polls.id],
-  }),
-}));
-
 export const notificationGroups = pgTable(
   "notification_groups",
   {
@@ -1187,7 +1017,7 @@ export const notificationGroups = pgTable(
       .references(() => notifications.id, { onDelete: "cascade" }),
     sampleAccountIds: uuid("sample_account_ids")
       .array()
-      .$type<Uuid[]>()
+      .$type<Uuid>()
       .notNull()
       .default(sql`'{}'::uuid[]`),
     latestPageNotificationAt: timestamp("latest_page_notification_at", {
@@ -1211,24 +1041,6 @@ export const notificationGroups = pgTable(
 export type NotificationGroup = typeof notificationGroups.$inferSelect;
 export type NewNotificationGroup = typeof notificationGroups.$inferInsert;
 
-export const notificationGroupRelations = relations(
-  notificationGroups,
-  ({ one }) => ({
-    accountOwner: one(accountOwners, {
-      fields: [notificationGroups.accountOwnerId],
-      references: [accountOwners.id],
-    }),
-    targetPost: one(posts, {
-      fields: [notificationGroups.targetPostId],
-      references: [posts.id],
-    }),
-    mostRecentNotification: one(notifications, {
-      fields: [notificationGroups.mostRecentNotificationId],
-      references: [notifications.id],
-    }),
-  }),
-);
-
 export const timelinePosts = pgTable(
   "timeline_posts",
   {
@@ -1250,17 +1062,6 @@ export const timelinePosts = pgTable(
 export type TimelinePost = typeof timelinePosts.$inferSelect;
 export type NewTimelinePost = typeof timelinePosts.$inferInsert;
 
-export const timelinePostRelations = relations(timelinePosts, ({ one }) => ({
-  account: one(accountOwners, {
-    fields: [timelinePosts.accountId],
-    references: [accountOwners.id],
-  }),
-  post: one(posts, {
-    fields: [timelinePosts.postId],
-    references: [posts.id],
-  }),
-}));
-
 export const listPosts = pgTable(
   "list_posts",
   {
@@ -1281,17 +1082,6 @@ export const listPosts = pgTable(
 
 export type ListPost = typeof listPosts.$inferSelect;
 export type NewListPost = typeof listPosts.$inferInsert;
-
-export const listPostRelations = relations(listPosts, ({ one }) => ({
-  list: one(lists, {
-    fields: [listPosts.listId],
-    references: [lists.id],
-  }),
-  post: one(posts, {
-    fields: [listPosts.postId],
-    references: [posts.id],
-  }),
-}));
 
 // Import Job Status Enum
 export const importJobStatusEnum = pgEnum("import_job_status", [
@@ -1371,20 +1161,6 @@ export type ImportJobItem = typeof importJobItems.$inferSelect;
 export type NewImportJobItem = typeof importJobItems.$inferInsert;
 
 // Import Job Relations
-export const importJobRelations = relations(importJobs, ({ one, many }) => ({
-  accountOwner: one(accountOwners, {
-    fields: [importJobs.accountOwnerId],
-    references: [accountOwners.id],
-  }),
-  items: many(importJobItems),
-}));
-
-export const importJobItemRelations = relations(importJobItems, ({ one }) => ({
-  job: one(importJobs, {
-    fields: [importJobItems.jobId],
-    references: [importJobs.id],
-  }),
-}));
 
 // Cleanup Job Status Enum
 export const cleanupJobStatusEnum = pgEnum("cleanup_job_status", [
@@ -1453,19 +1229,6 @@ export type CleanupJobItem = typeof cleanupJobItems.$inferSelect;
 export type NewCleanupJobItem = typeof cleanupJobItems.$inferInsert;
 
 // Cleanup Job Relations
-export const cleanupJobRelations = relations(cleanupJobs, ({ many }) => ({
-  items: many(cleanupJobItems),
-}));
-
-export const cleanupJobItemRelations = relations(
-  cleanupJobItems,
-  ({ one }) => ({
-    job: one(cleanupJobs, {
-      fields: [cleanupJobItems.jobId],
-      references: [cleanupJobs.id],
-    }),
-  }),
-);
 
 export const remoteReplyScrapeJobStatusEnum = pgEnum(
   "remote_reply_scrape_job_status",
@@ -1552,13 +1315,3 @@ export const remoteReplyScrapeOrigins = pgTable(
 
 export type RemoteReplyScrapeOrigin =
   typeof remoteReplyScrapeOrigins.$inferSelect;
-
-export const remoteReplyScrapeJobRelations = relations(
-  remoteReplyScrapeJobs,
-  ({ one }) => ({
-    post: one(posts, {
-      fields: [remoteReplyScrapeJobs.postId],
-      references: [posts.id],
-    }),
-  }),
-);

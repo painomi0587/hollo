@@ -6,7 +6,7 @@ template: splash
 hero:
   tagline: >-
     1人用の連合マイクロブログソフトウェア。
-    ActivityPub、Mastodon互換API、CommonMark、Misskeyスタイルの引用をサポート。
+    ActivityPub、Mastodon互換API、CommonMark、FEP-044f準拠の引用をサポート。
   image:
     light: ../../../assets/logo-black.svg
     dark: ../../../assets/logo-white.svg
@@ -55,12 +55,14 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
 
     [CommonMark]: https://commonmark.org/
   </Card>
-  <Card title="Misskeyスタイルの引用" icon="comment">
-    Holloは[Misskey]スタイルの引用機能をサポートしているため、
+  <Card title="引用投稿" icon="comment">
+    Holloは[FEP-044f]準拠の引用機能をサポートしているため、
     他の投稿を引用して自分の投稿に含めることができます。
-    これはMisskey、[Akkoma]、[Fedibird]、[Threads]など、
-    Misskeyスタイルの引用をサポートする他のフェディバースソフトウェアとも互換性があります。
+    MisskeyスタイルとMastodonスタイルの両方の引用形式に対応しており、
+    [Mastodon]、[Misskey]、[Akkoma]、[Fedibird]、[Threads]などと互換性があります。
 
+    [FEP-044f]: https://w3id.org/fep/044f
+    [Mastodon]: https://joinmastodon.org/
     [Misskey]: https://misskey-hub.net/ja/
     [Akkoma]: https://akkoma.social/
     [Fedibird]: https://github.com/fedibird/mastodon

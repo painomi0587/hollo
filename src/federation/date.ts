@@ -1,10 +1,16 @@
-import { Temporal } from "@js-temporal/polyfill";
+import { Temporal as PolyfillTemporal } from "@js-temporal/polyfill";
 
 export function toTemporalInstant(value: Date): Temporal.Instant;
 export function toTemporalInstant(value: null): null;
 export function toTemporalInstant(value: Date | null): Temporal.Instant | null;
 export function toTemporalInstant(value: Date | null): Temporal.Instant | null {
-  return value == null ? null : Temporal.Instant.from(value.toISOString());
+  // Fedify exposes ambient Temporal types, but Node 24 still needs the
+  // polyfill value at runtime.
+  return value == null
+    ? null
+    : (PolyfillTemporal.Instant.from(
+        value.toISOString(),
+      ) as unknown as Temporal.Instant);
 }
 
 export function toDate(value: Temporal.Instant): Date;

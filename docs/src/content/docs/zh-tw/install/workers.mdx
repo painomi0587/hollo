@@ -1,0 +1,312 @@
+---
+title: 分離工作節點
+description: 如何分離執行 Web 和工作節點以獲得更好的可擴展性。
+---
+
+import { Aside, Code, Tabs, TabItem } from '@astrojs/starlight/components';
+
+對於擁有大量追蹤者的高流量實例，您可以透過將 Web 伺服器與後台工作器分離來
+提高效能。這使您能夠根據工作負載獨立擴展每個元件。
+
+
+何時考慮工作器分離
+------------------
+
+在以下情況下，工作器分離是有益的：
+
+ -  您有數千個追蹤者並且活動傳遞緩慢
+ -  您的實例處理大量聯邦流量（大量傳入/傳出的貼文）
+ -  在尖峰活動時間 Web 伺服器回應性下降
+ -  您希望跨多個伺服器進行橫向擴展
+
+<Aside type="note">
+  對於活動量適中的大多數單用戶實例，在單一程序中執行所有內容（預設）
+  完全足夠。工作器分離會增加部署複雜性，僅建議用於高流量場景。
+</Aside>
+
+
+運作原理
+--------
+
+Hollo 由五個主要元件組成：
+
+ 1. *Web 伺服器*：處理 HTTP 請求（API、Web UI）
+ 2. *Fedify 訊息佇列*：處理 ActivityPub inbox/outbox 訊息
+ 3. *匯入工作器*：處理後台資料匯入作業
+ 4. *清理工作器*：處理後台清理作業
+ 5. *遠端回覆抓取工作器*：緩慢抓取遠端回覆集合
+
+預設情況下（`NODE_TYPE=all`），所有五個都在單一程序中執行。
+您可以使用 `NODE_TYPE` 環境變數來分離它們：
+
+| `NODE_TYPE` | Web 伺服器 | Fedify 佇列 | 匯入工作器 | 清理工作器 | 回覆工作器 |
+| ----------- | ---------- | ----------- | ---------- | ---------- | ---------- |
+| `all`（預設） | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `web` | ✓ | ✗ | ✗ | ✗ | ✗ |
+| `worker` | ✗ | ✓ | ✓ | ✓ | ✓ |
+
+所有節點共享相同的 PostgreSQL 資料庫，該資料庫使用 `LISTEN`/`NOTIFY`
+作為訊息佇列後端進行即時訊息傳遞。
+
+
+Docker Compose 設定
+-------------------
+
+以下是執行單獨的 Web 和工作節點的 *compose.yaml* 範例：
+
+```yaml
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hollo
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: hollo
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  web:
+    image: ghcr.io/fedify-dev/hollo:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_TYPE=web
+      - DATABASE_URL=postgresql://hollo:password@db/hollo
+      - SECRET_KEY=${SECRET_KEY}
+      - DRIVE_DISK=fs
+      - FS_STORAGE_PATH=/data/storage
+      - STORAGE_URL_BASE=https://hollo.example.com/assets
+      - BEHIND_PROXY=true
+    volumes:
+      - ./data/storage:/data/storage
+
+  worker:
+    image: ghcr.io/fedify-dev/hollo:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      - NODE_TYPE=worker
+      - DATABASE_URL=postgresql://hollo:password@db/hollo
+      - SECRET_KEY=${SECRET_KEY}
+      - DRIVE_DISK=fs
+      - FS_STORAGE_PATH=/data/storage
+      - STORAGE_URL_BASE=https://hollo.example.com/assets
+    volumes:
+      - ./data/storage:/data/storage
+```
+
+<Aside>
+  - Web 節點和工作節點都需要存取相同的儲存卷
+  - Web 節點在連接埠 3000 上公開；工作節點不需要公開連接埠
+  - 您可以透過新增更多服務來執行多個工作節點
+</Aside>
+
+### 擴展工作器
+
+要執行多個工作節點，請新增更多工作服務：
+
+```yaml
+services:
+  # ... db 和 web 服務 ...
+
+  worker-1:
+    image: ghcr.io/fedify-dev/hollo:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      - NODE_TYPE=worker
+      # ... 其他環境變數 ...
+
+  worker-2:
+    image: ghcr.io/fedify-dev/hollo:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      - NODE_TYPE=worker
+      # ... 其他環境變數 ...
+```
+
+PostgreSQL 的 `LISTEN`/`NOTIFY` 確保每條訊息只由一個工作器處理。
+
+
+手動安裝
+--------
+
+對於手動安裝，您可以使用不同的 `NODE_TYPE` 值執行單獨的程序。
+
+### Web 節點
+
+```bash
+NODE_TYPE=web pnpm prod
+```
+
+這僅在設定的連接埠上啟動 Web 伺服器。
+
+### 工作節點
+
+```bash
+NODE_TYPE=worker pnpm prod
+# 或
+pnpm worker
+```
+
+這將啟動 Fedify 訊息佇列和匯入工作器，但不啟動 Web 伺服器。
+
+<Aside type="caution">
+  當執行 `NODE_TYPE=web` 時，請確保至少有一個 `NODE_TYPE=worker` 節點正在執行。
+  否則，傳入的活動不會被處理，傳出的貼文也不會被傳遞。
+</Aside>
+
+
+Systemd 範例
+------------
+
+如果您使用 systemd，請建立單獨的服務檔案：
+
+### /etc/systemd/system/hollo-web.service
+
+```ini
+[Unit]
+Description=Hollo Web Server
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=hollo
+WorkingDirectory=/opt/hollo
+Environment="NODE_TYPE=web"
+EnvironmentFile=/opt/hollo/.env
+ExecStart=/usr/bin/pnpm prod
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### /etc/systemd/system/hollo-worker.service
+
+```ini
+[Unit]
+Description=Hollo Worker
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=hollo
+WorkingDirectory=/opt/hollo
+Environment="NODE_TYPE=worker"
+EnvironmentFile=/opt/hollo/.env
+ExecStart=/usr/bin/pnpm worker
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+然後啟用並啟動兩個服務：
+
+```bash
+sudo systemctl enable hollo-web hollo-worker
+sudo systemctl start hollo-web hollo-worker
+```
+
+
+監控
+----
+
+### 檢查工作器狀態
+
+對於 Docker Compose：
+
+```bash
+# 查看 Web 節點記錄
+docker compose logs -f web
+
+# 查看工作節點記錄
+docker compose logs -f worker
+```
+
+對於 systemd：
+
+```bash
+# 查看 Web 節點記錄
+sudo journalctl -u hollo-web -f
+
+# 查看工作節點記錄
+sudo journalctl -u hollo-worker -f
+```
+
+### 工作器記錄訊息
+
+當工作節點啟動時，您應該看到：
+
+```
+Worker started (Fedify queue + Import worker + Cleanup worker + Remote reply scrape worker)
+```
+
+觀察有關處理活動、匯入、清理和遠端回覆抓取的訊息，以確認工作器正常執行。
+
+
+故障排除
+--------
+
+### Web 節點運作但活動未被處理
+
+*問題*：您可以存取 Web UI，但傳入的活動（追蹤、按讚、貼文）未被處理。
+
+*解決方案*：確保至少有一個使用 `NODE_TYPE=worker` 的工作節點正在執行。
+
+### 工作節點無法啟動
+
+*問題*：工作節點退出並顯示錯誤。
+
+*解決方案*：檢查：
+
+ -  `DATABASE_URL` 是否正確且資料庫可存取
+ -  資料庫是否已套用最新的資料庫遷移
+ -  儲存設定（`DRIVE_DISK`、`FS_STORAGE_PATH` 等）是否正確
+
+### 活動處理緩慢
+
+*問題*：處理聯邦活動存在延遲。
+
+*解決方案*：新增更多工作節點以並行處理訊息。PostgreSQL 的訊息佇列將在所有可用工作器之間分配工作。
+
+### 儲存存取錯誤
+
+*問題*：工作節點無法存取上傳的檔案。
+
+*解決方案*：確保：
+
+ -  所有節點（Web 和工作器）都可以存取相同的儲存
+ -  對於檔案系統儲存：儲存卷已掛載到所有節點
+ -  對於 S3 儲存：所有節點具有相同的 S3 憑證
+
+
+效能考量
+--------
+
+ -  *Web 節點*：輕量級，可以使用最少的資源執行（512MB-1GB RAM）
+ -  *工作節點*：資源密集型，特別是在高聯邦活動期間（建議 1GB-2GB RAM）
+ -  *資料庫*：由所有節點共享；確保它有足夠的資源
+    （對於繁忙的實例建議 2GB+ RAM）
+ -  *並行數*：每個工作器最多並行處理 10 條訊息
+    （透過 `ParallelMessageQueue` 設定）
+
+
+最佳實踐
+--------
+
+ -  從 `NODE_TYPE=all`（預設）開始，直到遇到效能問題
+ -  監控資源使用情況以確定何時需要分離
+ -  使用 `NODE_TYPE=web` 時至少執行一個專用工作節點
+ -  在 Web 節點前使用反向代理（nginx、Caddy）進行負載均衡
+ -  保持儲存對所有節點可存取（共享卷或 S3）
+ -  監控所有節點的記錄以查找錯誤和效能問題

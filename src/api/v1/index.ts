@@ -1,6 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
 import { Temporal } from "@js-temporal/polyfill";
-import { and, desc, eq, gte, inArray, lt, lte } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -8,18 +7,13 @@ import { db } from "../../db";
 import { serializeAccount } from "../../entities/account";
 import { getPostRelations, serializePost } from "../../entities/status";
 import { serializeTag } from "../../entities/tag";
+import { proxyUrl } from "../../media-proxy";
 import {
   scopeRequired,
   tokenRequired,
-  type Variables,
+  withAccountOwner,
+  type AccountOwnerVariables,
 } from "../../oauth/middleware";
-import {
-  accounts as accountsTable,
-  blocks,
-  bookmarks,
-  likes,
-  mutes,
-} from "../../schema";
 import { uuid } from "../../uuid";
 import accounts from "./accounts";
 import apps from "./apps";
@@ -36,7 +30,7 @@ import statuses from "./statuses";
 import tags from "./tags";
 import timelines from "./timelines";
 
-const app = new Hono<{ Variables: Variables }>();
+const app = new Hono<{ Variables: AccountOwnerVariables }>();
 
 app.route("/apps", apps);
 app.route("/accounts", accounts);
@@ -57,14 +51,9 @@ app.get(
   "/preferences",
   tokenRequired,
   scopeRequired(["read:accounts"]),
+  withAccountOwner,
   (c) => {
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     return c.json({
       "posting:default:visibility": owner.visibility,
       "posting:default:sensitive": owner.account.sensitive,
@@ -77,14 +66,21 @@ app.get(
 
 app.get("/custom_emojis", async (c) => {
   const emojis = await db.query.customEmojis.findMany();
+  const baseUrl = c.req.url;
   return c.json(
-    emojis.map((emoji) => ({
-      shortcode: emoji.shortcode,
-      url: emoji.url,
-      static_url: emoji.url,
-      visible_in_picker: true,
-      category: emoji.category,
-    })),
+    emojis.flatMap((emoji) => {
+      const url = proxyUrl(emoji.url, baseUrl);
+      if (url == null) return [];
+      return [
+        {
+          shortcode: emoji.shortcode,
+          url,
+          static_url: url,
+          visible_in_picker: true,
+          category: emoji.category,
+        },
+      ];
+    }),
   );
 });
 
@@ -123,6 +119,7 @@ app.get(
   "/favourites",
   tokenRequired,
   scopeRequired(["read:favourites"]),
+  withAccountOwner,
   zValidator(
     "query",
     z.object({
@@ -134,25 +131,22 @@ app.get(
     }),
   ),
   async (c) => {
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const query = c.req.valid("query");
     const favourites = await db.query.likes.findMany({
-      where: and(
-        eq(likes.accountId, owner.id),
-        query.before == null
-          ? undefined
-          : lt(likes.created, new Date(query.before)),
-      ),
+      where: {
+        RAW: (likes, { and, eq, lt }) =>
+          and(
+            eq(likes.accountId, owner.id),
+            query.before == null
+              ? undefined
+              : lt(likes.created, new Date(query.before)),
+          )!,
+      },
       with: {
         post: { with: getPostRelations(owner.id) },
       },
-      orderBy: [desc(likes.created)],
+      orderBy: (likes, { desc }) => [desc(likes.created)],
       limit: query.limit,
     });
     return c.json(
@@ -178,6 +172,7 @@ app.get(
   "/bookmarks",
   tokenRequired,
   scopeRequired(["read:bookmarks"]),
+  withAccountOwner,
   zValidator(
     "query",
     z.object({
@@ -189,25 +184,22 @@ app.get(
     }),
   ),
   async (c) => {
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const query = c.req.valid("query");
     const bookmarkList = await db.query.bookmarks.findMany({
-      where: and(
-        eq(bookmarks.accountOwnerId, owner.id),
-        query.before == null
-          ? undefined
-          : lt(bookmarks.created, new Date(query.before)),
-      ),
+      where: {
+        RAW: (bookmarks, { and, eq, lt }) =>
+          and(
+            eq(bookmarks.accountOwnerId, owner.id),
+            query.before == null
+              ? undefined
+              : lt(bookmarks.created, new Date(query.before)),
+          )!,
+      },
       with: {
         post: { with: getPostRelations(owner.id) },
       },
-      orderBy: [desc(bookmarks.created)],
+      orderBy: (bookmarks, { desc }) => [desc(bookmarks.created)],
       limit: query.limit,
     });
     return c.json(
@@ -233,14 +225,9 @@ app.get(
   "/followed_tags",
   tokenRequired,
   scopeRequired(["read:follows"]),
+  withAccountOwner,
   (c) => {
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     return c.json(
       owner.followedTags.map((tag) => serializeTag(tag, owner, c.req.url)),
     );
@@ -251,6 +238,7 @@ app.get(
   "/mutes",
   tokenRequired,
   scopeRequired(["read:mutes"]),
+  withAccountOwner,
   zValidator(
     "query",
     z.object({
@@ -266,16 +254,10 @@ app.get(
     }),
   ),
   async (c) => {
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
 
     const muteList = await db.query.mutes.findMany({
-      where: eq(mutes.accountId, owner.id),
+      where: { accountId: { eq: owner.id } },
     });
 
     if (muteList.length < 1) return c.json([]);
@@ -283,18 +265,23 @@ app.get(
     const query = c.req.valid("query");
 
     const mutedAccounts = await db.query.accounts.findMany({
-      where: and(
-        inArray(
-          accountsTable.id,
-          muteList.map((m) => m.mutedAccountId),
-        ),
-        query.max_id == null ? undefined : lte(accountsTable.id, query.max_id),
-        query.since_id == null
-          ? undefined
-          : gte(accountsTable.id, query.since_id),
-      ),
+      where: {
+        RAW: (accountsTable, { and, gte, inArray, lte }) =>
+          and(
+            inArray(
+              accountsTable.id,
+              muteList.map((m) => m.mutedAccountId),
+            ),
+            query.max_id == null
+              ? undefined
+              : lte(accountsTable.id, query.max_id),
+            query.since_id == null
+              ? undefined
+              : gte(accountsTable.id, query.since_id),
+          )!,
+      },
       with: { owner: true, successor: true },
-      orderBy: [desc(accountsTable.id)],
+      orderBy: (accountsTable, { desc }) => [desc(accountsTable.id)],
       limit: query.limit ?? 40,
     });
 
@@ -306,6 +293,7 @@ app.get(
   "/blocks",
   tokenRequired,
   scopeRequired(["read:blocks"]),
+  withAccountOwner,
   zValidator(
     "query",
     z.object({
@@ -320,21 +308,18 @@ app.get(
     }),
   ),
   async (c) => {
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
 
     const query = c.req.valid("query");
     const blockList = await db.query.blocks.findMany({
-      where: and(
-        eq(blocks.accountId, owner.id),
-        query.until == null ? undefined : lte(blocks.created, query.until),
-      ),
-      orderBy: desc(blocks.created),
+      where: {
+        RAW: (blocks, { and, eq, lte }) =>
+          and(
+            eq(blocks.accountId, owner.id),
+            query.until == null ? undefined : lte(blocks.created, query.until),
+          )!,
+      },
+      orderBy: (blocks, { desc }) => [desc(blocks.created)],
       limit: query.limit + 1,
       with: {
         blockedAccount: { with: { owner: true, successor: true } },
