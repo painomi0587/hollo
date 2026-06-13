@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.9.5
 -------------
 
-To be released.
+Released on June 13, 2026.
 
  -  Fixed a bug where expired poll notifications appeared in
     `/api/v1/notifications` but not in the grouped
