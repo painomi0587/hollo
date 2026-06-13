@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Account } from "../schema";
 import {
   isActorStale,
-  REMOTE_ACTOR_STALENESS_DAYS,
   refreshActorIfStale,
+  REMOTE_ACTOR_STALENESS_DAYS,
 } from "./account";
 
 // Create a minimal mock account for testing

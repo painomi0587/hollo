@@ -1,6 +1,593 @@
 Hollo changelog
 ===============
 
+Version 0.9.4
+-------------
+
+Released on June 4, 2026.
+
+ -  Upgraded Fedify to 2.2.4 to address a security vulnerability in SSRF
+    mitigation.  [[CVE-2026-50131]]
+
+
+Version 0.9.3
+-------------
+
+Released on June 3, 2026.
+
+ -  Fixed a bug where some remote accounts' custom profile fields were rendered
+    as per-character entries (field names `0`, `1`, `2`, … with one character
+    of HTML in each value) in Mastodon API responses and on profile pages.
+    The affected rows had their `field_htmls` (and potentially `emojis` or
+    `fields`) stored as double-encoded JSON *strings* by an older Drizzle ORM
+    version; a data migration repairs them, and new `CHECK` constraints
+    enforce that these columns always hold JSON objects.  [[#504]]
+
+[#504]: https://github.com/fedify-dev/hollo/issues/504
+
+
+Version 0.9.2
+-------------
+
+Released on May 25, 2026.
+
+ -  Fixed a bug where the media proxy returned `404 Not Found` for remote media
+    whose upstream server labeled the payload as `application/octet-stream` or
+    `binary/octet-stream` even though the bytes were valid image, video,
+    or audio data.  The proxy now sniffs magic bytes to recover the real
+    MIME type in these cases.  [[#498]]
+
+[#498]: https://github.com/fedify-dev/hollo/issues/498
+
+
+Version 0.9.1
+-------------
+
+Released on May 21, 2026.
+
+ -  Upgraded Fedify to 2.2.3 to fix a security vulnerability in Linked Data
+    Signature verification that could allow certain signed activities to be
+    interpreted differently than intended.  [[CVE-2026-42462]]
+
+[CVE-2026-42462]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-9rfg-v8g9-9367
+
+
+Version 0.9.0
+-------------
+
+Released on May 20, 2026.
+
+ -  Upgraded Drizzle ORM to 1.0.0-rc.2 and migrated Hollo's relational
+    query definitions to the new relations API.  This has no intended
+    user-facing behavior changes, but the first migration after upgrading
+    may need one extra database permission check.  Drizzle 1 upgrades its
+    own migration log table, `drizzle.__drizzle_migrations`, by adding
+    `name` and `applied_at` columns.  PostgreSQL only allows that `ALTER TABLE`
+    when the migration is run by the table owner.
+
+    If `pnpm run migrate` fails with
+    `must be owner of table __drizzle_migrations`, first check which role
+    owns Drizzle's migration log table:
+
+    ~~~~ sql
+    SELECT
+      n.nspname AS schema,
+      c.relname AS table_name,
+      pg_get_userbyid(c.relowner) AS owner
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'drizzle'
+      AND c.relname = '__drizzle_migrations';
+    ~~~~
+
+    If the owner is not the same role Hollo uses in `DATABASE_URL`, run
+    the following SQL as the current table owner or a database admin,
+    replacing `hollo` with your Hollo database user:
+
+    ~~~~ sql
+    ALTER SCHEMA drizzle OWNER TO hollo;
+    ALTER TABLE drizzle.__drizzle_migrations OWNER TO hollo;
+    ALTER SEQUENCE IF EXISTS drizzle.__drizzle_migrations_id_seq
+      OWNER TO hollo;
+    ~~~~
+
+    Then run `pnpm run migrate` again with Hollo's normal `DATABASE_URL`.
+    If your database provider does not allow ownership transfers, run this
+    one migration once with the database role that already owns
+    `drizzle.__drizzle_migrations`.
+
+ -  Cancel running PostgreSQL queries when the corresponding `GET` or `HEAD`
+    request is aborted, such as when a client disconnects or quickly switches
+    away from a timeline column.  Hollo now tracks the underlying postgres.js
+    query handles used by Drizzle and calls PostgreSQL cancellation for
+    in-flight queries tied to the aborted read-only request.  This reduces
+    wasted database work and helps keep the connection pool available under
+    repeated client-side aborts.  The existing `statement_timeout`
+    recommendation remains useful as a backstop for queries that cannot be tied
+    to a safe HTTP request.
+
+ -  Added passkey (WebAuthn) authentication.  The admin *Auth* page now
+    has a “Passkeys” section for enrolling and managing passkeys, and
+    the public login page presents a “Sign in with passkey” button
+    (with the email/password form tucked behind a toggle) whenever at
+    least one passkey is enrolled.  Both device-bound and synced
+    (multi-device) passkeys are accepted.  A passkey on its own counts
+    as multi-factor authentication, so a successful passkey sign-in is
+    accepted in place of the TOTP step — the user is not asked for a
+    one-time code in the same session.
+
+    Hollo uses the *@simplewebauthn/server* library for verification
+    and ships the matching browser helper as a static asset linked
+    only from the auth and login pages.  Registration uses
+    `residentKey: required` and `userVerification: required`, so every
+    enrolled passkey is discoverable and tied to a biometric or PIN
+    gesture.  Registration challenges are bound to the current login
+    session with a server-enforced 5-minute TTL, and login challenges
+    are stored in a single-use `passkey_login_challenges` table so a
+    captured cookie + assertion pair can be redeemed at most once.  [[#487]]
+
+ -  Added optional split-domain WebFinger support.  When the new
+    `HANDLE_HOST` and `WEB_ORIGIN` environment variables are set,
+    Hollo uses Fedify's `origin` configuration so that fediverse
+    handles (e.g. `@alice@example.com`) and ActivityPub actor URIs
+    (e.g. `https://ap.example.com/@alice`) can live on different
+    domains.  The Mastodon-compatible `/api/v1/instance` and
+    `/api/v2/instance` endpoints expose `HANDLE_HOST` as the instance
+    domain when this is configured, so clients display the correct
+    `@user@HANDLE_HOST` handle.  Both variables must be set together;
+    setting only one is a startup error.  They must be configured
+    *before* the first account is created — changing the handle
+    domain after federation has begun breaks remote follow
+    relationships; on startup Hollo logs a warning when the
+    configured `HANDLE_HOST` does not match the existing account's
+    stored handle.  Operators must also configure their reverse
+    proxy on the handle domain to redirect `/.well-known/webfinger`
+    to `WEB_ORIGIN`.  See the [Split-domain WebFinger guide].  [[#161], [#484]]
+
+ -  Added a media proxy that re-serves remote avatars, headers, post
+    attachments, custom emojis, and preview-card images from Hollo's own
+    origin.  This sidesteps CORS configurations on remote object stores
+    and prevents the visitor's browser from talking directly to the
+    source server.  Controlled by a new `MEDIA_PROXY` environment
+    variable with three levels:  [[#481], [#483], [#493]]
+
+     -  `off` (default): the Mastodon API and web UI hand the original
+        remote URL to clients, matching the historical behaviour.
+     -  `proxy`: every remote media URL is rewritten to a signed
+        `/proxy/<sig>/<b64url>` path served by Hollo itself.  The proxy
+        runs SSRF checks on the upstream URL and on every redirect
+        target, allows only image/video/audio Content-Types (image/svg+xml
+        is explicitly blocked to avoid same-origin XSS), caps the body at
+        32 MiB, and serves the response with
+        `Cache-Control: public, max-age=2592000, immutable` and
+        `X-Content-Type-Options: nosniff`.  No on-disk cache.
+     -  `cache`: same URL rewriting, but the streamed body is persisted
+        to the configured storage backend as `proxy/<sha256>.bin`, with
+        a content-type sidecar alongside it at `proxy/<sha256>.json`.
+        Subsequent requests skip the upstream fetch.  Remote actor avatars
+        for accounts with an approved follow relationship to the local
+        account are also prefetched into this same cache when the actor is
+        stored or refreshed, so stale upstream avatar files can keep
+        rendering after Hollo has seen them once.  The admin dashboard at
+        */thumbnail\_cleanup* can purge the cache on demand.
+
+    `MEDIA_PROXY` also accepts the Boolean synonyms `true`/`on`/`1`
+    (as aliases for `proxy`) and `false`/`off`/`0` (as aliases for
+    `off`).  Disk caching is opt-in only via the explicit `cache`
+    value.
+
+    Outbound federation is unaffected: Hollo still publishes the
+    original remote URLs in ActivityPub `icon`, `image`, `attachment`,
+    and emoji `Tag` references.
+
+ -  Added a `REMOTE_MEDIA_THUMBNAILS` environment variable that controls
+    whether Hollo downloads incoming remote attachments to generate a
+    local WebP thumbnail.  Set to `off` to skip the upstream fetch and
+    Sharp pipeline entirely, storing the remote URL itself as the
+    thumbnail URL—useful in combination with `MEDIA_PROXY=proxy` or
+    `cache` to free up the disk space the local thumbnails would
+    otherwise occupy.  Defaults to `on` (the historical behavior).
+    [[#481], [#483]]
+
+ -  Added [FEP-044f] quote authorization and policy support on top of the
+    Mastodon-compatible quote APIs.  [[#457], [#459], [#460]]
+
+     -  Added persistent quote states for `pending`, `accepted`, `rejected`,
+        `revoked`, and `unauthorized` quotes, plus quote target and
+        authorization IRIs for federation.
+     -  Hollo now enforces quote policy, quote target visibility, block
+        relationships, follower-only quote permissions, and direct-message
+        mention requirements when creating a quote through
+        `POST /api/v1/statuses`.  Remote public posts without an advertised
+        FEP-044f quote policy are treated as legacy quote targets and can be
+        quoted without waiting for quote authorization.
+     -  Implemented `quote_approval_policy` handling on status creation and
+        editing, and added `PUT /api/v1/statuses/:id/interaction_policy` for
+        updating a status' quote policy after publication.
+     -  `quotes_count` now includes only accepted quotes and is updated when
+        quotes are accepted, rejected, revoked, created, deleted, or received
+        through federation.
+     -  `GET /api/v1/statuses/:id/quotes` now lists only accepted quotes, and
+        quote revocation keeps quote target metadata while removing the quote
+        from accepted quote lists and counts.
+     -  Published outbound FEP-044f `quote`, `quoteAuthorization`, and
+        `interactionPolicy.canQuote` properties on ActivityPub objects, while
+        keeping the legacy `quoteUrl` property for compatibility.
+     -  Parsed inbound FEP-044f `quote` targets and quote approval policies
+        from remote objects, including support for the legacy `quoteUrl`
+        property.
+     -  Added federation handling for `QuoteRequest`, `Accept(QuoteRequest)`,
+        `Reject(QuoteRequest)`, and `Delete(QuoteAuthorization)`, allowing
+        Hollo to request quote authorization from remote servers, accept or
+        reject incoming quote requests, and revoke quotes when a remote quote
+        authorization is deleted.
+     -  Added dereferenceable local `QuoteAuthorization` ActivityPub objects
+        for accepted quotes.
+
+ -  Added custom field editing to the admin account creation and editing
+    forms, allowing up to 10 label–value pairs per profile (beyond
+    Mastodon's limit of 4).  Field values support Markdown and mention
+    syntax.  The Mastodon-compatible
+    `PATCH /api/v1/accounts/ update_credentials` endpoint now also accepts up
+    to 10 custom fields via `fields_attributes[0]` through
+    `fields_attributes[9]`.
+
+ -  Added `LOG_FILE_FORMAT` environment variable to control the format of the
+    log file set by `LOG_FILE`.  Valid values are `jsonl` (the default, JSON
+    Lines format) and `logfmt` ([logfmt] format).
+
+ -  Fixed preview card generation for remote posts whose content only links to
+    mentioned accounts.  Hollo now excludes ActivityPub `Mention` targets from
+    remote preview-card link detection even when the source server, such as
+    NodeBB, emits plain profile links in the post HTML instead of links marked
+    with a `mention` class.
+
+ -  Fixed a bug in `PATCH /api/v1/accounts/update_credentials` where
+    submitting any credential update (e.g. `display_name`) without
+    `fields_attributes` would silently wipe all existing custom profile
+    fields from the public profile, API responses, and federation output.
+
+ -  Added an ActivityPub `quote-inline` fallback to the `content` of explicit
+    quote posts created through the Mastodon API.  Software that does not
+    support quote posts can now still show the quoted post permalink, while
+    quote-aware software can hide the fallback paragraph by class name.
+
+ -  Hid incoming `quote-inline` fallback paragraphs from Mastodon API status
+    content and profile pages when Hollo can render the structured quoted
+    post.  If the quoted post is unavailable, the fallback link remains
+    visible so the quoted URL is not lost.
+
+ -  Posts on the public profile and hashtag pages now render Open Graph link
+    previews—a thumbnail (when `og:image` is set), the host name, the page
+    title, and a short description—for each post that has a stored
+    `preview_card`.  Posts with attached media or shown as quoted posts hide
+    the preview to avoid visual clutter.  [[#458]]
+
+ -  Refreshed the entire server-rendered front-end.  Hollo replaces Pico CSS
+    with a new design system documented in _DESIGN.md_ and styled through
+    UnoCSS (Wind4, Icons, Typography, and Web Fonts presets).  [[#458]]
+
+     -  The design language is achromatic by default; each account owner's
+        *theme color* tints the profile, post, hashtag, and owner-specific
+        dashboard pages through `--theme-50` through `--theme-950` CSS
+        variables injected on `<html>`.
+     -  Web Fonts are loaded from bunny.net: Inter for Latin, Noto Sans
+        KR/JP/SC for CJK, and JetBrains Mono for code.  Lucide icons
+        replace ad-hoc iconography.
+     -  Every public and dashboard page was rebuilt: login, setup, OTP, the
+        public home, account profiles, single post permalinks, the hashtag
+        stream, the account list and editor, custom emojis, federation,
+        thumbnail cleanup, the OAuth consent screen, and the dashboard
+        auth (2FA) panel.
+     -  Posts render their bodies as `prose` markdown with brand-colored
+        links, attached media as a two-column grid, polls as brand-tinted
+        bars, quoted posts as an inset card, and link previews as a
+        media-object card.  The single-post permalink page additionally
+        enlarges the focal post.
+     -  Forms share a small set of primitives (`Field`, `TextField`,
+        `TextareaField`, `SelectField`, `CheckboxField`, `FieldSection`,
+        and `SubmitButton`) that the auth, account, emoji, federation,
+        thumbnail cleanup, and migrate forms all use.  The theme color
+        picker on the account form is a 20-swatch grid; the username
+        field is bracketed by `@` and `@host` chips so the resulting
+        fediverse handle is obvious.
+     -  Dark mode follows `prefers-color-scheme: dark` automatically, with
+        primary buttons stepping from `brand-600` to `brand-700` so they
+        don't dominate dark surfaces.  Text selection adopts the active
+        brand color.
+     -  Hollo's logos are self-hosted from `/public/` instead of being
+        fetched from jsDelivr.  The 22 Pico-generated _\*.min.css_ files
+        are removed; UnoCSS emits a single _src/public/uno.css_ whose
+        URL is cache-busted by file mtime.
+
+ -  Added public *Followers* and *Following* pages on profile screens, with
+    pagination (100 entries per page) and a substring search filter over
+    display name and handle.  The followers list is always public.  The
+    following list is gated by a new per-account setting, *Make following
+    list public* (off by default); when off, the page returns *404 Not
+    Found*, the corresponding ActivityPub `following` collection is hidden
+    from federation, and the Mastodon-compatible
+    `GET /api/v1/accounts/:id/following` endpoint returns an empty array.
+    The toggle also round-trips through `PATCH update_credentials` as
+    `hide_collections`. [[#491]]
+
+ -  Added public reaction list pages anchored to each local post:
+    `/@:handle/:id/likes` lists the accounts that liked the post,
+    `/@:handle/:id/shares` lists the accounts that boosted it,
+    `/@:handle/:id/reactions/:emoji` lists the accounts that reacted with
+    a specific emoji, and `/@:handle/:id/quotes` lists the posts that
+    quote it.  Each page features the original post above the list.  On
+    the profile feed and post permalink page, the per-post like, share,
+    quote, and reaction-emoji indicators now link into these pages for
+    local posts; remote posts continue to display the counts as plain
+    text.  [[#490]]
+
+ -  Added avatar and header image upload to the admin account creation and
+    editing forms, with drag-and-drop support and in-page image preview.
+    Files are stored using the same storage backend as the Mastodon-compatible
+    API (`PATCH /api/v1/accounts/update_credentials`).
+
+ -  Search queries on account handles, names, and post content now use
+    PostgreSQL trigram indexes via the *pg\_trgm* extension, improving
+    `ILIKE` search performance.  The `pg_trgm` extension is enabled
+    automatically when the migration is applied.
+
+ -  Fixed a performance bug on the account edit page where saving an account
+    always triggered a network lookup of [@hollo@hollo.social] regardless of
+    whether the “Receive Hollo news” setting had actually changed.  The lookup
+    now only happens when the news-following state genuinely changes.
+
+ -  Improved the performance of authenticated API requests by replacing the
+    complex multi-table JOIN query in the `tokenRequired` middleware with a
+    lightweight single-table lookup.  Account owner data is now fetched on
+    demand only by routes that actually need it, and requests that fail scope
+    validation no longer touch the accounts table at all.  [[#127], [#467]]
+
+ -  Fixed a bug where incoming ActivityPub posts with timestamps more than
+    12 hours in the future were accepted and stuck to the top of the
+    federated timeline, enabling timeline manipulation via forged timestamps.
+    Such posts are now silently ignored.  [[#67], [#466]]
+
+ -  Fixed a crash when persisting ActivityPub posts with a `published` date
+    before the Unix epoch (January 1, 1970), which caused `uuidv7()` to
+    receive a negative timestamp.  [[#67], [#466]]
+
+ -  Fixed `min_id` handling on `GET /api/v1/timelines/public`,
+    `GET /api/v1/timelines/home`, `GET /api/v1/timelines/list/:list_id`, and
+    `GET /api/v1/timelines/tag/:hashtag` to follow Mastodon's pagination
+    semantics: `min_id` now returns the posts *immediately* newer than the
+    cursor (rather than the most recent posts above it), so gap-loading
+    clients such as SubwayTooter can converge on arbitrarily large gaps.
+    `since_id` is now honoured on these endpoints as well, and `min_id`
+    takes precedence when both are supplied.  Timeline responses also
+    include a `rel="prev"` entry in the `Link` header alongside the existing
+    `rel="next"` entry, and keep `rel="next"` even when a bounded gap page
+    returns fewer statuses than the requested `limit`, so clients no longer
+    have to guess which cursor parameter to use or stop walking partial gaps.
+    [[#479], [#482], [#492]]
+
+ -  Optimized Mastodon-compatible timeline loading after the Drizzle ORM
+    upgrade.  Home, list, public, and hashtag timelines now use a smaller
+    relation graph that avoids fetching columns and nested relations that are
+    not needed for timeline status serialization.  They also fetch matching
+    post IDs first, then hydrate only those posts with the timeline status
+    projection, so empty cursor checks and heavily filtered timelines avoid
+    running the relation-heavy query at all.  The ID selection and hydration
+    run in the same read-only repeatable-read snapshot, preserving timeline
+    eligibility consistency while reducing the size and cost of the SQL
+    generated for large timelines, especially list timelines on instances
+    with many stored posts, without changing the API response format.  Timeline
+    `limit` query parameters are now capped at 1000 to keep these queries
+    bounded even when clients request unusually large pages.
+
+ -  Fixed a performance bug that caused profile page queries to take
+    hundreds of seconds on a cold PostgreSQL buffer cache and trigger a
+    thundering herd that exhausted the connection pool.  Two root
+    causes:  [[#489]]
+
+     -  `posts.actor_id` had no composite index with `published`, so
+        timeline queries that `ORDER BY published DESC` performed a
+        full sort of all matching rows.  A B-tree index on
+        `(actor_id, published)` is now created by migration.
+     -  Every API response that fetches a list of posts used a lateral
+        join to eagerly load all direct replies for each post, even
+        though only the denormalized `replies_count` counter is actually
+        used in the Mastodon API serialization.  The lateral join is
+        removed from all list-context queries (`getPostRelations`,
+        timelines, notifications, outbox, etc.).  The ActivityPub
+        object serializer now also uses `replies_count` for the
+        `replies` collection `totalItems` instead of reloading every
+        reply.  Single-post views (the public post permalink page) still
+        fetch replies but are now capped at 20 per request.
+
+ -  Fixed a performance bug where the NodeInfo endpoint performed a
+    sequential scan of the entire `posts` table on every request because
+    `posts.updated` had no index.  On large instances (e.g. 4 M rows /
+    13 GB) this took 15–20 seconds per query; since NodeInfo is polled
+    frequently (Caddy health checks, remote servers), the slow queries
+    piled up and could exhaust the connection pool.  A B-tree index on
+    `posts.updated` is now created by migration.  [[#488]]
+
+ -  Further optimized the NodeInfo endpoint with three changes that
+    together reduce a previously 42-second query to a handful of
+    milliseconds:
+
+     -  Rewrote the `activeMonth` and `activeHalfyear` queries from
+        a `RIGHT JOIN` + `countDistinct` (full scan of all posts) to
+        an `EXISTS` semi-join that performs at most one index lookup
+        per local account owner.
+     -  Added a composite B-tree index on `(actor_id, updated)` to
+        support the `EXISTS` subquery without heap fetches.
+     -  Added a 5-minute in-process TTL cache on the NodeInfo
+        dispatcher so repeated polls by external directories and
+        health checkers no longer hit the database at all.
+
+ -  Optimized the `GET /api/v2/instance` endpoint.  The `languages` field was
+    previously computed by a full scan of the `posts` table on every request.
+    A new partial composite index `posts_actor_id_language_index` on
+    `(actor_id, language) WHERE language IS NOT NULL` turns this into an
+    Index-Only Scan, and a 5-minute in-process response cache absorbs
+    repeated calls so the database is queried at most once per 5 minutes.
+
+ -  Improved hashtag timeline and featured tag performance by adding a GIN
+    index on `posts.tags`.  All `?` and `?|` operator lookups on the tags
+    column (hashtag timeline, featured tag counts, profile hashtag filters,
+    and tag pages) previously caused a full sequential scan of the 4 M+ row
+    `posts` table, taking several seconds even on a warm cache.  The new
+    index cuts these to index lookups.
+
+ -  The `TIMELINE_INBOXES` feature flag, introduced in Hollo 0.4.0, now
+    defaults to `true`.  Set it to `false` explicitly to opt out.  The flag
+    will be removed entirely in Hollo 1.0.0, when timeline inbox mode will
+    be the only supported behavior.
+
+ -  Upgraded Fedify to 2.2.2.
+
+ -  Added Traditional Chinese (繁體中文; `zh-TW`) documentation.
+
+[Split-domain WebFinger guide]: https://docs.hollo.social/install/split-domain/
+[FEP-044f]: https://w3id.org/fep/044f
+[logfmt]: https://brandur.org/logfmt
+[@hollo@hollo.social]: https://hollo.social/@hollo
+[#67]: https://github.com/fedify-dev/hollo/issues/67
+[#127]: https://github.com/fedify-dev/hollo/issues/127
+[#161]: https://github.com/fedify-dev/hollo/issues/161
+[#457]: https://github.com/fedify-dev/hollo/pull/457
+[#458]: https://github.com/fedify-dev/hollo/pull/458
+[#459]: https://github.com/fedify-dev/hollo/pull/459
+[#460]: https://github.com/fedify-dev/hollo/pull/460
+[#466]: https://github.com/fedify-dev/hollo/pull/466
+[#467]: https://github.com/fedify-dev/hollo/pull/467
+[#479]: https://github.com/fedify-dev/hollo/issues/479
+[#481]: https://github.com/fedify-dev/hollo/issues/481
+[#482]: https://github.com/fedify-dev/hollo/pull/482
+[#483]: https://github.com/fedify-dev/hollo/pull/483
+[#484]: https://github.com/fedify-dev/hollo/pull/484
+[#487]: https://github.com/fedify-dev/hollo/pull/487
+[#488]: https://github.com/fedify-dev/hollo/issues/488
+[#489]: https://github.com/fedify-dev/hollo/issues/489
+[#490]: https://github.com/fedify-dev/hollo/pull/490
+[#491]: https://github.com/fedify-dev/hollo/pull/491
+[#492]: https://github.com/fedify-dev/hollo/issues/492
+[#493]: https://github.com/fedify-dev/hollo/pull/493
+
+
+Version 0.8.7
+-------------
+
+Released on June 4, 2026.
+
+ -  Upgraded Fedify to 2.1.15 to address a security vulnerability in SSRF
+    mitigation.  [[CVE-2026-50131]]
+
+
+Version 0.8.6
+-------------
+
+Released on May 21, 2026.
+
+ -  Upgraded Fedify to 2.1.14 to fix a security vulnerability in Linked Data
+    Signature verification that could allow certain signed activities to be
+    interpreted differently than intended.  [[CVE-2026-42462]]
+
+
+Version 0.8.5
+-------------
+
+Released on May 19, 2026.
+
+ -  Fixed a security vulnerability where any federated actor could send a
+    `Delete` activity to remove cached remote posts authored by any other
+    actor, because the inbox handler matched only on the post IRI without
+    verifying the deleter's identity.  `Delete` activities are now ignored
+    unless the actor's origin matches the post author's origin.
+
+ -  Fixed a security vulnerability where an `Update` activity could overwrite
+    or first-materialize a remote post under another instance's authority.
+    The inbox handler now refuses an `Update` whose actor origin does not
+    match the embedded object's `id` origin.
+
+ -  Fixed a security vulnerability where an `Announce` activity from a
+    different origin than the announced object could first-materialize a
+    cached post from attacker-controlled embedded content, masquerading
+    as another actor's post.  Cross-origin announces of previously unknown
+    objects are now re-fetched from the canonical URL before being
+    persisted, and the embedded body is no longer trusted to overwrite a
+    post that is already known locally.
+
+    As a deliberate trade-off, a cross-origin `Announce` of a previously
+    unknown post is dropped when the canonical origin is unreachable
+    (down, rate-limiting, or rejecting Hollo's signed fetch).  Honoring
+    the embedded body in that case would re-introduce the masquerade
+    vector that this change closes—an attacker can always craft an
+    embedded object whose `id` and `attributedTo` agree on a victim
+    origin, so the only safe source for the canonical content is the
+    canonical origin itself.  In practice this affects relay-mediated
+    boosts and cross-instance reposts when the source instance is
+    temporarily offline; locally cached posts and same-origin announces
+    are unaffected.
+
+ -  The login and OTP session cookies are now set with `HttpOnly`,
+    `SameSite=Lax`, and (over HTTPS) `Secure`.  Previously these cookies
+    were set without explicit attributes, so a single reflected XSS could
+    exfiltrate the session and cross-site POSTs could forge admin
+    actions.
+
+ -  Hono's CSRF middleware is now applied to every cookie-authenticated
+    web route (`/login`, `/login/otp`, `/logout`, `/setup`, `/auth`,
+    `/accounts`, `/emojis`, `/federation`) and to `POST /oauth/authorize`.
+    Without this, a malicious page could submit a hidden cross-site form
+    to trigger state-changing actions (disable 2FA, delete an account,
+    silently authorize an OAuth app, etc.) on behalf of a logged-in
+    admin.  `/oauth/token`, `/oauth/revoke`, `/oauth/userinfo`, and the
+    `/api/*` namespace continue to authenticate with client credentials
+    or bearer tokens and are intentionally not affected.
+
+ -  The application error handler now returns the response carried by
+    `HTTPException` instead of rethrowing it as a generic 500.  Without
+    this, middleware that signals refusal by throwing
+    `HTTPException(403, …)` (the new CSRF middleware, among others)
+    would have surfaced as opaque 500 responses to clients.
+
+ -  Incoming `Follow`, `Like`, `EmojiReact`, and `Announce` activities
+    from a blocked actor are now silently dropped.  Previously a block
+    only flipped auto-approval on incoming follow requests and did
+    nothing for protected accounts, likes, reactions, or
+    announcements—a blocker still saw notifications and timeline
+    entries from the actor they had blocked.
+
+ -  Pinned the transitive `fast-xml-parser` dependency (carried in via
+    the AWS SDK that backs S3 storage) using `pnpm.overrides`.  v4
+    consumers now resolve to `^4.5.5` (fixing the critical entity-
+    encoding bypass and several high-severity parser issues) and v5
+    consumers resolve to `^5.7.0`.  Each AWS SDK is kept on its
+    expected major version to preserve API compatibility; the single
+    remaining “XMLBuilder unescaped delimiter” moderate advisory is
+    only patched on v5.7.0+ and is not addressed here because forcing
+    AWS SDK v4 consumers onto fast-xml-parser v5 would risk runtime
+    regressions on S3 deployments.
+
+ -  Hollo now warns at startup whenever `LOG_QUERY=true` is set.  The
+    flag causes drizzle-orm to emit every SQL query together with its
+    bound parameter values, which include OAuth access tokens (stored
+    plain in the database), authorization codes, and other secrets;
+    leaving it enabled in production exposes those secrets to anyone
+    with read access to the application logs (or to a downstream
+    collector such as Sentry or a file sink).
+
+ -  The OAuth PKCE code-challenge check and the OAuth multi-credential
+    client-secret consistency check are now compared in constant time
+    using `crypto.timingSafeEqual`.  (The primary client-secret
+    authentication path runs as a Postgres equality predicate and is
+    unchanged.)  The PKCE comparison is between two SHA-256 hashes
+    (low practical timing-attack risk) and the multi-credential
+    consistency check only fires when a client presents the same
+    credentials via more than one mechanism, so neither was a
+    confirmed exploitation primitive, but constant-time comparison is
+    the correct defence-in-depth posture for any user-space operation
+    on a secret.
+
+
 Version 0.8.4
 -------------
 
@@ -40,6 +627,8 @@ Released on May 5, 2026.
     endpoints were missing an ownership filter, allowing a single authenticated
     request to modify followed tags for all account owners in the database.
     [[#429] by tomaioo]
+
+[#429]: https://github.com/fedify-dev/hollo/pull/429
 
 
 Version 0.8.1
@@ -211,6 +800,7 @@ Released on April 27, 2026.
 
  -  Upgraded Fedify to 2.1.10.
 
+[Fedify debugger]: https://fedify.dev/manual/debug
 [#173]: https://github.com/fedify-dev/hollo/issues/173
 [#348]: https://github.com/fedify-dev/hollo/issues/348
 [#350]: https://github.com/fedify-dev/hollo/issues/350
@@ -226,7 +816,124 @@ Released on April 27, 2026.
 [#445]: https://github.com/fedify-dev/hollo/issues/445
 [#447]: https://github.com/fedify-dev/hollo/pull/447
 [#448]: https://github.com/fedify-dev/hollo/pull/448
-[Fedify debugger]: https://fedify.dev/manual/debug
+
+
+Version 0.7.18
+--------------
+
+Released on June 4, 2026.
+
+ -  Upgraded Fedify to 1.10.11 to address a security vulnerability in SSRF
+    mitigation.  [[CVE-2026-50131]]
+
+[CVE-2026-50131]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-xw9q-2mv6-9fr8
+
+
+Version 0.7.17
+--------------
+
+Released on May 21, 2026.
+
+ -  Upgraded Fedify to 1.10.10 to fix a security vulnerability in Linked Data
+    Signature verification that could allow certain signed activities to be
+    interpreted differently than intended.  [[CVE-2026-42462]]
+
+
+Version 0.7.16
+--------------
+
+Released on May 19, 2026.
+
+ -  Fixed a security vulnerability where any federated actor could send a
+    `Delete` activity to remove cached remote posts authored by any other
+    actor, because the inbox handler matched only on the post IRI without
+    verifying the deleter's identity.  `Delete` activities are now ignored
+    unless the actor's origin matches the post author's origin.
+
+ -  Fixed a security vulnerability where an `Update` activity could overwrite
+    or first-materialize a remote post under another instance's authority.
+    The inbox handler now refuses an `Update` whose actor origin does not
+    match the embedded object's `id` origin.
+
+ -  Fixed a security vulnerability where an `Announce` activity from a
+    different origin than the announced object could first-materialize a
+    cached post from attacker-controlled embedded content, masquerading
+    as another actor's post.  Cross-origin announces of previously unknown
+    objects are now re-fetched from the canonical URL before being
+    persisted, and the embedded body is no longer trusted to overwrite a
+    post that is already known locally.
+
+    As a deliberate trade-off, a cross-origin `Announce` of a previously
+    unknown post is dropped when the canonical origin is unreachable
+    (down, rate-limiting, or rejecting Hollo's signed fetch).  Honoring
+    the embedded body in that case would re-introduce the masquerade
+    vector that this change closes—an attacker can always craft an
+    embedded object whose `id` and `attributedTo` agree on a victim
+    origin, so the only safe source for the canonical content is the
+    canonical origin itself.  In practice this affects relay-mediated
+    boosts and cross-instance reposts when the source instance is
+    temporarily offline; locally cached posts and same-origin announces
+    are unaffected.
+
+ -  The login and OTP session cookies are now set with `HttpOnly`,
+    `SameSite=Lax`, and (over HTTPS) `Secure`.  Previously these cookies
+    were set without explicit attributes, so a single reflected XSS could
+    exfiltrate the session and cross-site POSTs could forge admin
+    actions.
+
+ -  Hono's CSRF middleware is now applied to every cookie-authenticated
+    web route (`/login`, `/login/otp`, `/logout`, `/setup`, `/auth`,
+    `/accounts`, `/emojis`, `/federation`) and to `POST /oauth/authorize`.
+    Without this, a malicious page could submit a hidden cross-site form
+    to trigger state-changing actions (disable 2FA, delete an account,
+    silently authorize an OAuth app, etc.) on behalf of a logged-in
+    admin.  `/oauth/token`, `/oauth/revoke`, `/oauth/userinfo`, and the
+    `/api/*` namespace continue to authenticate with client credentials
+    or bearer tokens and are intentionally not affected.
+
+ -  The application error handler now returns the response carried by
+    `HTTPException` instead of rethrowing it as a generic 500.  Without
+    this, middleware that signals refusal by throwing
+    `HTTPException(403, …)` (the new CSRF middleware, among others)
+    would have surfaced as opaque 500 responses to clients.
+
+ -  Incoming `Follow`, `Like`, `EmojiReact`, and `Announce` activities
+    from a blocked actor are now silently dropped.  Previously a block
+    only flipped auto-approval on incoming follow requests and did
+    nothing for protected accounts, likes, reactions, or
+    announcements—a blocker still saw notifications and timeline
+    entries from the actor they had blocked.
+
+ -  Pinned the transitive `fast-xml-parser` dependency (carried in via
+    the AWS SDK that backs S3 storage) using `pnpm.overrides`.  v4
+    consumers now resolve to `^4.5.5` (fixing the critical entity-
+    encoding bypass and several high-severity parser issues) and v5
+    consumers resolve to `^5.7.0`.  Each AWS SDK is kept on its
+    expected major version to preserve API compatibility; the single
+    remaining “XMLBuilder unescaped delimiter” moderate advisory is
+    only patched on v5.7.0+ and is not addressed here because forcing
+    AWS SDK v4 consumers onto fast-xml-parser v5 would risk runtime
+    regressions on S3 deployments.
+
+ -  Hollo now warns at startup whenever `LOG_QUERY=true` is set.  The
+    flag causes drizzle-orm to emit every SQL query together with its
+    bound parameter values, which include OAuth access tokens (stored
+    plain in the database), authorization codes, and other secrets;
+    leaving it enabled in production exposes those secrets to anyone
+    with read access to the application logs (or to a downstream
+    collector such as Sentry or a file sink).
+
+ -  The OAuth PKCE code-challenge check and the OAuth multi-credential
+    client-secret consistency check are now compared in constant time
+    using `crypto.timingSafeEqual`.  (The primary client-secret
+    authentication path runs as a Postgres equality predicate and is
+    unchanged.)  The PKCE comparison is between two SHA-256 hashes
+    (low practical timing-attack risk) and the multi-credential
+    consistency check only fires when a client presents the same
+    credentials via more than one mechanism, so neither was a
+    confirmed exploitation primitive, but constant-time comparison is
+    the correct defence-in-depth posture for any user-space operation
+    on a secret.
 
 
 Version 0.7.15
@@ -248,8 +955,6 @@ Released on May 5, 2026.
     endpoints were missing an ownership filter, allowing a single authenticated
     request to modify followed tags for all account owners in the database.
     [[#429] by tomaioo]
-
-[#429]: https://github.com/fedify-dev/hollo/pull/429
 
 
 Version 0.7.13
@@ -342,8 +1047,8 @@ Version 0.7.7
 Released on March 13, 2026.
 
  -  Fixed video thumbnail generation failing for some MP4/MOV files by writing
-    the video data to a temporary file instead of piping it via stdin (`pipe:0`),
-    which does not support seeking.  [[#397], [#398] by NTSK]
+    the video data to a temporary file instead of piping it via stdin
+    (`pipe:0`), which does not support seeking.  [[#397], [#398] by NTSK]
 
 [#397]: https://github.com/fedify-dev/hollo/issues/397
 [#398]: https://github.com/fedify-dev/hollo/pull/398
@@ -429,6 +1134,8 @@ Released on February 10, 2026.
     request to the outbox could previously retrieve all posts regardless of
     their visibility setting.  [[CVE-2026-25808]]
 
+[CVE-2026-25808]: https://github.com/fedify-dev/hollo/security/advisories/GHSA-6r2w-3pcj-v4v5
+
 
 Version 0.7.1
 -------------
@@ -494,7 +1201,8 @@ Released on January 24, 2026.
 
      -  `GET /api/v2/notifications`: Get paginated grouped notifications with
         deduplicated accounts and statuses
-     -  `GET /api/v2/notifications/:group_key`: Get a specific notification group
+     -  `GET /api/v2/notifications/:group_key`: Get a specific notification
+        group
      -  `GET /api/v2/notifications/:group_key/accounts`: Get all accounts in a
         notification group
      -  `POST /api/v2/notifications/:group_key/dismiss`: Dismiss a notification
@@ -555,24 +1263,24 @@ Released on January 24, 2026.
     `text/plain`.
 
  -  Implemented Mastodon 4.5.0 quote notification types (`quote` and
-     `quoted_update`) for improved quote post interaction tracking.
-     Users now receive notifications when their posts are quoted by others
-     and when posts they've quoted are edited by the original authors.
-     Key features include:
+    `quoted_update`) for improved quote post interaction tracking.
+    Users now receive notifications when their posts are quoted by others
+    and when posts they've quoted are edited by the original authors.
+    Key features include:
 
-      -  Added `quote` notification type that triggers when someone quotes
-         your post, with the notification showing the quote post itself.
-      -  Added `quoted_update` notification type that triggers when a post
-         you quoted is edited, with the notification showing your quote post
-         to provide context.
-      -  Both notification types are non-groupable, meaning each quote or edit
-         generates an individual notification for better visibility.
-      -  Self-quotes (quoting your own posts) do not generate notifications
-         to avoid unnecessary noise.
-      -  Existing quote posts are automatically backfilled with notifications
-         during migration to ensure consistent notification history.
-      -  Added database index on `posts.quote_target_id` for improved query
-         performance when looking up quote relationships.
+     -  Added `quote` notification type that triggers when someone quotes
+        your post, with the notification showing the quote post itself.
+     -  Added `quoted_update` notification type that triggers when a post
+        you quoted is edited, with the notification showing your quote post
+        to provide context.
+     -  Both notification types are non-groupable, meaning each quote or edit
+        generates an individual notification for better visibility.
+     -  Self-quotes (quoting your own posts) do not generate notifications
+        to avoid unnecessary noise.
+     -  Existing quote posts are automatically backfilled with notifications
+        during migration to ensure consistent notification history.
+     -  Added database index on `posts.quote_target_id` for improved query
+        performance when looking up quote relationships.
 
  -  Removed dependency on deprecated *fluent-ffmpeg* package and now invoke
     ffmpeg binary directly for video screenshot generation.  This change
@@ -610,15 +1318,15 @@ Released on January 24, 2026.
         consistent WebFinger handle validation across v1 and v2 APIs.
 
 [#94]: https://github.com/fedify-dev/hollo/issues/94
-[#210]: https://github.com/fedify-dev/hollo/issues/210
-[#312]: https://github.com/fedify-dev/hollo/issues/312
 [#170]: https://github.com/fedify-dev/hollo/issues/170
 [#171]: https://github.com/fedify-dev/hollo/pull/171
 [#174]: https://github.com/fedify-dev/hollo/pull/174
 [#177]: https://github.com/fedify-dev/hollo/issues/177
 [#179]: https://github.com/fedify-dev/hollo/pull/179
+[#210]: https://github.com/fedify-dev/hollo/issues/210
 [#295]: https://github.com/fedify-dev/hollo/pull/295
 [#296]: https://github.com/fedify-dev/hollo/pull/296
+[#312]: https://github.com/fedify-dev/hollo/issues/312
 [#333]: https://github.com/fedify-dev/hollo/pull/333
 [#334]: https://github.com/fedify-dev/hollo/pull/334
 
@@ -633,8 +1341,6 @@ Released on February 10, 2026.
     The outbox now only serves public and unlisted posts.  Any unauthenticated
     request to the outbox could previously retrieve all posts regardless of
     their visibility setting.  [[CVE-2026-25808]]
-
-[CVE-2026-25808]: https://github.com/fedify-dev/hollo/security/advisories/GHSA-6r2w-3pcj-v4v5
 
 
 Version 0.6.19
@@ -792,8 +1498,8 @@ Version 0.6.8
 Released on August 21, 2025.
 
  -  Fixed a critical bug introduced in 0.6.7 where the search query would return
-    too many results, causing out-of-memory errors and query timeouts.  The issue
-    was caused by incorrect logical operator precedence when filtering
+    too many results, causing out-of-memory errors and query timeouts.  The
+    issue was caused by incorrect logical operator precedence when filtering
     future-dated posts.  [[#207], [#208] by aliceif]
 
 [#207]: https://github.com/fedify-dev/hollo/issues/207
@@ -823,6 +1529,8 @@ Released on August 8, 2025.
     fix [CVE-2025-54888] that addresses an authentication bypass
     vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
 
+[CVE-2025-54888]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-6jcc-xgcr-q3h4
+
 
 Version 0.6.5
 -------------
@@ -845,10 +1553,10 @@ Version 0.6.4
 
 Released on July 7, 2025.
 
- -  Fixed a regression bug where follower-only posts were returning `404 Not
-    Found` errors when accessed through conversation threads. This was caused
-    by improper OAuth scope checking that only accepted `read:statuses` scope
-    but tokens contain `read` scope:  [[#169], [#172]]
+ -  Fixed a regression bug where follower-only posts were returning
+    `404 Not Found` errors when accessed through conversation threads. This was
+    caused by improper OAuth scope checking that only accepted `read:statuses`
+    scope but tokens contain `read` scope:  [[#169], [#172]]
 
      -  `GET /api/v1/statuses/:id`
      -  `GET /api/v1/statuses/:id/context`
@@ -911,9 +1619,9 @@ Released on June 5, 2025.
      -  Deprecated `FS_ASSET_PATH` in favor of `FS_STORAGE_PATH`.
      -  Deprecated `ASSET_URL_BASE` in favor of `STORAGE_URL_BASE`.
 
- -  Implemented OAuth 2.0 Authorization Code flow with support for access grants.
-    This improves the security of the OAuth authorization process by separating
-    the authorization code from the access token issuance.
+ -  Implemented OAuth 2.0 Authorization Code flow with support for access
+    grants. This improves the security of the OAuth authorization process by
+    separating the authorization code from the access token issuance.
     [[#130] by Emelia Smith]
 
  -  Hollo now requires the `SECRET_KEY` environment variable to be at least 44
@@ -959,10 +1667,11 @@ Released on June 5, 2025.
     authorization code interception attacks in the OAuth authorization flow.
     [[#155] by Emelia Smith]
 
- -  Added support for the `profile` OAuth scope for enhanced user authentication.
-    This allows applications to request limited profile information using the
-    new `/oauth/userinfo` endpoint and enables the `profile` scope to be used
-    with the `GET /api/v1/accounts/verify_credentials` endpoint.
+ -  Added support for the `profile` OAuth scope for enhanced user
+    authentication. This allows applications to request limited profile
+    information using the new `/oauth/userinfo` endpoint and enables the
+    `profile` scope to be used with the
+    `GET /api/v1/accounts/verify_credentials` endpoint.
     [[#45], [#156] by Emelia Smith]
 
  -  Made few Mastodon API endpoints publicly accessible without
@@ -980,6 +1689,7 @@ Released on June 5, 2025.
 [complete list of supported languages]: https://shiki.style/languages
 [#45]: https://github.com/fedify-dev/hollo/issues/45
 [#50]: https://github.com/fedify-dev/hollo/issues/50
+[#99]: https://github.com/fedify-dev/hollo/issues/99
 [#110]: https://github.com/fedify-dev/hollo/pull/110
 [#111]: https://github.com/fedify-dev/hollo/issues/111
 [#114]: https://github.com/fedify-dev/hollo/pull/114
@@ -1060,7 +1770,7 @@ Version 0.5.2
 
 Released on February 20, 2025.
 
--  Fixed a bug where the `follows.follower_id` column had not referenced the
+ -  Fixed a bug where the `follows.follower_id` column had not referenced the
     `accounts.id` column.  [[#112]]
 
  -  Fixed a bug where `GET /api/v1/notifications` had returned server errors
@@ -1071,6 +1781,9 @@ Released on February 20, 2025.
 
  -  Upgrade Fedify to 1.4.2.
 
+[#112]: https://github.com/fedify-dev/hollo/issues/112
+[#113]: https://github.com/fedify-dev/hollo/issues/113
+
 
 Version 0.5.1
 -------------
@@ -1079,6 +1792,8 @@ Released on February 14, 2025.
 
  -  Fixed a bug where `GET /api/v1/accounts/:id/statuses` had tried to fetch
     remote posts for local accounts.  [[#107]]
+
+[#107]: https://github.com/fedify-dev/hollo/issues/107
 
 
 Version 0.5.0
@@ -1124,16 +1839,15 @@ Released on February 12, 2025.
  -  The `S3_REGION` environment variable became required if `DRIVE_DISK` is set
     to `s3`.  [[#95]]
 
+[`GET /api/v1/mutes`]: https://docs.joinmastodon.org/methods/mutes/#get
+[`GET /api/v1/blocks`]: https://docs.joinmastodon.org/methods/blocks/#get
 [#95]: https://github.com/fedify-dev/hollo/issues/95
-[#99]: https://github.com/fedify-dev/hollo/issues/99
 [#100]: https://github.com/fedify-dev/hollo/pull/100
 [#101]: https://github.com/fedify-dev/hollo/issues/101
 [#103]: https://github.com/fedify-dev/hollo/issues/103
 [#104]: https://github.com/fedify-dev/hollo/issues/104
 [#105]: https://github.com/fedify-dev/hollo/pull/105
 [#106]: https://github.com/fedify-dev/hollo/pull/106
-[`GET /api/v1/mutes`]: https://docs.joinmastodon.org/methods/mutes/#get
-[`GET /api/v1/blocks`]: https://docs.joinmastodon.org/methods/blocks/#get
 
 
 Version 0.4.12
@@ -1197,9 +1911,6 @@ Released on February 20, 2025.
 
  -  Upgrade Fedify to 1.3.9.
 
-[#112]: https://github.com/fedify-dev/hollo/issues/112
-[#113]: https://github.com/fedify-dev/hollo/issues/113
-
 
 Version 0.4.7
 -------------
@@ -1251,8 +1962,11 @@ Version 0.4.4
 
 Released on January 21, 2025.
 
- -  Upgrade Fedify to 1.3.4, which includes [security
-    fixes][@fedify-dev/fedify#200]. [[CVE-2025-23221]]
+ -  Upgrade Fedify to 1.3.4, which includes
+    [security fixes][@fedify-dev/fedify#200]. [[CVE-2025-23221]]
+
+[@fedify-dev/fedify#200]: https://github.com/fedify-dev/fedify/discussions/200
+[CVE-2025-23221]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-c59p-wq67-24wx
 
 
 Version 0.4.3
@@ -1265,8 +1979,8 @@ Released on January 11, 2025.
  -  Fixed a bug where importing follows from CSV generated by Iceshrimp had
     failed.  [[#85]]
 
-[#92]: https://github.com/fedify-dev/hollo/issues/92
 [#85]: https://github.com/fedify-dev/hollo/issues/85
+[#92]: https://github.com/fedify-dev/hollo/issues/92
 
 
 Version 0.4.2
@@ -1339,8 +2053,6 @@ Released on August 8, 2025.
     fix [CVE-2025-54888] that addresses an authentication bypass
     vulnerability allowing actor impersonation.  [[CVE-2025-54888]]
 
-[CVE-2025-54888]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-6jcc-xgcr-q3h4
-
 
 Version 0.3.10
 --------------
@@ -1386,19 +2098,14 @@ Released on February 14, 2025.
     remote posts for local accounts.  [[#107]]
  -  Upgrade Fedify to 1.3.8.
 
-[#107]: https://github.com/fedify-dev/hollo/issues/107
-
 
 Version 0.3.6
 -------------
 
 Released on January 21, 2025.
 
- -  Upgrade Fedify to 1.3.4, which includes [security
-    fixes][@fedify-dev/fedify#200]. [[CVE-2025-23221]]
-
-[@fedify-dev/fedify#200]: https://github.com/fedify-dev/fedify/discussions/200
-[CVE-2025-23221]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-c59p-wq67-24wx
+ -  Upgrade Fedify to 1.3.4, which includes
+    [security fixes][@fedify-dev/fedify#200]. [[CVE-2025-23221]]
 
 
 Version 0.3.5
@@ -1432,6 +2139,8 @@ Released on December 19, 2024.
  -  Fixed a bug where generated thumbnails had been cropped incorrectly
     if the original image had not the EXIF orientation metadata.  [[#76]]
 
+[#76]: https://github.com/fedify-dev/hollo/issues/76
+
 
 Version 0.3.2
 -------------
@@ -1446,7 +2155,6 @@ Released on December 18, 2024.
 
  -  Upgrade Fedify to 1.3.2.
 
-[#76]: https://github.com/fedify-dev/hollo/issues/76
 [#78]: https://github.com/fedify-dev/hollo/issues/78
 
 
@@ -1543,6 +2251,8 @@ Released on November 4, 2024.
     Sharkey, Akkoma) had empty `url` fields, causing them to be displayed
     incorrectly in client apps.  [[#58]]
 
+[#58]: https://github.com/fedify-dev/hollo/issues/58
+
 
 Version 0.2.0
 -------------
@@ -1601,8 +2311,6 @@ Released on November 4, 2024.
     Sharkey, Akkoma) had empty `url` fields, causing them to be displayed
     incorrectly in client apps.  [[#58]]
 
-[#58]: https://github.com/fedify-dev/hollo/issues/58
-
 
 Version 0.1.6
 -------------
@@ -1611,8 +2319,8 @@ Released on October 30, 2024.
 
  -  Fixed a bug where followers-only posts from accounts that had had set
     their follower lists to private had been recognized as direct messages.
-    Even after upgrading to this version, such accounts need to be force-refreshed
-    from the administration dashboard to fix the issue.
+    Even after upgrading to this version, such accounts need to be
+    force-refreshed from the administration dashboard to fix the issue.
 
  -  Fixed the federated (public) timeline showing the shared posts from
     the blocked or muted accounts.

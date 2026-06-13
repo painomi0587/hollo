@@ -1,3 +1,37 @@
 [tools]
 node = "24"
 "npm:pnpm" = "latest"
+
+[tools."github:dahlia/hongdown"]
+version = "0.3.11"
+
+[tools."github:dahlia/hongdown".platforms]
+linux-x64 = "hongdown-*-x86_64-unknown-linux-musl.tar.bz2"
+linux-arm64 = "hongdown-*-aarch64-unknown-linux-musl.tar.bz2"
+
+[hooks]
+postinstall = "pnpm install"
+
+[tasks.fmt]
+depends = ["fmt:pnpm", "fmt:md"]
+
+[tasks."fmt:pnpm"]
+run = "pnpm run fmt"
+
+[tasks."fmt:md"]
+run = "hongdown --write"
+
+[tasks.check]
+depends = ["check:pnpm", "check:md"]
+
+[tasks."check:ci"]
+depends = ["check:pnpm:ci", "check:md"]
+
+[tasks."check:pnpm"]
+run = "pnpm run check"
+
+[tasks."check:pnpm:ci"]
+run = "pnpm run check:ci"
+
+[tasks."check:md"]
+run = "hongdown --check"

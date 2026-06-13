@@ -1,0 +1,51 @@
+---
+title: 部署到 Railway
+description: 如何在 Railway 上部署 Hollo。
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+[![在 Railway 上部署][]][Railway 模板]
+
+部署 Hollo 最簡單的方法是使用 [Railway]。Railway 是一個可以輕鬆部署應用程式的平台，支援多種語言和框架，包括 Node.js、Python、Ruby 等。
+
+點擊上方按鈕即可在 Railway 上部署 Hollo。透過這個模板，您只需幾次點擊即可開始使用自己的 Hollo。
+
+要部署 Hollo，您需要 S3 或相容 S3 的物件儲存來存放媒體檔案，如圖片。目前有許多相容 S3 的物件儲存服務，包括 AWS S3、Cloudflare R2、MinIO、DigitalOcean Spaces 和 Linode Object Storage。準備好物件儲存後，您需要適當地設定環境變數（請參閱各服務的 S3 用戶端 API 使用方法）。更多資訊請參見[**環境變數**](/zh-tw/install/env)章節。
+
+設定好環境變數並在 Railway 上部署了 Hollo 之後，請訪問 https://yourdomain/setup 來設定您的登入憑證並新增您的個人資料。
+
+<Aside type="caution" title="注意！">
+  您需要在首次設定 Hollo 之前決定網域名稱。這是因為 *一旦 Hollo 設定完成，您將無法更改網域名稱。*
+</Aside>
+
+建立個人資料後，您就可以開始享受 Hollo 了。值得注意的是，Hollo 本身沒有太多的網頁介面，因此您需要使用像 [Phanpy] 這樣的用戶端應用程式。
+
+[Railway]: https://railway.app/
+[在 Railway 上部署]: https://railway.app/button.svg
+[Railway 模板]: https://railway.app/template/eopPyH?referralCode=qeEK5G
+[Phanpy]: https://phanpy.social/
+
+
+升級
+----
+
+import { Steps } from "@astrojs/starlight/components";
+
+要升級 Hollo，只需在 Railway 上重新部署服務：
+
+<Steps>
+ 1. 前往 Railway 儀表板。
+
+ 2. 選擇您的 Hollo 專案。
+
+ 3. 選擇您的 Hollo 服務。
+
+    ![選擇您的 Hollo 服務](../../install/railway/project.png)
+
+ 4. 在部署中，點擊右上角看起來像三個豎點的按鈕。
+
+ 5. 在下拉選單中，點擊 **Redeploy** 以重新部署服務。
+
+    ![重新部署服務](../../install/railway/deployments.png)
+</Steps>

@@ -3,7 +3,7 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 
 import db, { type Transaction } from "../db";
 import * as schema from "../schema";
-import { processThumbnailDeletion } from "./processors";
+import { processCleanupItem } from "./processors";
 
 const logger = getLogger(["hollo", "cleanup-worker"]);
 
@@ -226,7 +226,7 @@ async function processItem(
   try {
     switch (job.category) {
       case "cleanup_thumbnails":
-        await processThumbnailDeletion(item);
+        await processCleanupItem(item);
         break;
     }
 

@@ -11,6 +11,8 @@ import {
   Emoji,
   Hashtag,
   Image,
+  InteractionPolicy,
+  InteractionRule,
   isActor,
   LanguageString,
   Link,
@@ -18,6 +20,7 @@ import {
   Note,
   OrderedCollection,
   Question,
+  QuoteAuthorization,
   type Recipient,
   Source,
   Tombstone,
@@ -25,50 +28,42 @@ import {
   Video,
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
-import {
-  and,
-  count,
-  type ExtractTablesWithRelations,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  sql,
-} from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
-// @ts-expect-error: No type definitions available
+import { and, count, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { escape } from "es-toolkit";
+import mime from "mime";
 import { isSSRFSafeURL } from "ssrfcheck";
 
+import type { DatabaseLike } from "../db";
 import { extractPreviewLink } from "../html";
 import { makeVideoScreenshot, type Thumbnail, uploadThumbnail } from "../media";
+import { REMOTE_MEDIA_THUMBNAILS } from "../media-proxy";
 import { fetchPreviewCard } from "../previewcard";
-import type * as schema from "../schema";
 import {
   type Account,
   type AccountOwner,
   accountOwners,
   likes,
+  media,
   type Medium,
   type Mention,
-  media,
   mentions,
   type NewMedium,
   type NewPost,
   type Poll,
   type PollOption,
-  type PollVote,
-  type Post,
   pollOptions,
   polls,
+  type PollVote,
   pollVotes,
+  type Post,
   posts,
+  type QuoteApprovalPolicy,
 } from "../schema";
 import { type Uuid, uuidv7 } from "../uuid";
 import {
-  type PersistAccountOptions,
   persistAccount,
   persistAccountByIri,
+  type PersistAccountOptions,
 } from "./account";
 import { toDate, toTemporalInstant } from "./date";
 import { toEmoji } from "./emoji";
@@ -78,6 +73,11 @@ import { appendPostToTimelines } from "./timeline";
 const logger = getLogger(["hollo", "federation", "post"]);
 
 export type ASPost = Article | Note | Question | ChatMessage;
+
+const HREF_ATTRIBUTE_REGEXP =
+  /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/giu;
+const CLASS_ATTRIBUTE_REGEXP =
+  /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/giu;
 
 export type PersistedSharingPost = Post & {
   account: Account & { owner: AccountOwner | null };
@@ -96,12 +96,58 @@ export function isPost(object?: vocab.Object | Link | null): object is ASPost {
   );
 }
 
+function getQuoteApprovalPolicy(
+  object: ASPost,
+  account: Account,
+): QuoteApprovalPolicy | null {
+  const canQuote = object.interactionPolicy?.canQuote;
+  if (canQuote == null) return null;
+  const automaticApprovals = canQuote.automaticApprovals;
+  if (automaticApprovals.length < 1) return "nobody";
+  if (
+    automaticApprovals.some((url) => url.href === vocab.PUBLIC_COLLECTION.href)
+  ) {
+    return "public";
+  }
+  if (
+    account.followersUrl != null &&
+    automaticApprovals.some((url) => url.href === account.followersUrl)
+  ) {
+    return "followers";
+  }
+  return "nobody";
+}
+
+async function getVerifiedQuoteAuthorizationIri(
+  object: ASPost,
+  quoteTargetIri: string | null,
+  quoteTargetAccountIri: string | null,
+  options: PersistAccountOptions,
+): Promise<string | null> {
+  const authorizationId = object.quoteAuthorizationId;
+  if (
+    authorizationId == null ||
+    quoteTargetIri == null ||
+    quoteTargetAccountIri == null ||
+    object.id == null
+  ) {
+    return null;
+  }
+  const authorization = await object.getQuoteAuthorization({
+    ...options,
+    crossOrigin: "trust",
+    suppressError: true,
+  });
+  if (!(authorization instanceof QuoteAuthorization)) return null;
+  if (authorization.id?.href !== authorizationId.href) return null;
+  if (authorization.attributionId?.href !== quoteTargetAccountIri) return null;
+  if (authorization.interactingObjectId?.href !== object.id.href) return null;
+  if (authorization.interactionTargetId?.href !== quoteTargetIri) return null;
+  return authorizationId.href;
+}
+
 export async function persistPost(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   object: ASPost,
   baseUrl: URL | string,
   options: PersistAccountOptions & {
@@ -119,11 +165,26 @@ export async function persistPost(
   if (object.id == null) return null;
   const existingPost = await db.query.posts.findFirst({
     with: { account: { with: { owner: true } }, mentions: true },
-    where: eq(posts.iri, object.id.href),
+    where: { iri: { eq: object.id.href } },
   });
   if (options.skipUpdate && existingPost != null) return existingPost;
   if (existingPost != null && existingPost.account.owner != null) {
     return existingPost;
+  }
+  const publishedRaw = toDate(object.published);
+  const updatedRaw = toDate(object.updated);
+  const now = Date.now();
+  const twelveHoursMs = 12 * 60 * 60 * 1000;
+  if (
+    (publishedRaw != null && +publishedRaw > now + twelveHoursMs) ||
+    (updatedRaw != null && +updatedRaw > now + twelveHoursMs)
+  ) {
+    logger.debug(
+      "Ignoring post {iri} with a timestamp too far in the future: " +
+        "published={published}, updated={updated}",
+      { iri: object.id.href, published: publishedRaw, updated: updatedRaw },
+    );
+    return null;
   }
   const actor = await object.getAttribution(options);
   logger.debug("Fetched actor: {actor}", { actor });
@@ -174,6 +235,8 @@ export async function persistPost(
   }
   const tags: Record<string, string> = {};
   const emojis: Record<string, string> = {};
+  const mentionedAccounts = new Map<Uuid, Account>();
+  const previewLinkExclusions = new Set<string>();
   let objectLink: URL | null = null; // FEP-e232
   for await (const tag of object.getTags(options)) {
     if (tag instanceof Hashtag && tag.name != null && tag.href != null) {
@@ -187,6 +250,21 @@ export async function persistPost(
         href = icon.url.href.href;
       } else href = icon.url.href;
       emojis[tag.name.toString()] = href;
+    } else if (tag instanceof vocab.Mention && tag.href != null) {
+      previewLinkExclusions.add(tag.href.href);
+      if (tag.name == null) continue;
+      const account = await persistAccountByIri(
+        db,
+        tag.href.href,
+        baseUrl,
+        options,
+      );
+      if (account == null) continue;
+      mentionedAccounts.set(account.id, account);
+      // Some servers, including NodeBB, put plain profile links in content
+      // HTML and carry the real mention semantics only in ActivityStreams tags.
+      previewLinkExclusions.add(account.iri);
+      if (account.url != null) previewLinkExclusions.add(account.url);
     } else if (
       objectLink == null &&
       tag instanceof Link &&
@@ -200,17 +278,25 @@ export async function persistPost(
     }
   }
   let quoteTargetId: Uuid | null = null;
+  let quoteTargetIri: string | null = null;
+  let quoteTargetAccountId: Uuid | null = null;
+  let quoteTargetAccountIri: string | null = null;
+  if (objectLink == null && object.quoteId != null) {
+    objectLink = object.quoteId;
+  }
   if (objectLink == null && object.quoteUrl != null) {
     objectLink = object.quoteUrl;
   }
   if (objectLink != null) {
-    const result = await db
-      .select({ id: posts.id })
-      .from(posts)
-      .where(eq(posts.iri, objectLink.href))
-      .limit(1);
-    if (result != null && result.length > 0) {
-      quoteTargetId = result[0].id;
+    quoteTargetIri = objectLink.href;
+    const found = await db.query.posts.findFirst({
+      where: { iri: { eq: objectLink.href } },
+      with: { account: true },
+    });
+    if (found != null) {
+      quoteTargetId = found.id;
+      quoteTargetAccountId = found.accountId;
+      quoteTargetAccountIri = found.account.iri;
       logger.debug("The quote target is already persisted: {quoteTargetId}", {
         quoteTargetId,
       });
@@ -226,6 +312,8 @@ export async function persistPost(
           quoteTarget: quoteTargetObj,
         });
         quoteTargetId = quoteTargetObj?.id ?? null;
+        quoteTargetAccountId = quoteTargetObj?.accountId ?? null;
+        quoteTargetAccountIri = quoteTargetObj?.account.iri ?? null;
       }
     }
   }
@@ -237,11 +325,27 @@ export async function persistPost(
   const previewLink =
     object.content == null
       ? null
-      : await extractPreviewLink(object.content.toString());
+      : await extractPreviewLink(
+          object.content.toString(),
+          previewLinkExclusions,
+        );
   const previewCard =
     previewLink == null ? null : await fetchPreviewCard(previewLink);
-  const published = toDate(object.published);
-  const updated = toDate(object.updated) ?? published ?? new Date();
+  const quoteAuthorizationIri = await getVerifiedQuoteAuthorizationIri(
+    object,
+    quoteTargetIri,
+    quoteTargetAccountIri,
+    options,
+  );
+  const preserveAcceptedQuote =
+    quoteTargetIri != null &&
+    existingPost?.quoteState === "accepted" &&
+    existingPost.quoteTargetIri === quoteTargetIri;
+  const preservedQuoteAuthorizationIri =
+    quoteAuthorizationIri ??
+    (preserveAcceptedQuote ? existingPost.quoteAuthorizationIri : null);
+  const published = publishedRaw;
+  const updated = updatedRaw ?? published ?? new Date();
   const values = {
     type:
       object instanceof Question
@@ -254,6 +358,16 @@ export async function persistPost(
     replyTargetId,
     sharingId: null,
     quoteTargetId,
+    quoteTargetIri,
+    quoteState:
+      quoteTargetId == null
+        ? null
+        : quoteTargetAccountId === account.id ||
+            quoteAuthorizationIri != null ||
+            preserveAcceptedQuote
+          ? "accepted"
+          : "unauthorized",
+    quoteAuthorizationIri: preservedQuoteAuthorizationIri,
     visibility: to.has(vocab.PUBLIC_COLLECTION.href)
       ? "public"
       : cc.has(vocab.PUBLIC_COLLECTION.href)
@@ -273,6 +387,7 @@ export async function persistPost(
     tags,
     emojis,
     sensitive: object.sensitive ?? false,
+    quoteApprovalPolicy: getQuoteApprovalPolicy(object, account),
     url: object.url instanceof Link ? object.url.href?.href : object.url?.href,
     sharesCount: shares?.totalItems ?? 0,
     likesCount: likes?.totalItems ?? 0,
@@ -284,7 +399,7 @@ export async function persistPost(
     .values({
       ...values,
       repliesCount: existingPost?.repliesCount ?? 0,
-      id: uuidv7(+(published ?? updated)),
+      id: uuidv7(Math.max(0, +(published ?? updated))),
       iri: object.id.href,
     })
     .onConflictDoUpdate({
@@ -293,7 +408,7 @@ export async function persistPost(
       setWhere: eq(posts.iri, object.id.href),
     });
   let post = await db.query.posts.findFirst({
-    where: eq(posts.iri, object.id.href),
+    where: { iri: { eq: object.id.href } },
   });
   if (post == null) return null;
   if (object instanceof Question) {
@@ -374,27 +489,18 @@ export async function persistPost(
   }
   const mentionRows: Mention[] = [];
   await db.delete(mentions).where(eq(mentions.postId, post.id));
-  for await (const tag of object.getTags(options)) {
-    if (tag instanceof vocab.Mention && tag.name != null && tag.href != null) {
-      const account = await persistAccountByIri(
-        db,
-        tag.href.href,
-        baseUrl,
-        options,
-      );
-      if (account == null) continue;
-      const result = await db
-        .insert(mentions)
-        .values({
-          accountId: account.id,
-          postId: post.id,
-        })
-        .onConflictDoNothing({
-          target: [mentions.accountId, mentions.postId],
-        })
-        .returning();
-      mentionRows.push(...result);
-    }
+  for (const account of mentionedAccounts.values()) {
+    const result = await db
+      .insert(mentions)
+      .values({
+        accountId: account.id,
+        postId: post.id,
+      })
+      .onConflictDoNothing({
+        target: [mentions.accountId, mentions.postId],
+      })
+      .returning();
+    mentionRows.push(...result);
   }
   await db.delete(media).where(eq(media.postId, post.id));
   for await (const attachment of object.getAttachments(options)) {
@@ -412,24 +518,78 @@ export async function persistPost(
         ? attachment.url.href?.href
         : attachment.url?.href;
     if (url == null || !isSSRFSafeURL(url)) continue;
-    const response = await fetch(url);
-    const mediaType =
-      response.headers.get("Content-Type") ?? attachment.mediaType;
-    if (mediaType == null) continue;
     const id = uuidv7();
+    let mediaType: string | null;
     let thumbnail: Thumbnail;
     let metadata: { width?: number; height?: number };
-    try {
-      const imageData = new Uint8Array(await response.arrayBuffer());
-      let imageBytes: Uint8Array = imageData;
-      if (mediaType.startsWith("video/")) {
-        imageBytes = await makeVideoScreenshot(imageData);
+    if (REMOTE_MEDIA_THUMBNAILS) {
+      const response = await fetch(url);
+      mediaType = response.headers.get("Content-Type") ?? attachment.mediaType;
+      if (mediaType == null) continue;
+      try {
+        const imageData = new Uint8Array(await response.arrayBuffer());
+        let imageBytes: Uint8Array = imageData;
+        if (mediaType.startsWith("video/")) {
+          imageBytes = await makeVideoScreenshot(imageData);
+        }
+        const { default: sharp } = await import("sharp");
+        const image = sharp(imageBytes);
+        metadata = await image.metadata();
+        thumbnail = await uploadThumbnail(id, image);
+      } catch {
+        metadata = {
+          width: attachment.width ?? 512,
+          height: attachment.height ?? 512,
+        };
+        thumbnail = {
+          thumbnailUrl: url,
+          thumbnailType: mediaType,
+          thumbnailWidth: metadata.width!,
+          thumbnailHeight: metadata.height!,
+        };
       }
-      const { default: sharp } = await import("sharp");
-      const image = sharp(imageBytes);
-      metadata = await image.metadata();
-      thumbnail = await uploadThumbnail(id, image);
-    } catch {
+    } else {
+      // REMOTE_MEDIA_THUMBNAILS=off: skip the body download and the sharp
+      // pipeline.  Operators rely on the media proxy (or the remote server
+      // directly) to serve the preview.
+      mediaType = attachment.mediaType ?? null;
+      if (mediaType == null) {
+        // The ActivityPub object didn't carry mediaType.  Probe the
+        // upstream so we don't drop the attachment outright (the prefetch
+        // path used to recover this from the response headers of the body
+        // GET).  Try HEAD first, then a tiny Range GET for CDNs that
+        // reject HEAD (some return 405; some return 200 with the wrong
+        // Content-Type), then fall back to MIME-by-extension.
+        try {
+          const head = await fetch(url, { method: "HEAD" });
+          if (head.ok) mediaType = head.headers.get("Content-Type");
+        } catch {
+          // ignore — keep trying the GET fallback below
+        }
+        if (mediaType == null) {
+          try {
+            const ranged = await fetch(url, {
+              headers: { Range: "bytes=0-0" },
+            });
+            // 200 OK (server ignored Range) and 206 Partial Content both
+            // give us usable headers; cancel the body either way.
+            if (ranged.status === 200 || ranged.status === 206) {
+              mediaType = ranged.headers.get("Content-Type");
+            }
+            await ranged.body?.cancel().catch(() => {});
+          } catch {
+            // ignore — fall through to extension inference
+          }
+        }
+        if (mediaType == null) {
+          try {
+            mediaType = mime.getType(new URL(url).pathname);
+          } catch {
+            // ignore — leave mediaType null so we skip below
+          }
+        }
+      }
+      if (mediaType == null) continue;
       metadata = {
         width: attachment.width ?? 512,
         height: attachment.height ?? 512,
@@ -454,7 +614,7 @@ export async function persistPost(
     } satisfies NewMedium);
   }
   post = await db.query.posts.findFirst({
-    where: eq(posts.iri, object.id.href),
+    where: { iri: { eq: object.id.href } },
     with: { account: true, media: true },
   });
   if (post == null) return null;
@@ -479,11 +639,7 @@ export async function persistPost(
 }
 
 export async function persistSharingPost(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   announce: Announce,
   object: ASPost,
   baseUrl: URL | string,
@@ -497,11 +653,43 @@ export async function persistSharingPost(
       account: { with: { owner: true } },
       sharing: { with: { account: { with: { owner: true } } } },
     },
-    where: eq(posts.iri, announce.id.href),
+    where: { iri: { eq: announce.id.href } },
   });
   if (existingPost != null) return { ...existingPost, isNew: false };
   const actor = await announce.getActor(options);
   if (actor == null) return null;
+  // The embedded object inside an Announce is attacker-controlled. To
+  // avoid first-materializing a forged post under another actor's
+  // authority we trust the embedded body only when the row is already
+  // known locally (persistPost's `skipUpdate` keeps the canonical
+  // version) or when the to-be-inserted object satisfies both:
+  //
+  //   - if the announcer and the object's origin differ, the object
+  //     must be fetched from its canonical URL, and
+  //   - the object's `id` must share an origin with its
+  //     `attributedTo`, so the post cannot masquerade as content by an
+  //     actor on a different instance.
+  let canonicalObject: ASPost = object;
+  if (object.id == null || announce.actorId == null) return null;
+  const known = await db.query.posts.findFirst({
+    where: { iri: { eq: object.id.href } },
+  });
+  if (known == null) {
+    if (object.id.origin !== announce.actorId.origin) {
+      const fetched = await lookupObject(object.id, options);
+      if (!isPost(fetched)) return null;
+      canonicalObject = fetched;
+    }
+    const canonId = canonicalObject.id;
+    const canonAttrId = canonicalObject.attributionId;
+    if (
+      canonId == null ||
+      canonAttrId == null ||
+      canonId.origin !== canonAttrId.origin
+    ) {
+      return null;
+    }
+  }
   const account =
     options.account?.iri != null && options.account.iri === actor.id?.href
       ? options.account
@@ -510,7 +698,7 @@ export async function persistSharingPost(
           skipUpdate: true,
         });
   if (account == null) return null;
-  const originalPost = await persistPost(db, object, baseUrl, {
+  const originalPost = await persistPost(db, canonicalObject, baseUrl, {
     ...options,
     skipUpdate: true,
   });
@@ -520,10 +708,13 @@ export async function persistSharingPost(
       account: { with: { owner: true } },
       sharing: { with: { account: { with: { owner: true } } } },
     },
-    where: and(
-      eq(posts.accountId, account.id),
-      eq(posts.sharingId, originalPost.id),
-    ),
+    where: {
+      RAW: (posts, { and, eq }) =>
+        and(
+          eq(posts.accountId, account.id),
+          eq(posts.sharingId, originalPost.id),
+        )!,
+    },
   });
   if (existingSharingPost != null) {
     return { ...existingSharingPost, isNew: false };
@@ -564,10 +755,13 @@ export async function persistSharingPost(
         account: { with: { owner: true } },
         sharing: { with: { account: { with: { owner: true } } } },
       },
-      where: and(
-        eq(posts.accountId, account.id),
-        eq(posts.sharingId, originalPost.id),
-      ),
+      where: {
+        RAW: (posts, { and, eq }) =>
+          and(
+            eq(posts.accountId, account.id),
+            eq(posts.sharingId, originalPost.id),
+          )!,
+      },
     });
     return conflictedPost == null ? null : { ...conflictedPost, isNew: false };
   }
@@ -585,11 +779,7 @@ export async function persistSharingPost(
 }
 
 export async function persistPollVote(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   object: Note,
   baseUrl: URL | string,
   options: PersistAccountOptions & {
@@ -603,15 +793,19 @@ export async function persistPollVote(
   ) {
     return null;
   }
+  const replyTargetId = object.replyTargetId;
   const post = await db.query.posts.findFirst({
     with: {
-      poll: { with: { options: { orderBy: pollOptions.index } } },
+      poll: { with: { options: { orderBy: { index: "asc" } } } },
     },
-    where: and(
-      eq(posts.iri, object.replyTargetId.href),
-      eq(posts.type, "Question"),
-      isNotNull(posts.pollId),
-    ),
+    where: {
+      RAW: (posts, { and, eq, isNotNull }) =>
+        and(
+          eq(posts.iri, replyTargetId.href),
+          eq(posts.type, "Question"),
+          isNotNull(posts.pollId),
+        )!,
+    },
   });
   if (post == null) return null;
   const poll = post.poll;
@@ -684,11 +878,7 @@ export async function persistPollVote(
 }
 
 export async function updatePostStats(
-  db: PgDatabase<
-    PostgresJsQueryResultHKT,
-    typeof schema,
-    ExtractTablesWithRelations<typeof schema>
-  >,
+  db: DatabaseLike,
   { id }: { id: Uuid },
 ): Promise<void> {
   const repliesCount = db
@@ -706,7 +896,12 @@ export async function updatePostStats(
   const quotesCount = db
     .select({ cnt: count() })
     .from(posts)
-    .where(eq(posts.quoteTargetId, id));
+    .where(
+      and(
+        eq(posts.quoteTargetId, id),
+        or(eq(posts.quoteState, "accepted"), isNull(posts.quoteState)),
+      ),
+    );
   await db
     .update(posts)
     .set({
@@ -734,9 +929,10 @@ export function toObject(
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     mentions: (Mention & { account: Account })[];
-    replies: Post[];
+    replies?: Post[];
   },
   ctx: Context<unknown>,
+  opts: { includeInactiveQuoteTarget?: boolean } = {},
 ): ASPost {
   const cls =
     post.type === "Question"
@@ -756,6 +952,15 @@ export function toObject(
                 replies: new Collection({ totalItems: o.votesCount }),
               }),
           );
+  const shouldPublishQuoteTarget =
+    opts.includeInactiveQuoteTarget ||
+    post.quoteState == null ||
+    post.quoteState === "accepted";
+  const quoteTarget = shouldPublishQuoteTarget ? post.quoteTarget : null;
+  const contentHtml = addQuoteInlineFallback(post.contentHtml, quoteTarget);
+  const quoteTargetIri = shouldPublishQuoteTarget
+    ? (post.quoteTargetIri ?? post.quoteTarget?.iri)
+    : null;
   return new cls({
     id: new URL(post.iri),
     attribution: new URL(post.account.iri),
@@ -781,14 +986,11 @@ export function toObject(
           ? [post.summary]
           : [post.summary, new LanguageString(post.summary, post.language)],
     contents:
-      post.contentHtml == null
+      contentHtml == null
         ? []
         : post.language == null
-          ? [post.contentHtml]
-          : [
-              post.contentHtml,
-              new LanguageString(post.contentHtml, post.language),
-            ],
+          ? [contentHtml]
+          : [contentHtml, new LanguageString(contentHtml, post.language)],
     source:
       post.content == null
         ? null
@@ -815,18 +1017,18 @@ export function toObject(
       ...Object.entries(post.emojis).map(([shortcode, url]) =>
         toEmoji(ctx, { shortcode, url }),
       ),
-      ...(post.quoteTarget == null
+      ...(quoteTarget == null
         ? []
         : [
             new Link({
               mediaType:
                 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-              href: new URL(post.quoteTarget.iri),
+              href: new URL(quoteTarget.iri),
               name:
-                post.quoteTarget.url != null &&
-                post.content?.includes(post.quoteTarget.url)
-                  ? post.quoteTarget.url
-                  : post.quoteTarget.iri,
+                quoteTarget.url != null &&
+                post.content?.includes(quoteTarget.url)
+                  ? quoteTarget.url
+                  : quoteTarget.iri,
             }),
           ]),
     ],
@@ -834,8 +1036,10 @@ export function toObject(
       post.replyTarget == null ? null : new URL(post.replyTarget.iri),
     replies: new OrderedCollection({
       id: new URL("#replies", post.iri),
-      totalItems: post.replies.length,
-      items: post.replies.map((r) => new URL(r.iri)),
+      totalItems: post.repliesCount ?? 0,
+      ...(post.replies != null && post.replies.length > 0
+        ? { items: post.replies.map((r) => new URL(r.iri)) }
+        : {}),
     }),
     shares:
       post.sharesCount == null
@@ -870,7 +1074,15 @@ export function toObject(
             height: medium.height,
           }),
     ),
-    quoteUrl: post.quoteTarget == null ? null : new URL(post.quoteTarget.iri),
+    quote: quoteTargetIri == null ? null : new URL(quoteTargetIri),
+    quoteUrl: quoteTargetIri == null ? null : new URL(quoteTargetIri),
+    quoteAuthorization:
+      post.quoteAuthorizationIri == null
+        ? null
+        : new URL(post.quoteAuthorizationIri),
+    interactionPolicy: new InteractionPolicy({
+      canQuote: getCanQuoteRule(post, ctx),
+    }),
     published: toTemporalInstant(post.published),
     url: post.url ? new URL(post.url) : null,
     updated: toTemporalInstant(
@@ -891,6 +1103,110 @@ export function toObject(
   });
 }
 
+function getCanQuoteRule(
+  post: Post & { account: Account & { owner: AccountOwner | null } },
+  ctx: Context<unknown>,
+): InteractionRule {
+  const policy =
+    post.visibility === "direct" || post.visibility === "private"
+      ? "nobody"
+      : (post.quoteApprovalPolicy ?? "public");
+  if (policy === "public") {
+    return new InteractionRule({
+      automaticApproval: vocab.PUBLIC_COLLECTION,
+    });
+  }
+  if (policy === "followers" && post.account.owner != null) {
+    return new InteractionRule({
+      automaticApproval: ctx.getFollowersUri(post.account.owner.handle),
+    });
+  }
+  return new InteractionRule({
+    automaticApproval: new URL(post.account.iri),
+  });
+}
+
+function addQuoteInlineFallback(
+  contentHtml: string | null,
+  quoteTarget: Post | null,
+): string | null {
+  if (quoteTarget == null) return contentHtml;
+
+  const quoteUrl = quoteTarget.url ?? quoteTarget.iri;
+  const quoteInline =
+    `<p class="quote-inline">RE: ` +
+    `<a href="${escape(quoteUrl)}">${escape(quoteUrl)}</a></p>`;
+  if (contentHtml == null || contentHtml === "") return quoteInline;
+  if (contentHasQuoteInlineClass(contentHtml)) return contentHtml;
+  if (contentLinksQuoteTarget(contentHtml, quoteTarget)) return contentHtml;
+  return `${contentHtml}${quoteInline}`;
+}
+
+function contentHasQuoteInlineClass(contentHtml: string): boolean {
+  return [...contentHtml.matchAll(CLASS_ATTRIBUTE_REGEXP)].some((match) =>
+    decodeHtmlEntities(match[1] ?? match[2] ?? match[3] ?? "")
+      .split(/\s+/)
+      .includes("quote-inline"),
+  );
+}
+
+function contentLinksQuoteTarget(
+  contentHtml: string,
+  quoteTarget: Post,
+): boolean {
+  const targets = [quoteTarget.url, quoteTarget.iri]
+    .filter((url) => url != null)
+    .map(toComparableUrl);
+  const links = [...contentHtml.matchAll(HREF_ATTRIBUTE_REGEXP)].map((match) =>
+    toComparableUrl(decodeHtmlEntities(match[1] ?? match[2] ?? match[3] ?? "")),
+  );
+  return links.some((link) => targets.includes(link));
+}
+
+function toComparableUrl(url: string): string {
+  try {
+    return new URL(url).href;
+  } catch {
+    return url;
+  }
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value.replaceAll(
+    /&(?:#(\d+)|#x([\da-f]+)|amp|lt|gt|quot|apos);/gi,
+    (entity, decimal: string | undefined, hexadecimal: string | undefined) => {
+      const codePoint =
+        decimal == null
+          ? hexadecimal == null
+            ? null
+            : Number.parseInt(hexadecimal, 16)
+          : Number.parseInt(decimal, 10);
+      if (codePoint != null) {
+        try {
+          return String.fromCodePoint(codePoint);
+        } catch {
+          return entity;
+        }
+      }
+
+      switch (entity.toLowerCase()) {
+        case "&amp;":
+          return "&";
+        case "&lt;":
+          return "<";
+        case "&gt;":
+          return ">";
+        case "&quot;":
+          return '"';
+        case "&apos;":
+          return "'";
+        default:
+          return entity;
+      }
+    },
+  );
+}
+
 export function toCreate(
   post: Post & {
     account: Account & { owner: AccountOwner | null };
@@ -899,7 +1215,7 @@ export function toCreate(
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     mentions: (Mention & { account: Account })[];
-    replies: Post[];
+    replies?: Post[];
   },
   ctx: Context<unknown>,
 ): Create {
@@ -922,7 +1238,7 @@ export function toUpdate(
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     mentions: (Mention & { account: Account })[];
-    replies: Post[];
+    replies?: Post[];
   },
   ctx: Context<unknown>,
   updated?: Date,
@@ -949,7 +1265,7 @@ export function toDelete(
     media: Medium[];
     poll: (Poll & { options: PollOption[] }) | null;
     mentions: (Mention & { account: Account })[];
-    replies: Post[];
+    replies?: Post[];
   },
   ctx: Context<unknown>,
   deleted: Date = new Date(),

@@ -1,22 +1,7 @@
 import * as vocab from "@fedify/vocab";
 import { Block, isActor, lookupObject, Undo } from "@fedify/vocab";
 import { zValidator } from "@hono/zod-validator";
-import {
-  and,
-  count,
-  desc,
-  eq,
-  gt,
-  ilike,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  lte,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, count, eq, ilike } from "drizzle-orm";
 import { Hono } from "hono";
 import mime from "mime";
 import { z } from "zod";
@@ -39,10 +24,12 @@ import {
   REMOTE_ACTOR_FETCH_POSTS,
   unfollowAccount,
 } from "../../federation/account";
+import { normalizeHandleForLookup } from "../../instance-host";
 import {
+  type AccountOwnerVariables,
   scopeRequired,
   tokenRequired,
-  type Variables,
+  withAccountOwner,
 } from "../../oauth/middleware";
 import {
   type Account,
@@ -52,7 +39,6 @@ import {
   blocks,
   follows,
   listMembers,
-  lists,
   media,
   mentions,
   mutes,
@@ -63,21 +49,16 @@ import {
 import { isUuid, type Uuid } from "../../uuid";
 import { timelineQuerySchema } from "./timelines";
 
-const app = new Hono<{ Variables: Variables }>();
+const app = new Hono<{ Variables: AccountOwnerVariables }>();
 const allowedImageMimeTypes = ["image/gif", "image/jpeg", "image/png"];
 
 app.get(
   "/verify_credentials",
   tokenRequired,
   scopeRequired(["read:accounts", "profile"]),
+  withAccountOwner,
   async (c) => {
-    const accountOwner = c.get("token").accountOwner;
-    if (accountOwner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const accountOwner = c.get("accountOwner");
     return c.json(serializeAccountOwner(accountOwner, c.req.url));
   },
 );
@@ -86,6 +67,7 @@ app.patch(
   "/update_credentials",
   tokenRequired,
   scopeRequired(["write:accounts"]),
+  withAccountOwner,
   zValidator(
     "form",
     z.object({
@@ -101,14 +83,26 @@ app.patch(
       "source[privacy]": z.enum(["public", "unlisted", "private"]).optional(),
       "source[sensitive]": z.enum(["true", "false"]).optional(),
       "source[language]": z.string().optional(),
-      "fields_attributes[0][name]": z.string().optional(),
-      "fields_attributes[0][value]": z.string().optional(),
-      "fields_attributes[1][name]": z.string().optional(),
-      "fields_attributes[1][value]": z.string().optional(),
-      "fields_attributes[2][name]": z.string().optional(),
-      "fields_attributes[2][value]": z.string().optional(),
-      "fields_attributes[3][name]": z.string().optional(),
-      "fields_attributes[3][value]": z.string().optional(),
+      "fields_attributes[0][name]": z.string().max(255).optional(),
+      "fields_attributes[0][value]": z.string().max(255).optional(),
+      "fields_attributes[1][name]": z.string().max(255).optional(),
+      "fields_attributes[1][value]": z.string().max(255).optional(),
+      "fields_attributes[2][name]": z.string().max(255).optional(),
+      "fields_attributes[2][value]": z.string().max(255).optional(),
+      "fields_attributes[3][name]": z.string().max(255).optional(),
+      "fields_attributes[3][value]": z.string().max(255).optional(),
+      "fields_attributes[4][name]": z.string().max(255).optional(),
+      "fields_attributes[4][value]": z.string().max(255).optional(),
+      "fields_attributes[5][name]": z.string().max(255).optional(),
+      "fields_attributes[5][value]": z.string().max(255).optional(),
+      "fields_attributes[6][name]": z.string().max(255).optional(),
+      "fields_attributes[6][value]": z.string().max(255).optional(),
+      "fields_attributes[7][name]": z.string().max(255).optional(),
+      "fields_attributes[7][value]": z.string().max(255).optional(),
+      "fields_attributes[8][name]": z.string().max(255).optional(),
+      "fields_attributes[8][value]": z.string().max(255).optional(),
+      "fields_attributes[9][name]": z.string().max(255).optional(),
+      "fields_attributes[9][value]": z.string().max(255).optional(),
     }),
   ),
   async (c) => {
@@ -117,13 +111,7 @@ app.patch(
       import("../../text"),
     ]);
     const disk = drive.use();
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const account = owner.account;
     const form = c.req.valid("form");
     let avatarUrl: string | undefined;
@@ -176,23 +164,42 @@ app.patch(
         username: account.handle,
       }),
     };
-    const fields = Object.entries(owner.fields);
-    const fieldHtmls: [string, string][] = [];
-    for (const i of [0, 1, 2, 3] as const) {
+    const fields: ([string, string] | undefined)[] = Object.entries(
+      owner.fields,
+    );
+    let anyFieldAttributeSubmitted = false;
+    for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {
       const name = form[`fields_attributes[${i}][name]`];
       const value = form[`fields_attributes[${i}][value]`];
+      if (name == null && value == null) {
+        continue;
+      }
+      anyFieldAttributeSubmitted = true;
       if (
         name == null ||
         name.trim() === "" ||
         value == null ||
         value.trim() === ""
       ) {
+        fields[i] = undefined;
         continue;
       }
       fields[i] = [name, value];
-      const contentHtml = (await formatText(db, fields[i][1], fmtOpts)).html;
-      fieldHtmls.push([fields[i][0], contentHtml]);
     }
+    const denseFields = fields.filter((f): f is [string, string] => f != null);
+    const fieldHtmlsRecord: Record<string, string> = anyFieldAttributeSubmitted
+      ? Object.fromEntries(
+          await Promise.all(
+            denseFields.map(
+              async ([fieldName, fieldValue]) =>
+                [
+                  fieldName,
+                  (await formatText(db, fieldValue, fmtOpts)).html,
+                ] as [string, string],
+            ),
+          ),
+        )
+      : account.fieldHtmls;
     const bioResult =
       form.note == null ? null : await formatText(db, form.note, fmtOpts);
     const name = form.display_name ?? account.name;
@@ -209,7 +216,7 @@ app.patch(
         bioHtml: bioResult == null ? account.bioHtml : bioResult.html,
         avatarUrl,
         coverUrl,
-        fieldHtmls: Object.fromEntries(fieldHtmls),
+        fieldHtmls: fieldHtmlsRecord,
         protected:
           form.locked == null ? account.protected : form.locked === "true",
         sensitive:
@@ -229,9 +236,15 @@ app.patch(
       .update(accountOwners)
       .set({
         bio: form.note ?? owner.bio,
-        fields: Object.fromEntries(fields),
+        fields: anyFieldAttributeSubmitted
+          ? Object.fromEntries(denseFields)
+          : owner.fields,
         visibility: form["source[privacy]"] ?? owner.visibility,
         language: form["source[language]"] ?? owner.language,
+        followingListPublic:
+          form.hide_collections == null
+            ? owner.followingListPublic
+            : form.hide_collections !== "true",
       })
       .where(eq(accountOwners.id, owner.id))
       .returning();
@@ -248,7 +261,7 @@ app.patch(
       updatedAccounts[0].successorId == null
         ? null
         : ((await db.query.accounts.findFirst({
-            where: eq(accounts.id, updatedAccounts[0].successorId),
+            where: { id: { eq: updatedAccounts[0].successorId } },
           })) ?? null);
     return c.json(
       serializeAccountOwner(
@@ -266,34 +279,29 @@ app.get(
   "/relationships",
   tokenRequired,
   scopeRequired(["read:follows"]),
+  withAccountOwner,
   async (c) => {
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const ids = (c.req.queries("id[]") ?? []).filter(isUuid);
     const accountList =
       ids.length > 0
         ? await db.query.accounts.findMany({
-            where: inArray(accounts.id, ids),
+            where: { id: { in: ids } },
             with: {
               following: {
-                where: eq(follows.followingId, owner.id),
+                where: { followingId: { eq: owner.id } },
               },
               followers: {
-                where: eq(follows.followerId, owner.id),
+                where: { followerId: { eq: owner.id } },
               },
               mutedBy: {
-                where: eq(mutes.accountId, owner.id),
+                where: { accountId: { eq: owner.id } },
               },
               blocks: {
-                where: eq(blocks.blockedAccountId, owner.id),
+                where: { blockedAccountId: { eq: owner.id } },
               },
               blockedBy: {
-                where: eq(blocks.accountId, owner.id),
+                where: { accountId: { eq: owner.id } },
               },
             },
           })
@@ -315,9 +323,11 @@ app.get(
     }),
   ),
   async (c) => {
-    const owner = c.get("token")?.accountOwner;
     const query = c.req.valid("query");
-    const acct = query.acct;
+    const handleLookup = normalizeHandleForLookup(
+      query.acct,
+      new URL(c.req.url),
+    );
     let account:
       | (Account & {
           owner: AccountOwner | null;
@@ -325,12 +335,7 @@ app.get(
         })
       | null =
       (await db.query.accounts.findFirst({
-        where: eq(
-          accounts.handle,
-          acct.includes("@")
-            ? `@${acct}`
-            : `@${acct}@${new URL(c.req.url).host}`,
-        ),
+        where: { handle: { eq: handleLookup } },
         with: { owner: true, successor: true },
       })) ?? null;
     if (account == null) {
@@ -338,16 +343,8 @@ app.get(
         return c.json({ error: "Record not found" }, 404);
       }
       const fedCtx = federation.createContext(c.req.raw, undefined);
-      const options =
-        owner == null
-          ? fedCtx
-          : {
-              contextLoader: fedCtx.contextLoader,
-              documentLoader: await fedCtx.getDocumentLoader({
-                username: owner.handle,
-              }),
-            };
-      const actor = await lookupObject(acct, options);
+      const options = fedCtx;
+      const actor = await lookupObject(normalizeHandle(query.acct), options);
       if (!isActor(actor)) return c.json({ error: "Record not found" }, 404);
       const loaded = await persistAccount(db, actor, c.req.url, options);
       if (loaded != null) {
@@ -356,7 +353,7 @@ app.get(
           owner: null,
           successor:
             (await db.query.accounts.findFirst({
-              where: eq(accounts.successorId, loaded.id),
+              where: { successorId: { eq: loaded.id } },
             })) ?? null,
         };
       }
@@ -373,7 +370,7 @@ app.get(
   },
 );
 
-import { HANDLE_PATTERN } from "../../patterns";
+import { HANDLE_PATTERN, normalizeHandle } from "../../patterns";
 
 app.get(
   "/search",
@@ -403,9 +400,13 @@ app.get(
   ),
   async (c) => {
     const query = c.req.valid("query");
+    const requestUrl = new URL(c.req.url);
+    const handleLookup = HANDLE_PATTERN.test(query.q)
+      ? normalizeHandleForLookup(query.q, requestUrl)
+      : `@${normalizeHandle(query.q)}`;
     if (query.resolve && HANDLE_PATTERN.test(query.q) && query.offset < 1) {
       const exactMatch = await db.query.accounts.findFirst({
-        where: ilike(accounts.handle, `@${query.q.replace(/^@/, "")}`),
+        where: { handle: { ilike: handleLookup } },
       });
       if (exactMatch != null) {
         const fedCtx = federation.createContext(c.req.raw, undefined);
@@ -420,15 +421,19 @@ app.get(
       }
     }
     const accountList = await db.query.accounts.findMany({
-      where: or(
-        ilike(accounts.handle, `%${query.q}%`),
-        ilike(accounts.name, `%${query.q}%`),
-      ),
+      where: {
+        RAW: (accounts, { ilike, or }) =>
+          or(
+            ilike(accounts.handle, `%${query.q}%`),
+            ilike(accounts.handle, `%${handleLookup}%`),
+            ilike(accounts.name, `%${query.q}%`),
+          )!,
+      },
       with: { owner: true, successor: true },
-      orderBy: [
-        desc(ilike(accounts.handle, `@${query.q.replace(/^@/, "")}`)),
+      orderBy: (accounts, { desc }) => [
+        desc(ilike(accounts.handle, handleLookup)),
         desc(ilike(accounts.name, query.q)),
-        desc(ilike(accounts.handle, `@${query.q.replace(/^@/, "")}%`)),
+        desc(ilike(accounts.handle, `${handleLookup}%`)),
         desc(ilike(accounts.name, `${query.q}%`)),
       ],
       offset: query.offset,
@@ -448,14 +453,9 @@ app.get(
   "/familiar_followers",
   tokenRequired,
   scopeRequired(["read:follows"]),
+  withAccountOwner,
   async (c) => {
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const ids: Uuid[] = (c.req.queries("id[]") ?? []).filter(isUuid);
     const result: {
       id: string;
@@ -463,22 +463,25 @@ app.get(
     }[] = [];
     for (const id of ids) {
       const accountList = await db.query.accounts.findMany({
-        where: and(
-          inArray(
-            accounts.id,
-            db
-              .select({ id: follows.followerId })
-              .from(follows)
-              .where(eq(follows.followingId, id)),
-          ),
-          inArray(
-            accounts.id,
-            db
-              .select({ id: follows.followingId })
-              .from(follows)
-              .where(eq(follows.followerId, owner.id)),
-          ),
-        ),
+        where: {
+          RAW: (accounts, { and, eq, inArray }) =>
+            and(
+              inArray(
+                accounts.id,
+                db
+                  .select({ id: follows.followerId })
+                  .from(follows)
+                  .where(eq(follows.followingId, id)),
+              ),
+              inArray(
+                accounts.id,
+                db
+                  .select({ id: follows.followingId })
+                  .from(follows)
+                  .where(eq(follows.followerId, owner.id)),
+              ),
+            )!,
+        },
         with: { owner: true, successor: true },
       });
       result.push({
@@ -498,7 +501,7 @@ app.get("/:id", async (c) => {
   const id = c.req.param("id");
   if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
   const account = await db.query.accounts.findFirst({
-    where: eq(accounts.id, id),
+    where: { id: { eq: id } },
     with: { owner: true, successor: true },
   });
   if (account == null) return c.json({ error: "Record not found" }, 404);
@@ -514,6 +517,7 @@ app.get(
   "/:id/statuses",
   tokenRequired,
   scopeRequired(["read:statuses"]),
+  withAccountOwner,
   zValidator(
     "query",
     timelineQuerySchema.extend({
@@ -527,19 +531,13 @@ app.get(
   async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
-    const tokenOwner = c.get("token").accountOwner;
-    if (tokenOwner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const tokenOwner = c.get("accountOwner");
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         owner: true,
         blocks: {
-          where: eq(blocks.blockedAccountId, tokenOwner.id),
+          where: { blockedAccountId: { eq: tokenOwner.id } },
         },
       },
     });
@@ -580,105 +578,113 @@ app.get(
         and(eq(follows.followerId, tokenOwner.id), eq(follows.followingId, id)),
       );
     const postList = await db.query.posts.findMany({
-      where: and(
-        eq(posts.accountId, id),
-        or(
-          eq(posts.accountId, tokenOwner.id),
-          eq(posts.visibility, "public"),
-          eq(posts.visibility, "unlisted"),
-          following.length > 0 ? eq(posts.visibility, "private") : undefined,
+      where: {
+        RAW: (
+          posts,
+          { and, eq, gt, inArray, isNull, lt, lte, notInArray, or, sql },
+        ) =>
           and(
-            eq(posts.visibility, "direct"),
-            inArray(
-              posts.id,
-              db
-                .select({ id: mentions.postId })
-                .from(mentions)
-                .where(eq(mentions.accountId, tokenOwner.id)),
-            ),
-          ),
-        ),
-        // Hide future posts
-        lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
-        // Hide the posts from the muted accounts:
-        notInArray(
-          posts.accountId,
-          db
-            .select({ accountId: mutes.mutedAccountId })
-            .from(mutes)
-            .where(
+            eq(posts.accountId, id),
+            or(
+              eq(posts.accountId, tokenOwner.id),
+              eq(posts.visibility, "public"),
+              eq(posts.visibility, "unlisted"),
+              following.length > 0
+                ? eq(posts.visibility, "private")
+                : undefined,
               and(
-                eq(mutes.accountId, tokenOwner.id),
-                or(
-                  isNull(mutes.duration),
-                  gt(
-                    sql`${mutes.created} + ${mutes.duration}`,
-                    sql`CURRENT_TIMESTAMP`,
-                  ),
+                eq(posts.visibility, "direct"),
+                inArray(
+                  posts.id,
+                  db
+                    .select({ id: mentions.postId })
+                    .from(mentions)
+                    .where(eq(mentions.accountId, tokenOwner.id)),
                 ),
               ),
             ),
-        ),
-        // Hide the posts from the blocked accounts:
-        notInArray(
-          posts.accountId,
-          db
-            .select({ accountId: blocks.blockedAccountId })
-            .from(blocks)
-            .where(eq(blocks.accountId, tokenOwner.id)),
-        ),
-        // Hide the posts from the accounts who blocked the owner:
-        notInArray(
-          posts.accountId,
-          db
-            .select({ accountId: blocks.accountId })
-            .from(blocks)
-            .where(eq(blocks.blockedAccountId, tokenOwner.id)),
-        ),
-        // Hide the shared posts from the muted accounts:
-        or(
-          isNull(posts.sharingId),
-          notInArray(
-            posts.sharingId,
-            db
-              .select({ id: posts.id })
-              .from(posts)
-              .innerJoin(mutes, eq(mutes.mutedAccountId, posts.accountId))
-              .where(
-                and(
-                  eq(mutes.accountId, tokenOwner.id),
-                  or(
-                    isNull(mutes.duration),
-                    gt(
-                      sql`${mutes.created} + ${mutes.duration}`,
-                      sql`CURRENT_TIMESTAMP`,
+            // Hide future posts
+            lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
+            // Hide the posts from the muted accounts:
+            notInArray(
+              posts.accountId,
+              db
+                .select({ accountId: mutes.mutedAccountId })
+                .from(mutes)
+                .where(
+                  and(
+                    eq(mutes.accountId, tokenOwner.id),
+                    or(
+                      isNull(mutes.duration),
+                      gt(
+                        sql`${mutes.created} + ${mutes.duration}`,
+                        sql`CURRENT_TIMESTAMP`,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ),
-        ),
-        query.pinned === "true"
-          ? inArray(
-              posts.id,
+            ),
+            // Hide the posts from the blocked accounts:
+            notInArray(
+              posts.accountId,
               db
-                .select({ id: pinnedPosts.postId })
-                .from(pinnedPosts)
-                .where(eq(pinnedPosts.accountId, id)),
-            )
-          : undefined,
-        query.exclude_replies === "true"
-          ? isNull(posts.replyTargetId)
-          : undefined,
-        query.only_media === "true"
-          ? inArray(posts.id, db.select({ id: media.postId }).from(media))
-          : undefined,
-        tagged == null ? undefined : sql`${posts.tags} ? ${tagged}`,
-        query.max_id == null ? undefined : lt(posts.id, query.max_id),
-        query.min_id == null ? undefined : gt(posts.id, query.min_id),
-      ),
+                .select({ accountId: blocks.blockedAccountId })
+                .from(blocks)
+                .where(eq(blocks.accountId, tokenOwner.id)),
+            ),
+            // Hide the posts from the accounts who blocked the owner:
+            notInArray(
+              posts.accountId,
+              db
+                .select({ accountId: blocks.accountId })
+                .from(blocks)
+                .where(eq(blocks.blockedAccountId, tokenOwner.id)),
+            ),
+            // Hide the shared posts from the muted accounts:
+            or(
+              isNull(posts.sharingId),
+              notInArray(
+                posts.sharingId,
+                db
+                  .select({ id: posts.id })
+                  .from(posts)
+                  .innerJoin(mutes, eq(mutes.mutedAccountId, posts.accountId))
+                  .where(
+                    and(
+                      eq(mutes.accountId, tokenOwner.id),
+                      or(
+                        isNull(mutes.duration),
+                        gt(
+                          sql`${mutes.created} + ${mutes.duration}`,
+                          sql`CURRENT_TIMESTAMP`,
+                        ),
+                      ),
+                    ),
+                  ),
+              ),
+            ),
+            query.pinned === "true"
+              ? inArray(
+                  posts.id,
+                  db
+                    .select({ id: pinnedPosts.postId })
+                    .from(pinnedPosts)
+                    .where(eq(pinnedPosts.accountId, id)),
+                )
+              : undefined,
+            query.exclude_replies === "true"
+              ? isNull(posts.replyTargetId)
+              : undefined,
+            query.only_media === "true"
+              ? inArray(posts.id, db.select({ id: media.postId }).from(media))
+              : undefined,
+            tagged == null ? undefined : sql`${posts.tags} ? ${tagged}`,
+            query.max_id == null ? undefined : lt(posts.id, query.max_id),
+            query.min_id == null ? undefined : gt(posts.id, query.min_id),
+          )!,
+      },
       with: getPostRelations(tokenOwner.id),
-      orderBy: [desc(posts.published), desc(posts.id)],
+      orderBy: (posts, { desc }) => [desc(posts.published), desc(posts.id)],
       limit: limit + 1,
     });
     let next: URL | undefined;
@@ -701,18 +707,13 @@ app.post(
   "/:id/follow",
   tokenRequired,
   scopeRequired(["write:follows"]),
+  withAccountOwner,
   async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const following = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: { owner: true },
     });
     if (following == null) return c.json({ error: "Record not found" }, 404);
@@ -727,22 +728,22 @@ app.post(
       return c.json({ error: "The action is not allowed" }, 403);
     }
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, following.id),
+      where: { id: { eq: following.id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -755,40 +756,35 @@ app.post(
   "/:id/unfollow",
   tokenRequired,
   scopeRequired(["write:follows"]),
+  withAccountOwner,
   async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const following = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: { owner: true },
     });
     if (following == null) return c.json({ error: "Record not found" }, 404);
     const fedCtx = federation.createContext(c.req.raw, undefined);
     await unfollowAccount(db, fedCtx, { ...owner.account, owner }, following);
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -801,8 +797,11 @@ app.get("/:id/followers", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.json({ error: "Record not found" }, 404);
   const followers = await db.query.follows.findMany({
-    where: and(eq(follows.followingId, accountId), isNotNull(follows.approved)),
-    orderBy: desc(follows.approved),
+    where: {
+      RAW: (follows, { and, eq, isNotNull }) =>
+        and(eq(follows.followingId, accountId), isNotNull(follows.approved))!,
+    },
+    orderBy: (follows, { desc }) => [desc(follows.approved)],
     with: { follower: { with: { owner: true, successor: true } } },
   });
   return c.json(
@@ -820,13 +819,22 @@ app.get("/:id/followers", async (c) => {
 app.get("/:id/following", async (c) => {
   const accountId = c.req.param("id");
   if (!isUuid(accountId)) return c.json({ error: "Record not found" }, 404);
-  const followers = await db.query.follows.findMany({
-    where: and(eq(follows.followerId, accountId), isNotNull(follows.approved)),
-    orderBy: desc(follows.approved),
+  const localOwner = await db.query.accountOwners.findFirst({
+    where: { id: { eq: accountId } },
+  });
+  if (localOwner != null && !localOwner.followingListPublic) {
+    return c.json([]);
+  }
+  const following = await db.query.follows.findMany({
+    where: {
+      RAW: (follows, { and, eq, isNotNull }) =>
+        and(eq(follows.followerId, accountId), isNotNull(follows.approved))!,
+    },
+    orderBy: (follows, { desc }) => [desc(follows.approved)],
     with: { following: { with: { owner: true, successor: true } } },
   });
   return c.json(
-    followers.map((f) =>
+    following.map((f) =>
       f.following.owner == null
         ? serializeAccount(f.following, c.req.url)
         : serializeAccountOwner(
@@ -841,27 +849,25 @@ app.get(
   "/:id/lists",
   tokenRequired,
   scopeRequired(["read:lists"]),
+  withAccountOwner,
   async (c) => {
     const accountId = c.req.param("id");
     if (!isUuid(accountId)) return c.json({ error: "Record not found" }, 404);
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const listList = await db.query.lists.findMany({
-      where: and(
-        eq(lists.accountOwnerId, owner.id),
-        inArray(
-          lists.id,
-          db
-            .select({ id: listMembers.listId })
-            .from(listMembers)
-            .where(eq(listMembers.accountId, accountId)),
-        ),
-      ),
+      where: {
+        RAW: (lists, { and, eq, inArray }) =>
+          and(
+            eq(lists.accountOwnerId, owner.id),
+            inArray(
+              lists.id,
+              db
+                .select({ id: listMembers.listId })
+                .from(listMembers)
+                .where(eq(listMembers.accountId, accountId)),
+            ),
+          )!,
+      },
     });
     return c.json(listList.map(serializeList));
   },
@@ -871,6 +877,7 @@ app.post(
   "/:id/mute",
   tokenRequired,
   scopeRequired(["write:mutes"]),
+  withAccountOwner,
   zValidator(
     "json",
     z.object({
@@ -881,20 +888,14 @@ app.post(
   async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const { notifications, duration } = c.req.valid("json");
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         owner: true,
-        mutes: { where: eq(mutes.accountId, owner.id) },
-        following: { where: eq(follows.followingId, owner.id) },
+        mutes: { where: { accountId: { eq: owner.id } } },
+        following: { where: { followingId: { eq: owner.id } } },
       },
     });
     if (account == null) return c.json({ error: "Record not found" }, 404);
@@ -922,22 +923,22 @@ app.post(
         },
       });
     const result = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -950,36 +951,31 @@ app.post(
   "/:id/unmute",
   tokenRequired,
   scopeRequired(["write:mutes"]),
+  withAccountOwner,
   async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     await db
       .delete(mutes)
       .where(and(eq(mutes.accountId, owner.id), eq(mutes.mutedAccountId, id)));
     const account = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -992,40 +988,35 @@ app.post(
   "/:id/block",
   tokenRequired,
   scopeRequired(["read:blocks"]),
+  withAccountOwner,
   async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const acct = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: { owner: true },
     });
     if (acct == null) return c.json({ error: "Record not found" }, 404);
     const fedCtx = federation.createContext(c.req.raw, undefined);
     await blockAccount(db, fedCtx, owner, acct);
     const result = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });
@@ -1038,18 +1029,13 @@ app.post(
   "/:id/unblock",
   tokenRequired,
   scopeRequired(["read:blocks"]),
+  withAccountOwner,
   async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return c.json({ error: "Record not found" }, 404);
-    const owner = c.get("token").accountOwner;
-    if (owner == null) {
-      return c.json(
-        { error: "This method requires an authenticated user" },
-        422,
-      );
-    }
+    const owner = c.get("accountOwner");
     const acct = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: { owner: true },
     });
     if (acct == null) return c.json({ error: "Record not found" }, 404);
@@ -1083,22 +1069,22 @@ app.post(
       );
     }
     const result = await db.query.accounts.findFirst({
-      where: eq(accounts.id, id),
+      where: { id: { eq: id } },
       with: {
         following: {
-          where: eq(follows.followingId, owner.id),
+          where: { followingId: { eq: owner.id } },
         },
         followers: {
-          where: eq(follows.followerId, owner.id),
+          where: { followerId: { eq: owner.id } },
         },
         mutedBy: {
-          where: eq(mutes.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
         blocks: {
-          where: eq(blocks.blockedAccountId, owner.id),
+          where: { blockedAccountId: { eq: owner.id } },
         },
         blockedBy: {
-          where: eq(blocks.accountId, owner.id),
+          where: { accountId: { eq: owner.id } },
         },
       },
     });

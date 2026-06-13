@@ -4,17 +4,19 @@ import { Hono } from "hono";
 import metadata from "../../../package.json" with { type: "json" };
 import { db } from "../../db";
 import { serializeAccountOwner } from "../../entities/account";
+import { getInstanceHost } from "../../instance-host";
 import { accountOwners, instances, posts } from "../../schema";
 
 const app = new Hono();
 
 app.get("/", async (c) => {
   const url = new URL(c.req.url);
+  const instanceHost = getInstanceHost(url);
   const credential = await db.query.credentials.findFirst();
   if (credential == null) return c.notFound();
   const accountOwner = await db.query.accountOwners.findFirst({
     with: { account: { with: { successor: true } } },
-    orderBy: accountOwners.id,
+    orderBy: (accountOwners) => [accountOwners.id],
   });
   if (accountOwner == null) return c.notFound();
   const languages = await db
@@ -40,10 +42,10 @@ app.get("/", async (c) => {
     .select({ domainCount: count() })
     .from(instances);
   return c.json({
-    uri: url.host,
-    title: url.host,
-    short_description: `A Hollo instance at ${url.host}`,
-    description: `A Hollo instance at ${url.host}`,
+    uri: instanceHost,
+    title: instanceHost,
+    short_description: `A Hollo instance at ${instanceHost}`,
+    description: `A Hollo instance at ${instanceHost}`,
     email: credential.email,
     version: metadata.version,
     urls: {}, // TODO: streaming_api URL

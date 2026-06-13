@@ -1,29 +1,27 @@
 import { getLogger } from "@logtape/logtape";
-import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { auth } from "hono/utils/basic-auth";
 import { z } from "zod";
 
 import { db } from "../db.ts";
-import { requestBody } from "../helpers.ts";
+import { requestBody, timingSafeEqualString } from "../helpers.ts";
 import {
   type AccessToken,
   type Account,
   type AccountOwner,
   type Application,
-  accessTokens,
-  applications,
   type Scope,
 } from "../schema.ts";
 
 const logger = getLogger(["hollo", "oauth", "middleware"]);
 
 export type Variables = {
-  token: AccessToken & {
-    application: Application;
-    accountOwner:
-      | (AccountOwner & { account: Account & { successor: Account | null } })
-      | null;
+  token: AccessToken;
+};
+
+export type AccountOwnerVariables = Variables & {
+  accountOwner: AccountOwner & {
+    account: Account & { successor: Account | null };
   };
 };
 
@@ -96,7 +94,13 @@ export const clientAuthentication = createMiddleware<{
     const allSameCredentials = clientCredentials.every(
       (cred) =>
         cred.client_id === firstCred.client_id &&
-        cred.client_secret === firstCred.client_secret,
+        ((cred.client_secret == null && firstCred.client_secret == null) ||
+          (cred.client_secret != null &&
+            firstCred.client_secret != null &&
+            timingSafeEqualString(
+              cred.client_secret,
+              firstCred.client_secret,
+            ))),
     );
 
     if (!allSameCredentials) {
@@ -138,19 +142,19 @@ export const clientAuthentication = createMiddleware<{
     clientCredentials[0].authentication === "client_secret_post"
   ) {
     client = await db.query.applications.findFirst({
-      where: and(
-        eq(applications.clientId, clientCredentials[0].client_id),
-        eq(applications.clientSecret, clientCredentials[0].client_secret),
-        eq(applications.confidential, true),
-      ),
+      where: {
+        clientId: { eq: clientCredentials[0].client_id },
+        clientSecret: { eq: clientCredentials[0].client_secret },
+        confidential: { eq: true },
+      },
     });
   } else {
     // client authentication method is none, which only works for non-confidential clients:
     client = await db.query.applications.findFirst({
-      where: and(
-        eq(applications.clientId, clientCredentials[0].client_id),
-        eq(applications.confidential, false),
-      ),
+      where: {
+        clientId: { eq: clientCredentials[0].client_id },
+        confidential: { eq: false },
+      },
     });
   }
 
@@ -188,11 +192,7 @@ export const tokenRequired = createMiddleware<{ Variables: Variables }>(
     const token = match[1];
 
     const accessToken = await db.query.accessTokens.findFirst({
-      where: eq(accessTokens.code, token),
-      with: {
-        accountOwner: { with: { account: { with: { successor: true } } } },
-        application: true,
-      },
+      where: { code: { eq: token } },
     });
 
     if (accessToken === undefined) {
@@ -203,6 +203,28 @@ export const tokenRequired = createMiddleware<{ Variables: Variables }>(
     await next();
   },
 );
+
+export const withAccountOwner = createMiddleware<{
+  Variables: AccountOwnerVariables;
+}>(async (c, next) => {
+  const token = c.get("token");
+  if (token == null) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const { accountOwnerId } = token;
+  if (accountOwnerId == null) {
+    return c.json({ error: "This method requires an authenticated user" }, 422);
+  }
+  const owner = await db.query.accountOwners.findFirst({
+    where: { id: { eq: accountOwnerId } },
+    with: { account: { with: { successor: true } } },
+  });
+  if (owner == null) {
+    return c.json({ error: "invalid_token" }, 401);
+  }
+  c.set("accountOwner", owner);
+  await next();
+});
 
 export function scopeRequired(scopes: Scope[]) {
   return createMiddleware(async (c, next) => {

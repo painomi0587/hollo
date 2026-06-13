@@ -1,4 +1,4 @@
-import type { InboxContext } from "@fedify/fedify";
+import type { Context, InboxContext } from "@fedify/fedify";
 import {
   Accept,
   type Add,
@@ -18,13 +18,15 @@ import {
   type Move,
   Note,
   Question,
-  type Reject,
+  QuoteAuthorization,
+  QuoteRequest,
+  Reject,
   type Remove,
   type Undo,
   type Update,
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "../db";
 import {
@@ -48,13 +50,12 @@ import {
   likes,
   type NewLike,
   type NewPinnedPost,
-  type Post,
   pinnedPosts,
-  pollOptions,
+  type Post,
   posts,
   reactions,
 } from "../schema";
-import { isUuid } from "../uuid";
+import { isUuid, type Uuid } from "../uuid";
 import {
   persistAccount,
   REFRESH_ACTORS_ON_INTERACTION,
@@ -64,6 +65,7 @@ import {
   updateAccountStats,
 } from "./account";
 import {
+  getRecipients,
   isPost,
   persistPollVote,
   persistPost,
@@ -73,6 +75,23 @@ import {
 } from "./post";
 
 const inboxLogger = getLogger(["hollo", "inbox"]);
+
+// Returns true when the local account `localAccountId` has blocked the
+// account `remoteAccountId`. Used to silently drop incoming activities
+// (Follow, Like, EmojiReact, Announce) directed at a local user from
+// someone they have blocked.
+async function isBlockedByLocalAccount(
+  localAccountId: Uuid,
+  remoteAccountId: Uuid,
+): Promise<boolean> {
+  const result = await db.query.blocks.findFirst({
+    where: {
+      accountId: { eq: localAccountId },
+      blockedAccountId: { eq: remoteAccountId },
+    },
+  });
+  return result != null;
+}
 
 type ResolvedReactionTarget = {
   post: Post & { account: Account & { owner: AccountOwner | null } };
@@ -99,7 +118,7 @@ async function resolveReactionTarget(
     const postId = parsed.values["id"];
     if (isUuid(postId)) {
       const post = await db.query.posts.findFirst({
-        where: eq(posts.id, postId),
+        where: { id: { eq: postId } },
         with: { account: { with: { owner: true } } },
       });
       if (post != null) {
@@ -114,7 +133,7 @@ async function resolveReactionTarget(
   }
 
   const post = await db.query.posts.findFirst({
-    where: eq(posts.iri, objectId.href),
+    where: { iri: { eq: objectId.href } },
     with: { account: { with: { owner: true } } },
   });
   if (post == null) {
@@ -168,12 +187,36 @@ export async function onFollowed(
     return;
   }
   const following = await db.query.accounts.findFirst({
-    where: eq(accounts.iri, object.id.href),
+    where: { iri: { eq: object.id.href } },
     with: { owner: true },
   });
   if (following?.owner == null) {
     inboxLogger.debug("Invalid following: {following}", { following });
     return;
+  }
+  // Silently drop follow requests from blocked actors regardless of
+  // whether the target account is protected.  Previously the block
+  // only flipped auto-approval on unprotected accounts, so a blocked
+  // actor could still queue a pending follow request on a protected
+  // one.  The block check runs before `persistAccount` so we don't
+  // even spend a network roundtrip refreshing a blocked actor.
+  const existingFollower = await db.query.accounts.findFirst({
+    where: { iri: { eq: actor.id.href } },
+  });
+  if (existingFollower != null) {
+    const existingBlock = await db.query.blocks.findFirst({
+      where: {
+        accountId: { eq: following.id },
+        blockedAccountId: { eq: existingFollower.id },
+      },
+    });
+    if (existingBlock != null) {
+      inboxLogger.debug(
+        "Dropping Follow from blocked actor {actorIri} to {targetIri}.",
+        { actorIri: actor.id.href, targetIri: object.id.href },
+      );
+      return;
+    }
   }
   const follower = await persistAccount(
     db,
@@ -182,16 +225,7 @@ export async function onFollowed(
     getPersistOptions(ctx),
   );
   if (follower == null) return;
-  let approves = !following.protected;
-  if (approves) {
-    const block = await db.query.blocks.findFirst({
-      where: and(
-        eq(blocks.accountId, following.id),
-        eq(blocks.blockedAccountId, follower.id),
-      ),
-    });
-    approves = block == null;
-  }
+  const approves = !following.protected;
   await db
     .insert(follows)
     .values({
@@ -378,6 +412,384 @@ export async function onFollowRejected(
   }
 }
 
+type QuoteRequestReference = {
+  quoteIri: string;
+  targetIri: string | null;
+};
+
+function getQuoteIriFromQuoteRequestId(requestId: URL): string {
+  const quoteIri = new URL(requestId.href);
+  if (quoteIri.hash === "#quote-request") quoteIri.hash = "";
+  return quoteIri.href;
+}
+
+async function getQuoteRequestReferenceFromActivity(
+  activity: Accept | Reject,
+): Promise<QuoteRequestReference | null> {
+  const object = await activity.getObject({
+    crossOrigin: "trust",
+    suppressError: true,
+  });
+  if (object instanceof QuoteRequest) {
+    const quoteIri =
+      object.instrumentId?.href ??
+      (activity.objectId == null
+        ? null
+        : getQuoteIriFromQuoteRequestId(activity.objectId));
+    if (quoteIri == null) return null;
+    return {
+      quoteIri,
+      targetIri: object.objectId?.href ?? null,
+    };
+  }
+  if (activity.objectId == null) return null;
+  return {
+    quoteIri: getQuoteIriFromQuoteRequestId(activity.objectId),
+    targetIri: null,
+  };
+}
+
+async function updateQuoteRequestState(
+  request: QuoteRequestReference,
+  responderIri: string | null,
+  state: "accepted" | "rejected",
+  quoteAuthorizationIri: string | null,
+): Promise<boolean> {
+  const quote = await db.query.posts.findFirst({
+    where: { iri: { eq: request.quoteIri } },
+    with: { quoteTarget: { with: { account: true } } },
+  });
+  if (quote == null) return false;
+  if (quote.quoteState !== "pending") return false;
+  const target =
+    request.targetIri == null
+      ? quote.quoteTarget
+      : await db.query.posts.findFirst({
+          where: { iri: { eq: request.targetIri } },
+          with: { account: true },
+        });
+  if (target == null) return false;
+  if (responderIri == null || responderIri !== target.account.iri) {
+    return false;
+  }
+  if (quote.quoteTargetIri == null) return false;
+  if (request.targetIri != null && quote.quoteTargetIri !== request.targetIri) {
+    return false;
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .update(posts)
+      .set({
+        quoteState: state,
+        quoteAuthorizationIri,
+        quoteTargetId: target.id,
+        quoteTargetIri: request.targetIri ?? quote.quoteTargetIri ?? target.iri,
+        updated: new Date(),
+      })
+      .where(eq(posts.id, quote.id));
+    if (
+      state === "accepted" &&
+      target != null &&
+      quote.quoteState !== "accepted"
+    ) {
+      await tx
+        .update(posts)
+        .set({ quotesCount: sql`coalesce(${posts.quotesCount}, 0) + 1` })
+        .where(eq(posts.id, target.id));
+    }
+  });
+  return true;
+}
+
+export async function sendQuoteUpdate(
+  ctx: Context<void>,
+  quoteIri: string,
+): Promise<void> {
+  const quote = await db.query.posts.findFirst({
+    where: { iri: { eq: quoteIri } },
+    with: {
+      account: { with: { owner: true } },
+      replyTarget: true,
+      quoteTarget: true,
+      media: true,
+      poll: { with: { options: true } },
+      mentions: { with: { account: true } },
+      replies: { limit: 20 },
+    },
+  });
+  if (quote?.account.owner == null) return;
+  const activity = toUpdate(quote, ctx);
+  const orderingKey = `post:${quote.iri}`;
+  const recipients = getRecipients(quote);
+  if (recipients.length > 0) {
+    await ctx.sendActivity(
+      { username: quote.account.owner.handle },
+      recipients,
+      activity,
+      {
+        orderingKey,
+        excludeBaseUris: [new URL(ctx.origin)],
+      },
+    );
+  }
+  if (quote.visibility !== "direct") {
+    await ctx.sendActivity(
+      { username: quote.account.owner.handle },
+      "followers",
+      activity,
+      {
+        orderingKey,
+        preferSharedInbox: true,
+        excludeBaseUris: [new URL(ctx.origin)],
+      },
+    );
+  }
+}
+
+export async function onQuoteRequestAccepted(
+  ctx: InboxContext<void>,
+  accept: Accept,
+): Promise<boolean> {
+  const request = await getQuoteRequestReferenceFromActivity(accept);
+  if (request == null) return false;
+  const quoteAuthorizationIri = accept.resultId?.href;
+  if (quoteAuthorizationIri == null) return false;
+  const accepted = await updateQuoteRequestState(
+    request,
+    accept.actorId?.href ?? null,
+    "accepted",
+    quoteAuthorizationIri,
+  );
+  if (accepted) await sendQuoteUpdate(ctx, request.quoteIri);
+  return accepted;
+}
+
+export async function onQuoteRequestRejected(
+  _ctx: InboxContext<void>,
+  reject: Reject,
+): Promise<boolean> {
+  const request = await getQuoteRequestReferenceFromActivity(reject);
+  if (request == null) return false;
+  return await updateQuoteRequestState(
+    request,
+    reject.actorId?.href ?? null,
+    "rejected",
+    null,
+  );
+}
+
+export async function onQuoteAuthorizationDeleted(
+  ctx: InboxContext<void>,
+  del: Delete,
+): Promise<void> {
+  const object = await del.getObject({
+    crossOrigin: "trust",
+    suppressError: true,
+  });
+  const authorizationIri =
+    object instanceof QuoteAuthorization ? object.id?.href : del.objectId?.href;
+  const quoteIri =
+    object instanceof QuoteAuthorization
+      ? object.interactingObjectId?.href
+      : null;
+  const quote =
+    authorizationIri == null
+      ? quoteIri == null
+        ? null
+        : await db.query.posts.findFirst({
+            where: { iri: { eq: quoteIri } },
+            with: { quoteTarget: { with: { account: true } } },
+          })
+      : await db.query.posts.findFirst({
+          where: { quoteAuthorizationIri: { eq: authorizationIri } },
+          with: { quoteTarget: { with: { account: true } } },
+        });
+  if (quote == null) return;
+  if (del.actorId?.href !== quote.quoteTarget?.account.iri) return;
+  await db.transaction(async (tx) => {
+    await tx
+      .update(posts)
+      .set({
+        quoteState: "revoked",
+        quoteAuthorizationIri: null,
+        updated: new Date(),
+      })
+      .where(eq(posts.id, quote.id));
+    if (
+      quote.quoteTargetId != null &&
+      (quote.quoteState == null || quote.quoteState === "accepted")
+    ) {
+      await tx
+        .update(posts)
+        .set({
+          quotesCount: sql`GREATEST(coalesce(${posts.quotesCount}, 0) - 1, 0)`,
+        })
+        .where(eq(posts.id, quote.quoteTargetId));
+    }
+  });
+  await sendQuoteUpdate(ctx, quote.iri);
+}
+
+export function getQuoteAuthorizationIri(
+  target: Pick<Post, "iri">,
+  quote: Pick<Post, "id">,
+): string {
+  return `${target.iri}/quote_authorizations/${quote.id}`;
+}
+
+async function canAutomaticallyAcceptQuoteRequest(
+  target: Post,
+  quote: Post,
+): Promise<boolean> {
+  if (target.accountId === quote.accountId) return true;
+  if (target.visibility === "direct" || target.visibility === "private") {
+    return false;
+  }
+  const block = await db.query.blocks.findFirst({
+    where: {
+      RAW: (blocks, { and, eq, or }) =>
+        or(
+          and(
+            eq(blocks.accountId, target.accountId),
+            eq(blocks.blockedAccountId, quote.accountId),
+          ),
+          and(
+            eq(blocks.accountId, quote.accountId),
+            eq(blocks.blockedAccountId, target.accountId),
+          ),
+        )!,
+    },
+  });
+  if (block != null) return false;
+  const policy = target.quoteApprovalPolicy ?? "public";
+  if (policy === "public") return true;
+  if (policy === "nobody") return false;
+  const follow = await db.query.follows.findFirst({
+    where: {
+      RAW: (follows, { and, eq, isNotNull }) =>
+        and(
+          eq(follows.followerId, quote.accountId),
+          eq(follows.followingId, target.accountId),
+          isNotNull(follows.approved),
+        )!,
+    },
+  });
+  return follow != null;
+}
+
+export async function onQuoteRequested(
+  ctx: InboxContext<void>,
+  request: QuoteRequest,
+): Promise<void> {
+  if (request.objectId == null) return;
+  const target = await db.query.posts.findFirst({
+    where: { iri: { eq: request.objectId.href } },
+    with: { account: { with: { owner: true } } },
+  });
+  if (target?.account.owner == null) return;
+  const instrument = await request.getInstrument({ crossOrigin: "trust" });
+  if (!isPost(instrument)) return;
+  const quoteActorIri = instrument.attributionId?.href;
+  if (quoteActorIri == null) return;
+  if (request.actorId != null && request.actorId.href !== quoteActorIri) {
+    return;
+  }
+  const existingQuote =
+    instrument.id == null
+      ? null
+      : await db.query.posts.findFirst({
+          where: { iri: { eq: instrument.id.href } },
+        });
+  if (existingQuote?.quoteState === "revoked") return;
+  const persistedQuote = await persistPost(
+    db,
+    instrument,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
+  if (persistedQuote == null) return;
+  if (persistedQuote.account.owner != null) return;
+  if (persistedQuote.account.iri !== quoteActorIri) return;
+  if (persistedQuote.quoteTargetIri !== target.iri) return;
+
+  const wasAccepted =
+    existingQuote?.quoteState === "accepted" &&
+    (existingQuote.quoteTargetId === target.id ||
+      existingQuote.quoteTargetIri === target.iri);
+  const previousAcceptedTargetId =
+    existingQuote?.quoteState === "accepted"
+      ? existingQuote.quoteTargetId
+      : null;
+  const accepted =
+    wasAccepted ||
+    (await canAutomaticallyAcceptQuoteRequest(target, persistedQuote));
+  const authorizationIri = getQuoteAuthorizationIri(target, persistedQuote);
+  await db.transaction(async (tx) => {
+    await tx
+      .update(posts)
+      .set({
+        quoteTargetId: target.id,
+        quoteTargetIri: target.iri,
+        quoteState: accepted ? "accepted" : "rejected",
+        quoteAuthorizationIri: accepted ? authorizationIri : null,
+        updated: new Date(),
+      })
+      .where(eq(posts.id, persistedQuote.id));
+    if (accepted && !wasAccepted) {
+      await tx
+        .update(posts)
+        .set({ quotesCount: sql`coalesce(${posts.quotesCount}, 0) + 1` })
+        .where(eq(posts.id, target.id));
+    } else if (accepted) {
+      await updatePostStats(tx, { id: target.id });
+    }
+    if (
+      previousAcceptedTargetId != null &&
+      previousAcceptedTargetId !== target.id
+    ) {
+      await updatePostStats(tx, { id: previousAcceptedTargetId });
+    }
+  });
+  if (accepted) {
+    await createQuoteNotification(
+      persistedQuote.account,
+      persistedQuote,
+      target,
+    );
+  }
+
+  const recipient = {
+    id: new URL(persistedQuote.account.iri),
+    inboxId: new URL(persistedQuote.account.inboxUrl),
+    endpoints:
+      persistedQuote.account.sharedInboxUrl == null
+        ? null
+        : {
+            sharedInbox: new URL(persistedQuote.account.sharedInboxUrl),
+          },
+  };
+  const response = accepted
+    ? new Accept({
+        actor: new URL(target.account.iri),
+        object: request,
+        result: new QuoteAuthorization({
+          id: new URL(authorizationIri),
+          attribution: new URL(target.account.iri),
+          interactingObject: new URL(persistedQuote.iri),
+          interactionTarget: new URL(target.iri),
+        }),
+      })
+    : new Reject({
+        actor: new URL(target.account.iri),
+        object: request,
+      });
+  await ctx.sendActivity(
+    { username: target.account.owner.handle },
+    recipient,
+    response,
+  );
+}
+
 export async function onBlocked(
   ctx: InboxContext<void>,
   block: Block,
@@ -388,7 +800,7 @@ export async function onBlocked(
   if (block.objectId == null || object?.type !== "actor") return;
   const blocked = await db.query.accountOwners.findFirst({
     with: { account: true },
-    where: eq(accountOwners.handle, object.identifier),
+    where: { handle: { eq: object.identifier } },
   });
   if (blocked == null) return;
   const blockerAccount = await persistAccount(
@@ -476,7 +888,10 @@ export async function onPostCreated(
   if (post?.replyTargetId != null) {
     await updatePostStats(db, { id: post.replyTargetId });
   }
-  if (post?.quoteTargetId != null) {
+  if (
+    post?.quoteTargetId != null &&
+    (post.quoteState == null || post.quoteState === "accepted")
+  ) {
     await updatePostStats(db, { id: post.quoteTargetId });
   }
 
@@ -495,7 +910,7 @@ export async function onPostCreated(
     // attached status's in_reply_to_account_id.
     if (post.replyTargetId != null) {
       const replyTarget = await db.query.posts.findFirst({
-        where: eq(posts.id, post.replyTargetId),
+        where: { id: { eq: post.replyTargetId } },
         with: {
           account: { with: { owner: true } },
         },
@@ -512,10 +927,13 @@ export async function onPostCreated(
     // Skip the reply target author since they already got a reply mention.
     if (post.mentions.length > 0) {
       const mentionedAccountsWithOwners = await db.query.accounts.findMany({
-        where: inArray(
-          accounts.id,
-          post.mentions.map((m) => m.accountId),
-        ),
+        where: {
+          RAW: (accounts, { inArray }) =>
+            inArray(
+              accounts.id,
+              post.mentions.map((m) => m.accountId),
+            ),
+        },
         with: { owner: true },
       });
 
@@ -527,9 +945,12 @@ export async function onPostCreated(
     }
 
     // Create quote notification if this post quotes another post
-    if (post.quoteTargetId != null) {
+    if (
+      post.quoteTargetId != null &&
+      (post.quoteState == null || post.quoteState === "accepted")
+    ) {
       const quoteTarget = await db.query.posts.findFirst({
-        where: eq(posts.id, post.quoteTargetId),
+        where: { id: { eq: post.quoteTargetId } },
         with: {
           account: { with: { owner: true } },
         },
@@ -546,7 +967,7 @@ export async function onPostCreated(
     (post.visibility === "public" || post.visibility === "unlisted")
   ) {
     const replyTarget = await db.query.posts.findFirst({
-      where: eq(posts.id, post.replyTargetId),
+      where: { id: { eq: post.replyTargetId } },
       with: {
         account: { with: { owner: true } },
         replyTarget: true,
@@ -554,7 +975,7 @@ export async function onPostCreated(
         media: true,
         poll: { with: { options: true } },
         mentions: { with: { account: true } },
-        replies: true,
+        replies: { limit: 20 },
       },
     });
     if (replyTarget?.account.owner != null) {
@@ -589,20 +1010,65 @@ export async function onPostUpdated(
   const object = await update.getObject();
   if (!isPost(object)) return;
 
-  // Get post ID before update to find quote posts
-  const existingPost = object.id
-    ? await db.query.posts.findFirst({
-        where: eq(posts.iri, object.id.href),
-      })
-    : null;
+  const updateActorId = update.actorId;
+  const objectId = object.id;
+  const attributionId = object.attributionId;
+  if (updateActorId == null || objectId == null || attributionId == null) {
+    return;
+  }
+  // Authorization: a remote `Update` may overwrite (or first-materialize)
+  // a cached post under another instance's authority through several
+  // distinct routes:
+  //
+  //   - the `Update` actor is on a different origin than the post's
+  //     claimed author,
+  //   - the embedded object's `id` is on a different origin than its
+  //     `attributedTo`, masquerading evil-hosted content as another
+  //     actor's post.
+  //
+  // Require all three origins (actor, object id, attribution) to match
+  // before trusting the embedded object.
+  if (
+    updateActorId.origin !== attributionId.origin ||
+    objectId.origin !== attributionId.origin
+  ) {
+    inboxLogger.debug(
+      "Refused Update of {postIri} from {actorIri}: " +
+        "actor/object/attribution origins do not all match " +
+        "(attribution: {attributionIri}).",
+      {
+        postIri: objectId.href,
+        actorIri: updateActorId.href,
+        attributionIri: attributionId.href,
+      },
+    );
+    return;
+  }
 
-  // Persist the updated post
-  await persistPost(db, object, ctx.origin, getPersistOptions(ctx));
+  // Get post ID before update to find quote posts
+  const existingPost = await db.query.posts.findFirst({
+    where: { iri: { eq: objectId.href } },
+  });
+
+  // Persist the updated post; null means the post was rejected (e.g. future timestamp)
+  const updatedPost = await persistPost(
+    db,
+    object,
+    ctx.origin,
+    getPersistOptions(ctx),
+  );
+  if (updatedPost == null) return;
 
   // Create quoted_update notifications for users who quoted this post
   if (existingPost != null) {
     const quotePosts = await db.query.posts.findMany({
-      where: eq(posts.quoteTargetId, existingPost.id),
+      where: {
+        RAW: (posts, { and, eq, isNull, or }) =>
+          and(
+            eq(posts.quoteTargetId, existingPost.id),
+            or(eq(posts.quoteState, "accepted"), isNull(posts.quoteState)),
+          )!,
+      },
       with: {
         account: { with: { owner: true } },
       },
@@ -623,9 +1089,25 @@ export async function onPostDeleted(
   const objectId = del.objectId;
   if (actorId == null || objectId == null) return;
   await db.transaction(async (tx) => {
+    const existingPost = await tx.query.posts.findFirst({
+      where: { iri: { eq: objectId.href } },
+      with: { account: true },
+    });
+    if (existingPost == null) return;
+    // Only an actor from the same origin as the post's author may delete it.
+    // Without this check, any federated actor could remove cached posts
+    // belonging to any other actor by guessing or harvesting their IRIs.
+    if (new URL(existingPost.account.iri).origin !== actorId.origin) {
+      inboxLogger.debug(
+        "Refused Delete of {postIri} from {actorIri}: " +
+          "actor is not from the post author's origin.",
+        { postIri: objectId.href, actorIri: actorId.href },
+      );
+      return;
+    }
     const deletedPosts = await tx
       .delete(posts)
-      .where(eq(posts.iri, objectId.href))
+      .where(eq(posts.id, existingPost.id))
       .returning();
     if (deletedPosts.length > 0) {
       const deletedPost = deletedPosts[0];
@@ -648,6 +1130,28 @@ export async function onPostShared(
 ): Promise<void> {
   const object = await announce.getObject();
   if (!isPost(object)) return;
+  // If the announced post is local and its owner has blocked the
+  // announcer, silently drop the entire activity (no share record,
+  // no forwarding, no notification).
+  const announcedIri = object.id?.href;
+  const announcerIri = announce.actorId?.href;
+  if (announcedIri != null && announcerIri != null) {
+    const sharedPost = await db.query.posts.findFirst({
+      where: { iri: { eq: announcedIri } },
+      with: { account: { with: { owner: true } } },
+    });
+    if (sharedPost?.account.owner != null) {
+      const sharerAccount = await db.query.accounts.findFirst({
+        where: { iri: { eq: announcerIri } },
+      });
+      if (
+        sharerAccount != null &&
+        (await isBlockedByLocalAccount(sharedPost.accountId, sharerAccount.id))
+      ) {
+        return;
+      }
+    }
+  }
   const post = await persistSharingPost(
     db,
     announce,
@@ -691,7 +1195,7 @@ export async function onPostUnshared(
       with: {
         account: { with: { owner: true } },
       },
-      where: eq(posts.iri, originalPost.href),
+      where: { iri: { eq: originalPost.href } },
     });
     if (original == null) return null;
     const deleted = await tx
@@ -731,7 +1235,7 @@ export async function onPostPinned(
   const object = await add.getObject();
   if (!isPost(object)) return;
   const accountList = await db.query.accounts.findMany({
-    where: eq(accounts.featuredUrl, add.targetId.href),
+    where: { featuredUrl: { eq: add.targetId.href } },
   });
   const post = await persistPost(
     db,
@@ -756,7 +1260,7 @@ export async function onPostUnpinned(
   const object = await remove.getObject();
   if (!isPost(object)) return;
   const accountList = await db.query.accounts.findMany({
-    where: eq(accounts.featuredUrl, remove.targetId.href),
+    where: { featuredUrl: { eq: remove.targetId.href } },
   });
   const post = await persistPost(
     db,
@@ -797,6 +1301,12 @@ export async function onLiked(
     getPersistOptions(ctx),
   );
   if (account == null) return;
+  if (
+    target.post.account.owner != null &&
+    (await isBlockedByLocalAccount(target.post.accountId, account.id))
+  ) {
+    return;
+  }
   // Refresh actor if stale (fire-and-forget) when interaction refresh is enabled
   if (REFRESH_ACTORS_ON_INTERACTION) {
     refreshActorIfStale(db, account, ctx.origin, ctx);
@@ -896,6 +1406,12 @@ export async function onEmojiReactionAdded(
     getPersistOptions(ctx),
   );
   if (account == null) return;
+  if (
+    target.post.account.owner != null &&
+    (await isBlockedByLocalAccount(target.post.accountId, account.id))
+  ) {
+    return;
+  }
   // Refresh actor if stale (fire-and-forget) when interaction refresh is enabled
   if (REFRESH_ACTORS_ON_INTERACTION) {
     refreshActorIfStale(db, account, ctx.origin, ctx);
@@ -1022,14 +1538,14 @@ export async function onVoted(
       media: true,
       poll: {
         with: {
-          options: { orderBy: pollOptions.index },
+          options: { orderBy: { index: "asc" } },
           votes: { with: { account: true } },
         },
       },
       mentions: { with: { account: true } },
-      replies: true,
+      replies: { limit: 20 },
     },
-    where: eq(posts.pollId, vote.pollId),
+    where: { pollId: { eq: vote.pollId } },
   });
   if (post?.account.owner == null || post.poll == null) return;
   const orderingKey = `post:${post.iri}`;
@@ -1090,7 +1606,7 @@ export async function onAccountMoved(
   if (tgt == null) return;
   const followers = await db.query.follows.findMany({
     with: { follower: { with: { owner: true } } },
-    where: eq(follows.followingId, obj.id),
+    where: { followingId: { eq: obj.id } },
   });
   for (const follower of followers) {
     if (follower.follower.owner == null) continue;

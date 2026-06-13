@@ -146,8 +146,10 @@ jobs:
           cache: pnpm
       - run: |
           pnpm install
-          pnpm run build
+          pnpm exec astro check
+          pnpm exec astro build --site "$DOCS_SITE"
         env:
+          DOCS_SITE: ${{ github.ref_type == 'tag' && 'https://docs.hollo.social' || 'https://canary.docs.hollo.social' }}
           PLAUSIBLE_DOMAIN: ${{ vars.PLAUSIBLE_DOMAIN }}
         working-directory: ${{ github.workspace }}/docs/
       - uses: actions/upload-pages-artifact@v3

@@ -39,8 +39,8 @@ describe.sequential("POST /api/v1/apps", () => {
     const json = await response.json();
     const application = await getLastApplication();
 
-    expect(application.clientId).to.match(URL_SAFE_REGEXP);
-    expect(application.clientSecret).to.match(URL_SAFE_REGEXP);
+    expect(application.clientId).toMatch(URL_SAFE_REGEXP);
+    expect(application.clientSecret).toMatch(URL_SAFE_REGEXP);
 
     expect(typeof json).toBe("object");
     expect(json.id).toBe(application.id);
@@ -197,7 +197,7 @@ describe.sequential("POST /api/v1/apps", () => {
   });
 
   // TODO: Support public clients
-  it.skip("successfully creates a public client application");
+  it.skip("successfully creates a public client application", () => {});
 
   // Validation
   it("prevents creating an application with invalid scopes", async () => {
