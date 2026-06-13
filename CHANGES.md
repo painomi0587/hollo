@@ -1,6 +1,22 @@
 Hollo changelog
 ===============
 
+Version 0.9.5
+-------------
+
+Released on June 13, 2026.
+
+ -  Fixed a bug where expired poll notifications appeared in
+    `/api/v1/notifications` but not in the grouped
+    `/api/v2/notifications` feed, which could leave Mastodon-compatible
+    clients such as Phanpy showing a permanent unread notification badge.
+    Poll notifications are now materialized into the `notifications` and
+    `notification_groups` tables like other notification types, and existing
+    expired polls are backfilled during migration.  [[#517]]
+
+[#517]: https://github.com/fedify-dev/hollo/issues/517
+
+
 Version 0.9.4
 -------------
 
@@ -8,6 +24,8 @@ Released on June 4, 2026.
 
  -  Upgraded Fedify to 2.2.4 to address a security vulnerability in SSRF
     mitigation.  [[CVE-2026-50131]]
+
+[CVE-2026-50131]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-xw9q-2mv6-9fr8
 
 
 Version 0.9.3
@@ -825,8 +843,6 @@ Released on June 4, 2026.
 
  -  Upgraded Fedify to 1.10.11 to address a security vulnerability in SSRF
     mitigation.  [[CVE-2026-50131]]
-
-[CVE-2026-50131]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-xw9q-2mv6-9fr8
 
 
 Version 0.7.17
