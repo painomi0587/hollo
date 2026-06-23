@@ -1,4 +1,5 @@
 import { getLogger } from "@logtape/logtape";
+import AdmZip from "adm-zip";
 import { inArray, isNotNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { csrf } from "hono/csrf";
@@ -9,6 +10,7 @@ import db from "../db";
 import { loginRequired } from "../login";
 import { proxyUrl } from "../media-proxy";
 import { customEmojis } from "../schema";
+import { drive } from "../storage";
 
 const logger = getLogger(["hollo", "pages", "emojis"]);
 
@@ -267,7 +269,12 @@ emojis.get("/new", async (c) => {
           </button>
         </div>
       </form>
-      <form method="post" action="/emojis/bulk" enctype="multipart/form-data" style="margin-top:2em">
+      <form
+        method="post"
+        action="/emojis/bulk"
+        enctype="multipart/form-data"
+        style="margin-top:2em"
+      >
         <fieldset class="grid">
           <label>
             Category
@@ -289,7 +296,9 @@ emojis.get("/new", async (c) => {
           </label>
         </fieldset>
         <label>
-          <span>Zip file (shortcodeはファイル名、画像はpng/jpg/gif/webpのみ)</span>
+          <span>
+            Zip file (shortcodeはファイル名、画像はpng/jpg/gif/webpのみ)
+          </span>
           <input type="file" name="zip" accept=".zip" required />
         </label>
         <button type="submit">Bulk Add from Zip</button>
@@ -609,36 +618,36 @@ emojis.post("/bulk", async (c) => {
   const zip = new AdmZip(buffer);
   const entries = zip.getEntries();
   let count = 0;
-for (const entry of entries) {
-  if (entry.isDirectory) continue;
-  const ext = entry.entryName.split(".").pop()?.toLowerCase();
-  if (!["png", "jpg", "jpeg", "gif", "webp"].includes(ext ?? "")) continue;
-  // ファイル名からshortcode生成し、小文字に変換
-  let shortcode = entry.entryName.replace(/\.[^.]+$/, "").toLowerCase();
-  // コロン付き形式に変換
-  const shortcodeWithColon = `:${shortcode}:`;
-  // バリデーションを単体追加と同じに
-  if (!/^:(-|[a-z0-9_])+:$/.test(shortcodeWithColon)) continue;
-  shortcode = shortcode.replace(/^:|:$/g, ""); // DB登録用はコロンなし
-  const content = entry.getData();
-  const path = `emojis/${shortcode}.${ext}`;
-  try {
-    await disk.put(path, content, {
-      contentType: mime.getType(ext) ?? "application/octet-stream",
-      contentLength: content.length,
-      visibility: "public",
-    });
-    const url = await disk.getUrl(path);
-    await db.insert(customEmojis).values({
-      category,
-      shortcode,
-      url,
-    });
-    count++;
-  } catch (error) {
-    logger.error("Failed to store emoji image", { error, path });
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    const ext = entry.entryName.split(".").pop()?.toLowerCase();
+    if (!ext || !["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) continue;
+    // ファイル名からshortcode生成し、小文字に変換
+    let shortcode = entry.entryName.replace(/\.[^.]+$/, "").toLowerCase();
+    // コロン付き形式に変換
+    const shortcodeWithColon = `:${shortcode}:`;
+    // バリデーションを単体追加と同じに
+    if (!/^:(-|[a-z0-9_])+:$/.test(shortcodeWithColon)) continue;
+    shortcode = shortcode.replace(/^:|:$/g, ""); // DB登録用はコロンなし
+    const content = entry.getData();
+    const path = `emojis/${shortcode}.${ext}`;
+    try {
+      await disk.put(path, content, {
+        contentType: mime.getType(ext) ?? "application/octet-stream",
+        contentLength: content.length,
+        visibility: "public",
+      });
+      const url = await disk.getUrl(path);
+      await db.insert(customEmojis).values({
+        category,
+        shortcode,
+        url,
+      });
+      count++;
+    } catch (error) {
+      logger.error("Failed to store emoji image", { error, path });
+    }
   }
-}
   return c.redirect("/emojis");
 });
 
