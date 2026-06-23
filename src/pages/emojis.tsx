@@ -1,3 +1,4 @@
+import AdmZip from "adm-zip";
 import { getLogger } from "@logtape/logtape";
 import { inArray, isNotNull } from "drizzle-orm";
 import { Hono } from "hono";
@@ -9,6 +10,7 @@ import db from "../db";
 import { loginRequired } from "../login";
 import { proxyUrl } from "../media-proxy";
 import { customEmojis } from "../schema";
+import { drive } from "../storage";
 
 const logger = getLogger(["hollo", "pages", "emojis"]);
 
@@ -612,7 +614,7 @@ emojis.post("/bulk", async (c) => {
 for (const entry of entries) {
   if (entry.isDirectory) continue;
   const ext = entry.entryName.split(".").pop()?.toLowerCase();
-  if (!["png", "jpg", "jpeg", "gif", "webp"].includes(ext ?? "")) continue;
+  if (!ext || !["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) continue;
   // ファイル名からshortcode生成し、小文字に変換
   let shortcode = entry.entryName.replace(/\.[^.]+$/, "").toLowerCase();
   // コロン付き形式に変換
