@@ -6,6 +6,7 @@ import { db } from "../../db";
 import { serializeAccountOwner } from "../../entities/account";
 import { getInstanceHost } from "../../instance-host";
 import { accountOwners, posts } from "../../schema";
+import { getVapidPublicKey } from "../../vapid";
 
 const TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 10;
@@ -123,9 +124,8 @@ app.get("/", async (c) => {
       translation: {
         enabled: false,
       },
-      // TODO: Implement web push notifications and provide VAPID public key
       vapid: {
-        public_key: "",
+        public_key: await getVapidPublicKey(),
       },
     },
     registrations: {

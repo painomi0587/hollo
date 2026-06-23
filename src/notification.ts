@@ -1,5 +1,6 @@
 import { getLogger } from "@logtape/logtape";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import webpush from "web-push";
 
 import { db } from "./db";
 import type { Account, AccountOwner, Poll, Post } from "./schema";
@@ -10,9 +11,11 @@ import {
   notifications,
   pollVotes,
   posts,
+  type WebPushSubscription,
 } from "./schema";
 import type { Uuid } from "./uuid";
 import { uuidv7 } from "./uuid";
+import { getVapidDetails } from "./vapid";
 
 const logger = getLogger(["hollo", "notification"]);
 
@@ -72,7 +75,7 @@ export async function createNotification(
   const created = context.created ?? new Date();
   const notificationId = uuidv7(Math.max(0, +created));
 
-  return await db.transaction(async (tx) => {
+  const createdId = await db.transaction(async (tx) => {
     // Check for existing duplicate notification to prevent duplicates from
     // federation activities that may be processed multiple times
     const existingNotification = await tx.query.notifications.findFirst({
@@ -222,6 +225,12 @@ export async function createNotification(
 
     return notificationId;
   });
+
+  sendPushNotifications(context, createdId).catch((err) => {
+    logger.error("Failed to send push notifications: {err}", { err });
+  });
+
+  return createdId;
 }
 
 /**
@@ -723,4 +732,86 @@ export async function createQuotedUpdateNotifications(
   }
 
   return notificationIds;
+}
+
+function alertEnabledForType(
+  sub: WebPushSubscription,
+  type: NotificationType,
+): boolean {
+  switch (type) {
+    case "follow":
+      return sub.followAlerts;
+    case "favourite":
+    case "emoji_reaction":
+      return sub.favouriteAlerts;
+    case "reblog":
+      return sub.reblogAlerts;
+    case "mention":
+      return sub.mentionAlerts;
+    case "poll":
+      return sub.pollAlerts;
+    case "status":
+    case "update":
+    case "quoted_update":
+    case "quote":
+      return sub.statusAlerts;
+    case "follow_request":
+      return sub.followRequestAlerts;
+    default:
+      return false;
+  }
+}
+
+async function sendPushNotifications(
+  context: NotificationContext,
+  notificationId: Uuid,
+): Promise<void> {
+  const subs = await db.query.webPushSubscriptions.findMany({
+    where: { accountOwnerId: { eq: context.accountOwnerId } },
+  });
+
+  if (subs.length === 0) return;
+
+  let vapid: Awaited<ReturnType<typeof getVapidDetails>>;
+  try {
+    vapid = await getVapidDetails();
+  } catch {
+    logger.error("Failed to load VAPID keys for push notifications");
+    return;
+  }
+
+  const payload = JSON.stringify({
+    notification_id: notificationId,
+    notification_type: context.type,
+    preferred_locale: "en",
+    icon: "",
+    title: context.type,
+    body: "",
+  });
+
+  for (const sub of subs) {
+    if (!alertEnabledForType(sub, context.type)) continue;
+
+    try {
+      await webpush.sendNotification(
+        {
+          endpoint: sub.endpoint,
+          keys: { p256dh: sub.p256dhKey, auth: sub.authKey },
+        },
+        payload,
+        {
+          vapidDetails: {
+            subject: vapid.subject,
+            publicKey: vapid.publicKey,
+            privateKey: vapid.privateKey,
+          },
+        },
+      );
+    } catch (err) {
+      logger.warn(
+        "Push notification delivery failed for subscription {id}: {err}",
+        { id: sub.id, err },
+      );
+    }
+  }
 }

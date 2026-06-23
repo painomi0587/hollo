@@ -1325,3 +1325,49 @@ export const remoteReplyScrapeOrigins = pgTable(
 
 export type RemoteReplyScrapeOrigin =
   typeof remoteReplyScrapeOrigins.$inferSelect;
+
+// VAPID Keys (singleton: id is always 1)
+export const vapidKeys = pgTable("vapid_keys", {
+  id: integer("id").primaryKey().default(1),
+  privateKey: text("private_key").notNull(),
+  publicKey: text("public_key").notNull(),
+  subject: text("subject").notNull().default("https://localhost"),
+  created: timestamp("created", { withTimezone: true })
+    .notNull()
+    .default(currentTimestamp),
+});
+
+export type VapidKey = typeof vapidKeys.$inferSelect;
+
+// Web Push Subscriptions (one per access token)
+export const webPushSubscriptions = pgTable("web_push_subscriptions", {
+  id: uuid("id").$type<Uuid>().primaryKey(),
+  accessTokenCode: text("access_token_code")
+    .notNull()
+    .unique()
+    .references(() => accessTokens.code, { onDelete: "cascade" }),
+  accountOwnerId: uuid("account_owner_id")
+    .$type<Uuid>()
+    .notNull()
+    .references(() => accountOwners.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull(),
+  p256dhKey: text("p256dh_key").notNull(),
+  authKey: text("auth_key").notNull(),
+  followAlerts: boolean("follow_alerts").notNull().default(false),
+  favouriteAlerts: boolean("favourite_alerts").notNull().default(false),
+  reblogAlerts: boolean("reblog_alerts").notNull().default(false),
+  mentionAlerts: boolean("mention_alerts").notNull().default(false),
+  pollAlerts: boolean("poll_alerts").notNull().default(false),
+  statusAlerts: boolean("status_alerts").notNull().default(false),
+  followRequestAlerts: boolean("follow_request_alerts")
+    .notNull()
+    .default(false),
+  updateAlerts: boolean("update_alerts").notNull().default(false),
+  policy: text("policy").notNull().default("all"),
+  created: timestamp("created", { withTimezone: true })
+    .notNull()
+    .default(currentTimestamp),
+});
+
+export type WebPushSubscription = typeof webPushSubscriptions.$inferSelect;
+export type NewWebPushSubscription = typeof webPushSubscriptions.$inferInsert;
