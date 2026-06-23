@@ -1,6 +1,18 @@
 Hollo changelog
 ===============
 
+Version 0.9.6-satone
+--------------------
+
+Released on June 23, 2026.
+
+ -  Fixed bulk custom emoji import via ZIP file upload, which was broken
+    due to missing `adm-zip` and `drive` imports in the emoji page handler.
+
+ -  Fixed CI build failures caused by `pnpm-lock.yaml` being out of sync
+    with `package.json` after `@types/adm-zip` was added.
+
+
 Version 0.9.5
 -------------
 
