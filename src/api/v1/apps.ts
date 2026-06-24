@@ -11,6 +11,7 @@ import {
   type Scope,
   scopeEnum,
 } from "../../schema";
+import { getVapidPublicKey } from "../../vapid";
 
 const logger = getLogger(["hollo", "api", "v1", "apps"]);
 
@@ -104,7 +105,7 @@ app.post("/", async (c) => {
     // This is a placeholder for Application Client Secrets potentially expiring:
     client_secret_expires_at: 0,
     // vapid_key is deprecated, it should be fetched from /api/v1/instance instead
-    vapid_key: "",
+    vapid_key: await getVapidPublicKey(),
   };
 
   logger.debug("Created application: {app}", { app: credentialApplication });

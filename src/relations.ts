@@ -150,6 +150,10 @@ export const relations = defineRelations(schema, (r) => ({
       from: r.accessTokens.accountOwnerId,
       to: r.accountOwners.id,
     }),
+    webPushSubscription: r.one.webPushSubscriptions({
+      from: r.accessTokens.code,
+      to: r.webPushSubscriptions.accessTokenCode,
+    }),
   },
   posts: {
     account: r.one.accounts({
@@ -481,6 +485,18 @@ export const relations = defineRelations(schema, (r) => ({
     post: r.one.posts({
       from: r.remoteReplyScrapeJobs.postId,
       to: r.posts.id,
+      optional: false,
+    }),
+  },
+  webPushSubscriptions: {
+    accessToken: r.one.accessTokens({
+      from: r.webPushSubscriptions.accessTokenCode,
+      to: r.accessTokens.code,
+      optional: false,
+    }),
+    accountOwner: r.one.accountOwners({
+      from: r.webPushSubscriptions.accountOwnerId,
+      to: r.accountOwners.id,
       optional: false,
     }),
   },
