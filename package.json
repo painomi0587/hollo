@@ -1,7 +1,7 @@
 {
   "name": "@fedify/hollo",
   "description": "Federated single-user microblogging software",
-  "version": "0.9.6-satone",
+  "version": "0.9.6-satone.1",
   "private": true,
   "type": "module",
   "scripts": {

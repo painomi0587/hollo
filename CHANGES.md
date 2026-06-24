@@ -1,6 +1,31 @@
 Hollo changelog
 ===============
 
+Version 0.9.6-satone.1
+-----------------------
+
+Released on June 24, 2026.
+
+ -  Implemented [Mastodon Web Push API] for real-time push notifications.
+    New endpoints added:
+
+     -  `POST /api/v1/push/subscription` — create or replace a push
+        subscription
+     -  `GET /api/v1/push/subscription` — fetch the current subscription
+     -  `PUT /api/v1/push/subscription` — update alert preferences
+     -  `DELETE /api/v1/push/subscription` — remove a subscription
+
+    VAPID keys are auto-generated on first use and the public key is now
+    returned by `GET /api/v1/instance` and
+    `GET /api/v1/apps/verify_credentials`.  Push notifications are sent
+    asynchronously whenever a notification is created, dispatching to all
+    subscriptions whose alert flags match the notification type.
+    [[#11]]
+
+[Mastodon Web Push API]: https://docs.joinmastodon.org/methods/push/
+[#11]: https://github.com/painomi0587/hollo/issues/11
+
+
 Version 0.9.6-satone
 --------------------
 
