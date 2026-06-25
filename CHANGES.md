@@ -2,7 +2,7 @@ Hollo changelog
 ===============
 
 Version 0.9.6-satone.1
------------------------
+----------------------
 
 Released on June 24, 2026.
 
