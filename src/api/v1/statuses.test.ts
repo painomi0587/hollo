@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanDatabase } from "../../../tests/helpers";
@@ -10,7 +11,15 @@ import {
 } from "../../../tests/helpers/oauth";
 import db from "../../db";
 import app from "../../index";
-import { accounts, follows, instances, mentions, posts } from "../../schema";
+import {
+  accounts,
+  follows,
+  instances,
+  media,
+  mentions,
+  polls,
+  posts,
+} from "../../schema";
 import { uuidv7 } from "../../uuid";
 
 describe.sequential("/api/v1/accounts/verify_credentials", () => {
@@ -85,6 +94,131 @@ describe.sequential("/api/v1/accounts/verify_credentials", () => {
     expect(json.application.name).toBe(application.name);
   });
 
+  it("Preserves the requested media attachment order", async () => {
+    const firstMediumId = uuidv7();
+    const secondMediumId = uuidv7();
+    await db.insert(media).values([
+      {
+        id: firstMediumId,
+        type: "image/png",
+        url: "https://hollo.test/media/first.png",
+        width: 100,
+        height: 100,
+        thumbnailType: "image/png",
+        thumbnailUrl: "https://hollo.test/media/first.png",
+        thumbnailWidth: 100,
+        thumbnailHeight: 100,
+      },
+      {
+        id: secondMediumId,
+        type: "image/png",
+        url: "https://hollo.test/media/second.png",
+        width: 100,
+        height: 100,
+        thumbnailType: "image/png",
+        thumbnailUrl: "https://hollo.test/media/second.png",
+        thumbnailWidth: 100,
+        thumbnailHeight: 100,
+      },
+    ]);
+
+    const response = await app.request("/api/v1/statuses", {
+      method: "POST",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: "Hello world",
+        media_ids: [secondMediumId, firstMediumId],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.media_attachments.map(({ id }: { id: string }) => id)).toEqual([
+      secondMediumId,
+      firstMediumId,
+    ]);
+  });
+
+  it("Rejects duplicate media attachments when creating a status", async () => {
+    const mediumId = uuidv7();
+    await db.insert(media).values({
+      id: mediumId,
+      type: "image/png",
+      url: "https://hollo.test/media/duplicate.png",
+      width: 100,
+      height: 100,
+      thumbnailType: "image/png",
+      thumbnailUrl: "https://hollo.test/media/duplicate.png",
+      thumbnailWidth: 100,
+      thumbnailHeight: 100,
+    });
+
+    const response = await app.request("/api/v1/statuses", {
+      method: "POST",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: "Hello world",
+        media_ids: [mediumId, mediumId],
+      }),
+    });
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({
+      error: "Media not found",
+    });
+  });
+
+  it("Rejects media already attached to another status on create", async () => {
+    const existingPostId = uuidv7();
+    const mediumId = uuidv7();
+    await db.insert(posts).values({
+      id: existingPostId,
+      iri: `https://hollo.test/@hollo/${existingPostId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Existing status",
+      contentHtml: "<p>Existing status</p>",
+      published: new Date(),
+    });
+    await db.insert(media).values({
+      id: mediumId,
+      postId: existingPostId,
+      type: "image/png",
+      url: "https://hollo.test/media/attached.png",
+      width: 100,
+      height: 100,
+      thumbnailType: "image/png",
+      thumbnailUrl: "https://hollo.test/media/attached.png",
+      thumbnailWidth: 100,
+      thumbnailHeight: 100,
+    });
+
+    const response = await app.request("/api/v1/statuses", {
+      method: "POST",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: "New status",
+        media_ids: [mediumId],
+      }),
+    });
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({
+      error: "Media not found",
+    });
+    await expect(db.query.posts.findMany()).resolves.toHaveLength(1);
+  });
+
   it("Can update a status using JSON", async () => {
     const body = JSON.stringify({
       status: "Hello world",
@@ -129,6 +263,51 @@ describe.sequential("/api/v1/accounts/verify_credentials", () => {
     expect(updateJson.content).toBe("<p>Test Update</p>\n");
   });
 
+  it("Returns 404 when a status disappears during an update", async () => {
+    const postId = uuidv7();
+    await db.insert(posts).values({
+      id: postId,
+      iri: `https://hollo.test/@hollo/${postId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Hello world",
+      contentHtml: "<p>Hello world</p>",
+      published: new Date(),
+    });
+
+    const originalFindFirst = db.query.posts.findFirst.bind(db.query.posts);
+    const findFirstSpy = vi.spyOn(db.query.posts, "findFirst");
+    // Drizzle's query builder is awaitable, but the mock returns an equivalent
+    // Promise so the deletion can be injected after the preflight read.
+    // @ts-expect-error The runtime return value remains await-compatible.
+    findFirstSpy.mockImplementation(async (...args) => {
+      const post = await originalFindFirst(...args);
+      if (post?.id === postId)
+        await db.delete(posts).where(eq(posts.id, postId));
+      return post;
+    });
+
+    let response: Response;
+    try {
+      response = await app.request(`/api/v1/statuses/${postId}`, {
+        method: "PUT",
+        headers: {
+          authorization: bearerAuthorization(accessToken),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "Edited status" }),
+      });
+    } finally {
+      findFirstSpy.mockRestore();
+    }
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: "Record not found",
+    });
+  });
+
   it("Can update a status using FormData", async () => {
     const body = JSON.stringify({
       status: "Hello world",
@@ -170,6 +349,361 @@ describe.sequential("/api/v1/accounts/verify_credentials", () => {
 
     expect(typeof updateJson).toBe("object");
     expect(updateJson.content).toBe("<p>Test Update</p>\n");
+  });
+
+  it("Can update media descriptions when updating a status", async () => {
+    expect.assertions(5);
+
+    const postId = uuidv7();
+    const mediumId = uuidv7();
+    await db.insert(posts).values({
+      id: postId,
+      iri: `https://hollo.test/@hollo/${postId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Hello world",
+      contentHtml: "<p>Hello world</p>",
+      published: new Date(),
+    });
+    await db.insert(media).values({
+      id: mediumId,
+      postId,
+      type: "image/png",
+      url: "https://hollo.test/media/original.png",
+      width: 100,
+      height: 100,
+      description: "Old alt text",
+      thumbnailType: "image/png",
+      thumbnailUrl: "https://hollo.test/media/thumbnail.png",
+      thumbnailWidth: 100,
+      thumbnailHeight: 100,
+    });
+
+    const response = await app.request(`/api/v1/statuses/${postId}`, {
+      method: "PUT",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: "Edited status",
+        media_attributes: [{ id: mediumId, description: "New alt text" }],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.content).toBe("<p>Edited status</p>\n");
+    expect(json.media_attachments[0].description).toBe("New alt text");
+
+    const medium = await db.query.media.findFirst({
+      where: { id: { eq: mediumId } },
+    });
+    expect(medium).not.toBeNull();
+    expect(medium?.description).toBe("New alt text");
+  });
+
+  it("Can reorder media attachments when updating a status", async () => {
+    const postId = uuidv7();
+    const firstMediumId = uuidv7();
+    const secondMediumId = uuidv7();
+    await db.insert(posts).values({
+      id: postId,
+      iri: `https://hollo.test/@hollo/${postId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Hello world",
+      contentHtml: "<p>Hello world</p>",
+      published: new Date(),
+    });
+    await db.insert(media).values([
+      {
+        id: firstMediumId,
+        postId,
+        type: "image/png",
+        url: "https://hollo.test/media/first.png",
+        width: 100,
+        height: 100,
+        thumbnailType: "image/png",
+        thumbnailUrl: "https://hollo.test/media/first.png",
+        thumbnailWidth: 100,
+        thumbnailHeight: 100,
+      },
+      {
+        id: secondMediumId,
+        postId,
+        type: "image/png",
+        url: "https://hollo.test/media/second.png",
+        width: 100,
+        height: 100,
+        thumbnailType: "image/png",
+        thumbnailUrl: "https://hollo.test/media/second.png",
+        thumbnailWidth: 100,
+        thumbnailHeight: 100,
+      },
+    ]);
+
+    const response = await app.request(`/api/v1/statuses/${postId}`, {
+      method: "PUT",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: "Edited status",
+        media_ids: [secondMediumId, firstMediumId],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.media_attachments.map(({ id }: { id: string }) => id)).toEqual([
+      secondMediumId,
+      firstMediumId,
+    ]);
+  });
+
+  it("Can attach new media and update its description in one request", async () => {
+    const postId = uuidv7();
+    const mediumId = uuidv7();
+    await db.insert(posts).values({
+      id: postId,
+      iri: `https://hollo.test/@hollo/${postId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Hello world",
+      contentHtml: "<p>Hello world</p>",
+      published: new Date(),
+    });
+    await db.insert(media).values({
+      id: mediumId,
+      type: "image/png",
+      url: "https://hollo.test/media/new.png",
+      width: 100,
+      height: 100,
+      thumbnailType: "image/png",
+      thumbnailUrl: "https://hollo.test/media/new.png",
+      thumbnailWidth: 100,
+      thumbnailHeight: 100,
+    });
+
+    const response = await app.request(`/api/v1/statuses/${postId}`, {
+      method: "PUT",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: "Edited status",
+        media_ids: [mediumId],
+        media_attributes: [{ id: mediumId, description: "New alt text" }],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.media_attachments).toMatchObject([
+      { id: mediumId, description: "New alt text" },
+    ]);
+    const medium = await db.query.media.findFirst({
+      where: { id: { eq: mediumId } },
+    });
+    expect(medium).toMatchObject({ postId, description: "New alt text" });
+  });
+
+  it("Rejects a media attachment lost to a concurrent status edit", async () => {
+    const firstPostId = uuidv7();
+    const secondPostId = uuidv7();
+    const mediumId = uuidv7();
+    await db.insert(posts).values([
+      {
+        id: firstPostId,
+        iri: `https://hollo.test/@hollo/${firstPostId}`,
+        type: "Note",
+        accountId: account.id,
+        visibility: "public",
+        content: "First post",
+        contentHtml: "<p>First post</p>",
+        published: new Date(),
+      },
+      {
+        id: secondPostId,
+        iri: `https://hollo.test/@hollo/${secondPostId}`,
+        type: "Note",
+        accountId: account.id,
+        visibility: "public",
+        content: "Second post",
+        contentHtml: "<p>Second post</p>",
+        published: new Date(),
+      },
+    ]);
+    await db.insert(media).values({
+      id: mediumId,
+      type: "image/png",
+      url: "https://hollo.test/media/concurrent.png",
+      width: 100,
+      height: 100,
+      thumbnailType: "image/png",
+      thumbnailUrl: "https://hollo.test/media/concurrent.png",
+      thumbnailWidth: 100,
+      thumbnailHeight: 100,
+    });
+
+    const originalFindFirst = db.query.media.findFirst.bind(db.query.media);
+    let validatedRequests = 0;
+    let releaseValidations!: () => void;
+    const bothValidated = new Promise<void>((resolve) => {
+      releaseValidations = resolve;
+    });
+    const findFirstSpy = vi.spyOn(db.query.media, "findFirst");
+    // Drizzle's query builder is awaitable, but the mock returns an equivalent
+    // Promise so both preflight reads can be synchronized deterministically.
+    // @ts-expect-error The runtime return value remains await-compatible.
+    findFirstSpy.mockImplementation(async (...args) => {
+      const medium = await originalFindFirst(...args);
+      validatedRequests++;
+      if (validatedRequests === 2) releaseValidations();
+      await bothValidated;
+      return medium;
+    });
+
+    let responses: Response[];
+    try {
+      responses = await Promise.all(
+        [firstPostId, secondPostId].map((postId) =>
+          app.request(`/api/v1/statuses/${postId}`, {
+            method: "PUT",
+            headers: {
+              authorization: bearerAuthorization(accessToken),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              status: "Edited status",
+              media_ids: [mediumId],
+            }),
+          }),
+        ),
+      );
+    } finally {
+      findFirstSpy.mockRestore();
+    }
+
+    expect(responses.map((response) => response.status).toSorted()).toEqual([
+      200, 422,
+    ]);
+    const medium = await db.query.media.findFirst({
+      where: { id: { eq: mediumId } },
+    });
+    expect([firstPostId, secondPostId]).toContain(medium?.postId);
+  });
+
+  it("Can update media descriptions from form data when updating a status", async () => {
+    expect.assertions(4);
+
+    const postId = uuidv7();
+    const mediumId = uuidv7();
+    await db.insert(posts).values({
+      id: postId,
+      iri: `https://hollo.test/@hollo/${postId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Hello world",
+      contentHtml: "<p>Hello world</p>",
+      published: new Date(),
+    });
+    await db.insert(media).values({
+      id: mediumId,
+      postId,
+      type: "image/png",
+      url: "https://hollo.test/media/original.png",
+      width: 100,
+      height: 100,
+      description: "Old alt text",
+      thumbnailType: "image/png",
+      thumbnailUrl: "https://hollo.test/media/thumbnail.png",
+      thumbnailWidth: 100,
+      thumbnailHeight: 100,
+    });
+
+    const body = new FormData();
+    body.append("status", "Edited status");
+    body.append("media_attributes[0][id]", mediumId);
+    body.append("media_attributes[0][description]", "New alt text");
+
+    const response = await app.request(`/api/v1/statuses/${postId}`, {
+      method: "PUT",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+      },
+      body,
+    });
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.media_attachments[0].description).toBe("New alt text");
+
+    const medium = await db.query.media.findFirst({
+      where: { id: { eq: mediumId } },
+    });
+    expect(medium).not.toBeNull();
+    expect(medium?.description).toBe("New alt text");
+  });
+
+  it("Can update media descriptions from sparse form data indexes", async () => {
+    expect.assertions(4);
+
+    const postId = uuidv7();
+    const mediumId = uuidv7();
+    await db.insert(posts).values({
+      id: postId,
+      iri: `https://hollo.test/@hollo/${postId}`,
+      type: "Note",
+      accountId: account.id,
+      visibility: "public",
+      content: "Hello world",
+      contentHtml: "<p>Hello world</p>",
+      published: new Date(),
+    });
+    await db.insert(media).values({
+      id: mediumId,
+      postId,
+      type: "image/png",
+      url: "https://hollo.test/media/original.png",
+      width: 100,
+      height: 100,
+      description: "Old alt text",
+      thumbnailType: "image/png",
+      thumbnailUrl: "https://hollo.test/media/thumbnail.png",
+      thumbnailWidth: 100,
+      thumbnailHeight: 100,
+    });
+
+    const body = new FormData();
+    body.append("status", "Edited status");
+    body.append("media_attributes[1000000000][id]", mediumId);
+    body.append("media_attributes[1000000000][description]", "New alt text");
+
+    const response = await app.request(`/api/v1/statuses/${postId}`, {
+      method: "PUT",
+      headers: {
+        authorization: bearerAuthorization(accessToken),
+      },
+      body,
+    });
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.media_attachments[0].description).toBe("New alt text");
+
+    const medium = await db.query.media.findFirst({
+      where: { id: { eq: mediumId } },
+    });
+    expect(medium).not.toBeNull();
+    expect(medium?.description).toBe("New alt text");
   });
 
   it("Issue 177: successfully creates a status with null values, setting appropriate defaults", async () => {
@@ -627,8 +1161,8 @@ describe.sequential("/api/v1/statuses quotes", () => {
     }
   });
 
-  it("accepts cached remote public quote policies without authorization", async () => {
-    expect.assertions(6);
+  it("requests authorization for cached remote public quote policies", async () => {
+    expect.assertions(7);
 
     const remoteAccountId = uuidv7();
     const quotedPostId = uuidv7();
@@ -671,31 +1205,37 @@ describe.sequential("/api/v1/statuses quotes", () => {
       });
       expect(quoteResponse.status).toBe(200);
       const quote = await quoteResponse.json();
-      expect(quote.quote.state).toBe("accepted");
-      expect(quote.quote.quoted_status?.id).toBe(quotedPostId);
+      expect(quote.quote.state).toBe("pending");
+      expect(quote.quote.quoted_status).toBeNull();
 
-      const activities = await Promise.all(
-        fetch.mock.calls.map(async ([input]) => {
-          const request = input instanceof Request ? input : null;
-          return request == null ? null : await request.clone().json();
-        }),
-      );
-      expect(
-        activities.some((activity) => activity?.type === "QuoteRequest"),
-      ).toBe(false);
+      let hasQuoteRequest = false;
+      await vi.waitFor(async () => {
+        const activities = await Promise.all(
+          fetch.mock.calls.map(async ([input]) => {
+            const request = input instanceof Request ? input : null;
+            return request == null ? null : await request.clone().json();
+          }),
+        );
+        hasQuoteRequest = activities.some(
+          (activity) => activity?.type === "QuoteRequest",
+        );
+        if (!hasQuoteRequest) throw new Error("QuoteRequest was not sent yet");
+      });
+      expect(hasQuoteRequest).toBe(true);
 
       const objectResponse = await app.request(`/@quote-quoter/${quote.id}`, {
         headers: { Accept: "application/activity+json" },
       });
       const object = await objectResponse.json();
-      expect(object.quote).toBe(quotedPostIri);
-      expect(object.quoteUrl).toBe(quotedPostIri);
+      expect(object.quote).toBeUndefined();
+      expect(object.quoteUrl).toBeUndefined();
+      expect(object.quoteAuthorization).toBeUndefined();
     } finally {
       fetch.mockRestore();
     }
   });
 
-  it("accepts cached remote followers-only quotes from approved followers", async () => {
+  it("requests authorization for cached remote followers-only quotes from approved followers", async () => {
     expect.assertions(3);
 
     const remoteAccountId = uuidv7();
@@ -745,16 +1285,21 @@ describe.sequential("/api/v1/statuses quotes", () => {
       });
       expect(quoteResponse.status).toBe(200);
       const quote = await quoteResponse.json();
-      expect(quote.quote.state).toBe("accepted");
-      const activities = await Promise.all(
-        fetch.mock.calls.map(async ([input]) => {
-          const request = input instanceof Request ? input : null;
-          return request == null ? null : await request.clone().json();
-        }),
-      );
-      expect(
-        activities.some((activity) => activity?.type === "QuoteRequest"),
-      ).toBe(false);
+      expect(quote.quote.state).toBe("pending");
+      let hasQuoteRequest = false;
+      await vi.waitFor(async () => {
+        const activities = await Promise.all(
+          fetch.mock.calls.map(async ([input]) => {
+            const request = input instanceof Request ? input : null;
+            return request == null ? null : await request.clone().json();
+          }),
+        );
+        hasQuoteRequest = activities.some(
+          (activity) => activity?.type === "QuoteRequest",
+        );
+        if (!hasQuoteRequest) throw new Error("QuoteRequest was not sent yet");
+      });
+      expect(hasQuoteRequest).toBe(true);
     } finally {
       fetch.mockRestore();
     }
@@ -1188,6 +1733,50 @@ describe.sequential("/api/v1/statuses/:id/reblog", () => {
     expect(json.reblog).not.toBeNull();
     expect(json.reblog.id).toBe(quotePostId);
     expect(json.reblog.quote_id).toBe(quotedPostId);
+  });
+
+  it("does not carry a poll on the boost wrapper", async () => {
+    expect.assertions(6);
+    const pollId = uuidv7();
+    await db.insert(polls).values({
+      id: pollId,
+      multiple: false,
+      expires: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    const pollPostId = uuidv7();
+    await db.insert(posts).values({
+      id: pollPostId,
+      iri: `https://hollo.test/@hollo/${pollPostId}`,
+      type: "Question",
+      accountId: account.id,
+      visibility: "public",
+      content: "Which option?",
+      contentHtml: "<p>Which option?</p>",
+      pollId,
+      published: new Date(),
+    });
+
+    const response = await app.request(
+      `/api/v1/statuses/${pollPostId}/reblog`,
+      {
+        method: "POST",
+        headers: { authorization: bearerAuthorization(accessToken) },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.poll).toBeNull();
+    expect(json.reblog).not.toBeNull();
+    expect(json.reblog.poll.id).toBe(pollId);
+    const sharingPost = await db.query.posts.findFirst({
+      where: { sharingId: { eq: pollPostId } },
+    });
+    expect(sharingPost?.pollId).toBeNull();
+    const originalPost = await db.query.posts.findFirst({
+      where: { id: { eq: pollPostId } },
+    });
+    expect(originalPost?.pollId).toBe(pollId);
   });
 });
 

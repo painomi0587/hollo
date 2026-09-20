@@ -1,41 +1,211 @@
 Hollo changelog
 ===============
 
-Version 0.9.6-satone.1
-----------------------
+Version 0.9.18
+--------------
 
-Released on June 24, 2026.
+Released on September 8, 2026.
 
- -  Implemented [Mastodon Web Push API] for real-time push notifications.
-    New endpoints added:
+ -  Fixed notifications from blocked accounts, and from accounts muted with
+    notifications hidden, remaining visible in the notifications lists (both
+    the v1 and v2 endpoints) after the block or mute was created.
 
-     -  `POST /api/v1/push/subscription` — create or replace a push
-        subscription
-     -  `GET /api/v1/push/subscription` — fetch the current subscription
-     -  `PUT /api/v1/push/subscription` — update alert preferences
-     -  `DELETE /api/v1/push/subscription` — remove a subscription
+    [[#608]]
 
-    VAPID keys are auto-generated on first use and the public key is now
-    returned by `GET /api/v1/instance` and
-    `GET /api/v1/apps/verify_credentials`.  Push notifications are sent
-    asynchronously whenever a notification is created, dispatching to all
-    subscriptions whose alert flags match the notification type.
-    [[#11]]
-
-[Mastodon Web Push API]: https://docs.joinmastodon.org/methods/push/
-[#11]: https://github.com/painomi0587/hollo/issues/11
+[#608]: https://github.com/fedify-dev/hollo/issues/608
 
 
-Version 0.9.6-satone
---------------------
+Version 0.9.17
+--------------
 
-Released on June 23, 2026.
+Released on August 30, 2026.
 
- -  Fixed bulk custom emoji import via ZIP file upload, which was broken
-    due to missing `adm-zip` and `drive` imports in the emoji page handler.
+ -  Fixed status URL searches timing out on installations with large posts
+    tables by adding a partial hash index on `posts.url`.  On large
+    installations, create the index before upgrading to avoid blocking writes
+    during the automatic migration:
 
- -  Fixed CI build failures caused by `pnpm-lock.yaml` being out of sync
-    with `package.json` after `@types/adm-zip` was added.
+    ~~~~ sql
+    CREATE INDEX CONCURRENTLY posts_url_index
+    ON posts USING hash (url)
+    WHERE url IS NOT NULL;
+    ~~~~
+
+    If this concurrent build fails or is interrupted, PostgreSQL can leave an
+    invalid index behind.  Drop it and retry the command above before
+    upgrading:
+
+    ~~~~ sql
+    DROP INDEX CONCURRENTLY IF EXISTS posts_url_index;
+    ~~~~
+
+    [[#596]]
+
+[#596]: https://github.com/fedify-dev/hollo/issues/596
+
+
+Version 0.9.16
+--------------
+
+Released on August 28, 2026.
+
+ -  Fixed public profile pages downloading hundreds of CJK web font fragments
+    when rendering multilingual timelines.  CJK text now uses
+    language-specific system font stacks, while Inter and JetBrains Mono remain
+    web fonts.
+
+
+Version 0.9.15
+--------------
+
+Released on August 26, 2026.
+
+ -  Added a partial hash index on `posts.quote_authorization_iri`, preventing
+    federated `Delete` activities from repeatedly scanning the entire posts
+    table while checking for revoked quote authorizations.  On large
+    installations, create the index before upgrading to avoid blocking writes
+    during the automatic migration:
+
+    ~~~~ sql
+    CREATE INDEX CONCURRENTLY
+      posts_quote_authorization_iri_index
+    ON posts USING hash (quote_authorization_iri)
+    WHERE quote_authorization_iri IS NOT NULL;
+    ~~~~
+
+    If this concurrent build fails or is interrupted, PostgreSQL can leave an
+    invalid index behind.  Drop it and retry the command above before
+    upgrading:
+
+    ~~~~ sql
+    DROP INDEX CONCURRENTLY IF EXISTS
+      posts_quote_authorization_iri_index;
+    ~~~~
+
+    [[#595]]
+
+[#595]: https://github.com/fedify-dev/hollo/issues/595
+
+
+Version 0.9.14
+--------------
+
+Released on August 26, 2026.
+
+ -  Fixed boosts of poll posts copying the original post's poll reference.
+    Existing boost rows are repaired, and the missing `posts.poll_id` unique
+    constraint is now created.  This prevents poll notifications from being
+    attributed to the boosting account and gives expired-poll queries the
+    index they need.  [[#593]]
+
+ -  Fixed Docker image builds failing during `pnpm install --frozen-lockfile`.
+    Docker images now install the project-pinned pnpm version through mise
+    instead of using Alpine Linux's floating pnpm package.
+
+[#593]: https://github.com/fedify-dev/hollo/issues/593
+
+
+Version 0.9.13
+--------------
+
+Released on August 23, 2026.
+
+ -  Upgraded Fedify to 2.2.10, which fixes an SSRF vulnerability in
+    authenticated document loaders where public document URLs could redirect
+    signed requests to loopback, link-local, or private addresses.
+    [[CVE-2026-77632]]
+
+[CVE-2026-77632]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-cxc3-7q96-6cpx
+
+
+Version 0.9.12
+--------------
+
+Released on August 13, 2026.
+
+ -  Fixed Docker image builds failing during `pnpm install --frozen-lockfile`.
+    Docker images now install the project-pinned pnpm version through mise
+    instead of using Alpine Linux's pnpm package, and pnpm has been upgraded
+    to 11.21.0.
+
+
+Version 0.9.11
+--------------
+
+Released on August 13, 2026.
+
+ -  Fixed Mastodon API compatibility bugs that prevented clients such as
+    SubwayTooter from adding or removing accounts from lists.  Following an
+    already-followed account is now idempotent, and list membership endpoints
+    accept Mastodon-style form and query parameters.  [[#563]]
+
+[#563]: https://github.com/fedify-dev/hollo/issues/563
+
+
+Version 0.9.10
+--------------
+
+Released on July 20, 2026.
+
+ -  Fixed media attachments appearing in arbitrary order in the web UI,
+    Mastodon API responses, and federated activities.  Hollo now preserves the
+    order supplied by local clients and remote ActivityPub objects, and honors
+    `media_ids` when editing a status.  [[#556]]
+
+[#556]: https://github.com/fedify-dev/hollo/issues/556
+
+
+Version 0.9.9
+-------------
+
+Released on July 19, 2026.
+
+ -  Upgraded Fedify to 2.2.7 to fix a security vulnerability in NodeInfo
+    lookups that could allow remote instances to make Hollo fetch non-public
+    network destinations.  [[CVE-2026-62857]]
+
+[CVE-2026-62857]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-hqph-j65v-8cq5
+
+
+Version 0.9.8
+-------------
+
+Released on July 11, 2026.
+
+ -  Fixed a Mastodon API compatibility bug where accounts with *Make following
+    list public* disabled could not view their own following list in clients.
+    Authenticated account owners can now access their own following list while
+    it remains hidden from everyone else.  [[#548]]
+
+[#548]: https://github.com/fedify-dev/hollo/issues/548
+
+
+Version 0.9.7
+-------------
+
+Released on July 9, 2026.
+
+ -  Fixed a bug where locally-created quotes of remote posts that advertised
+    an FEP-044f quote policy were marked as accepted immediately without
+    first obtaining a `QuoteAuthorization`, causing third-party servers to see
+    the quote as unapproved.  Hollo now keeps those quotes pending, sends a
+    `QuoteRequest`, and publishes the `quoteAuthorization` property after the
+    remote server accepts the request.  Remote posts without an FEP-044f quote
+    policy are still treated as legacy quote targets and continue to publish
+    the `quote` property without a `quoteAuthorization`.
+
+
+Version 0.9.6
+-------------
+
+Released on July 3, 2026.
+
+ -  Fixed a Mastodon API compatibility bug where editing a post through
+    `PUT /api/v1/statuses/:id` ignored updated media attachment descriptions,
+    causing alt text changes from clients like Phanpy and Moshidon to appear
+    successful without being saved.  [[#538]]
+
+[#538]: https://github.com/fedify-dev/hollo/issues/538
 
 
 Version 0.9.5
@@ -525,6 +695,48 @@ Released on May 20, 2026.
 [#491]: https://github.com/fedify-dev/hollo/pull/491
 [#492]: https://github.com/fedify-dev/hollo/issues/492
 [#493]: https://github.com/fedify-dev/hollo/pull/493
+
+
+Version 0.8.11
+--------------
+
+Released on August 23, 2026.
+
+ -  Fixed Docker image builds failing during `pnpm install --frozen-lockfile`.
+    Docker images now install the project-pinned pnpm version through mise
+    instead of using Alpine Linux's floating pnpm package.
+
+
+Version 0.8.10
+--------------
+
+Released on August 22, 2026.
+
+ -  Upgraded Fedify to 2.1.21, which fixes an SSRF vulnerability in
+    authenticated document loaders where public document URLs could redirect
+    signed requests to loopback, link-local, or private addresses.
+    [[CVE-2026-77632]]
+
+
+Version 0.8.9
+-------------
+
+Released on July 19, 2026.
+
+ -  Upgraded Fedify to 2.1.18 to fix a security vulnerability in NodeInfo
+    lookups that could allow remote instances to make Hollo fetch non-public
+    network destinations.  [[CVE-2026-62857]]
+
+
+Version 0.8.8
+-------------
+
+Released on July 3, 2026.
+
+ -  Fixed a Mastodon API compatibility bug where editing a post through
+    `PUT /api/v1/statuses/:id` ignored updated media attachment descriptions,
+    causing alt text changes from clients like Phanpy and Moshidon to appear
+    successful without being saved.  [[#538]]
 
 
 Version 0.8.7
@@ -1171,7 +1383,7 @@ Released on February 23, 2026.
     compatibility workaround for Bonfire's current signature handling.
     This is intended to be reverted to Fedify's default RFC 9421-first
     behavior after the Bonfire fix is released.
-    [[bonfire-networks/activity_pub#8]]
+    [[bonfire-networks/activity\_pub#8][bonfire-networks/activity_pub#8]]
 
 [bonfire-networks/activity_pub#8]: https://github.com/bonfire-networks/activity_pub/issues/8
 

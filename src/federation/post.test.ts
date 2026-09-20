@@ -1,8 +1,10 @@
 import type { Context, InboxContext } from "@fedify/fedify";
 import {
   Announce,
+  Image,
   InteractionPolicy,
   InteractionRule,
+  Link,
   Mention,
   Note,
   Person,
@@ -16,7 +18,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanDatabase } from "../../tests/helpers";
 import { createAccount } from "../../tests/helpers/oauth";
 import db from "../db";
-import { accounts, follows, instances, posts } from "../schema";
+import { accounts, follows, instances, polls, posts } from "../schema";
 import type { Uuid } from "../uuid";
 import { toTemporalInstant } from "./date";
 import { onPostShared } from "./inbox";
@@ -300,6 +302,34 @@ describe("persistSharingPost", () => {
     expect(originalPost?.sharesCount).toBe(1);
   });
 
+  it("does not copy a poll to the sharing post", async () => {
+    expect.assertions(2);
+    const { actor, object, originalPostId, originalPostIri, sharer } =
+      await seedShareScenario();
+    const pollId = crypto.randomUUID() as Uuid;
+    await db.insert(polls).values({
+      id: pollId,
+      multiple: false,
+      expires: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    await db.update(posts).set({ pollId }).where(eq(posts.id, originalPostId));
+
+    const share = await persistSharingPost(
+      db,
+      createAnnounce(
+        "https://remote.test/@sharer/announces/poll",
+        actor,
+        originalPostIri,
+      ),
+      object,
+      "https://hollo.test",
+      { account: sharer },
+    );
+
+    expect(share).not.toBeNull();
+    expect(share?.pollId).toBeNull();
+  });
+
   it("does not forward duplicate announces for a local post", async () => {
     expect.assertions(1);
     const { actor, object } = await seedLocalPostShareScenario();
@@ -394,6 +424,86 @@ describe("persistSharingPost", () => {
 describe("persistPost", () => {
   beforeEach(async () => {
     await cleanDatabase();
+  });
+
+  it("preserves remote media attachment order when storing and federating", async () => {
+    const author = await seedRemoteAccount("media-author");
+    const firstUrl = "https://remote.test/media/first.png";
+    const secondUrl = "https://remote.test/media/second.png";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Uint8Array(), {
+        headers: { "Content-Type": "image/png" },
+      }),
+    );
+    const result = await (async () => {
+      try {
+        return await persistPost(
+          db,
+          new Note({
+            id: new URL("https://remote.test/@media-author/posts/1"),
+            attribution: createPerson(author),
+            content: "<p>Two images</p>",
+            attachments: [
+              new Image({
+                mediaType: "image/png",
+                url: new URL(firstUrl),
+                width: 100,
+                height: 100,
+              }),
+              new Image({
+                mediaType: "image/png",
+                url: new URL(secondUrl),
+                width: 100,
+                height: 100,
+              }),
+            ],
+            to: PUBLIC_COLLECTION,
+          }),
+          "https://hollo.test",
+          { account: author },
+        );
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    })();
+    if (result == null) throw new Error("Failed to persist post");
+
+    const storedMedia = await db.query.media.findMany({
+      where: { postId: { eq: result.id } },
+      orderBy: { position: "asc" },
+    });
+    expect(storedMedia.map((medium) => medium.url)).toEqual([
+      firstUrl,
+      secondUrl,
+    ]);
+    expect(storedMedia.map((medium) => medium.position)).toEqual([0, 1]);
+
+    const post = await db.query.posts.findFirst({
+      where: { id: { eq: result.id } },
+      with: {
+        account: { with: { owner: true } },
+        replyTarget: true,
+        quoteTarget: true,
+        media: true,
+        poll: { with: { options: true } },
+        mentions: { with: { account: true } },
+      },
+    });
+    if (post == null) throw new Error("Failed to load post");
+    const object = toObject(
+      { ...post, media: post.media.toReversed() },
+      {} as Context<unknown>,
+    );
+    const attachments = await Array.fromAsync(object.getAttachments());
+    expect(
+      attachments.map((attachment) =>
+        attachment instanceof Image
+          ? attachment.url instanceof Link
+            ? attachment.url.href?.href
+            : attachment.url?.href
+          : null,
+      ),
+    ).toEqual([firstUrl, secondUrl]);
   });
 
   it("does not fetch remote replies collections synchronously", async () => {
@@ -874,6 +984,7 @@ describe("toObject", () => {
     const account = await createAccount({ username: "quote-author" });
     const quotedPostId = crypto.randomUUID() as Uuid;
     const quotePostId = crypto.randomUUID() as Uuid;
+    const quoteAuthorizationIri = `https://remote.test/objects/fep-quote-target/quote_authorizations/${quotePostId}`;
 
     await db.insert(posts).values([
       {
@@ -894,6 +1005,7 @@ describe("toObject", () => {
         quoteTargetId: quotedPostId,
         quoteTargetIri: "https://remote.test/objects/fep-quote-target",
         quoteState: "accepted",
+        quoteAuthorizationIri,
         visibility: "public",
         contentHtml: "<p>My take</p>",
         content: "My take",
@@ -906,6 +1018,7 @@ describe("toObject", () => {
     expect(json).toMatchObject({
       quote: "https://remote.test/objects/fep-quote-target",
       quoteUrl: "https://remote.test/objects/fep-quote-target",
+      quoteAuthorization: quoteAuthorizationIri,
       interactionPolicy: {
         canQuote: {
           automaticApproval: "as:Public",

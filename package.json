@@ -1,7 +1,7 @@
 {
   "name": "@fedify/hollo",
   "description": "Federated single-user microblogging software",
-  "version": "0.9.6-satone.1",
+  "version": "0.9.18-satone",
   "private": true,
   "type": "module",
   "scripts": {
@@ -32,14 +32,14 @@
   },
   "dependencies": {
     "@aws-sdk/credential-providers": "^3.1037.0",
-    "@fedify/debugger": "^2.2.4",
-    "@fedify/fedify": "^2.2.4",
-    "@fedify/hono": "^2.2.4",
+    "@fedify/debugger": "~2.2.10",
+    "@fedify/fedify": "~2.2.10",
+    "@fedify/hono": "~2.2.10",
     "@fedify/markdown-it-hashtag": "~0.3.0",
     "@fedify/markdown-it-mention": "~0.3.0",
-    "@fedify/postgres": "^2.2.4",
-    "@fedify/vocab": "^2.2.4",
-    "@fedify/webfinger": "^2.2.4",
+    "@fedify/postgres": "~2.2.10",
+    "@fedify/vocab": "~2.2.10",
+    "@fedify/webfinger": "~2.2.10",
     "@hexagon/base64": "^2.0.4",
     "@hono/node-server": "^1.19.13",
     "@hono/zod-validator": "^0.7.6",
@@ -90,7 +90,7 @@
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.52.0",
-    "@fedify/lint": "^2.2.4",
+    "@fedify/lint": "~2.2.10",
     "@iconify-json/lucide": "^1.2.104",
     "@reporters/github": "^1.13.1",
     "@types/adm-zip": "^0.5.0",
@@ -114,11 +114,5 @@
     "unocss": "^66.6.8",
     "vitest": "^3.1.4"
   },
-  "packageManager": "pnpm@9.15.1+sha512.1acb565e6193efbebda772702950469150cf12bcc764262e7587e71d19dc98a423dff9536e57ea44c49bdf790ff694e83c27be5faa23d67e0c033b583be4bfcf",
-  "pnpm": {
-    "overrides": {
-      "fast-xml-parser@<4.5.5": "^4.5.5",
-      "fast-xml-parser@>=5.0.0 <5.7.0": "^5.7.0"
-    }
-  }
+  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
 }

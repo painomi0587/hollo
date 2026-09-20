@@ -514,10 +514,14 @@ export const posts = pgTable(
     unique().on(table.accountId, table.sharingId),
     index().on(table.sharingId),
     index().on(table.accountId),
+    index().using("hash", table.url).where(isNotNull(table.url)),
     index().on(table.accountId, table.sharingId),
     index().on(table.replyTargetId),
     index().on(table.accountId, table.replyTargetId),
     index().on(table.quoteTargetId).where(isNotNull(table.quoteTargetId)),
+    index()
+      .using("hash", table.quoteAuthorizationIri)
+      .where(isNotNull(table.quoteAuthorizationIri)),
     index().on(table.visibility, table.accountId),
     index()
       .on(table.visibility, table.accountId, table.sharingId)
@@ -552,6 +556,7 @@ export const media = pgTable(
     postId: uuid("post_id")
       .$type<Uuid>()
       .references(() => posts.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
     type: text("type").notNull(),
     url: text("url").notNull(),
     width: integer("width").notNull(),
