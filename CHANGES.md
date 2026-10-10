@@ -6,6 +6,14 @@ Version 0.8.16
 
 To be released.
 
+ -  Fixed a security vulnerability where any authenticated user with the
+    `write:statuses` scope could delete another local account's post or a
+    cached remote post by its UUID and receive the deleted post's contents.
+    Status deletion now requires the post to belong to the account associated
+    with the access token.  [[GHSA-v2qh-w789-xxj6]]
+
+[GHSA-v2qh-w789-xxj6]: https://github.com/fedify-dev/hollo/security/advisories/GHSA-v2qh-w789-xxj6
+
 
 Version 0.8.15
 --------------
