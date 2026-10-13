@@ -6,6 +6,21 @@ Version 0.8.15
 
 To be released.
 
+ -  Upgraded Fedify to 2.1.30, which fixes two security vulnerabilities:
+    inboxes accepting signed activities whose IDs had a different origin
+    from their actors, which let any remote actor have forged objects
+    trusted as if they came from another server and suppress the genuine
+    activity with the same ID as a duplicate, and key ownership checks
+    accepting a different actor's document when an actor ID redirected to
+    or served it, which let an attacker whose actor document was reached
+    through a victim's actor ID sign activities that passed authentication
+    as the victim's.  Keys cached under the weaker ownership check are
+    fetched and verified again after upgrading.
+    [[GHSA-4qhx-hhwf-8685], [GHSA-8863-8468-7hq7]]
+
+[GHSA-4qhx-hhwf-8685]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-4qhx-hhwf-8685
+[GHSA-8863-8468-7hq7]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-8863-8468-7hq7
+
 
 Version 0.8.14
 --------------
