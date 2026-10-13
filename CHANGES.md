@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.9.23
 --------------
 
-To be released.
+Released on October 14, 2026.
 
  -  Upgraded Fedify to 2.2.19, which fixes two security vulnerabilities:
     inboxes accepting signed activities whose IDs had a different origin
