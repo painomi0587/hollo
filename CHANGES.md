@@ -4,7 +4,7 @@ Hollo changelog
 Version 0.8.16
 --------------
 
-To be released.
+Released on October 17, 2026.
 
  -  Fixed a security vulnerability where any authenticated user with the
     `write:statuses` scope could delete another local account's post or a
