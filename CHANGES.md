@@ -6,6 +6,8 @@ Version 0.8.17
 
 To be released.
 
+ -  Upgraded Fedify to 2.1.31 to address a security vulnerability in SSRF
+    protection.  [[GHSA-r48c-xx2h-fv4g]]
  -  Updated the Docker image to Node.js 24.22.1, which fixes the
     [October 2026 Node.js security vulnerabilities].
  -  Distrusted the [compromised eMudhra intermediate CAs] in
@@ -14,6 +16,7 @@ To be released.
     certificate fix for its bundled npm backend.  The Node.js 24.22.1
     update also includes its own fix for the compromised intermediates.
 
+[GHSA-r48c-xx2h-fv4g]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-r48c-xx2h-fv4g
 [October 2026 Node.js security vulnerabilities]: https://nodejs.org/en/blog/vulnerability/october-2026-security-releases
 [compromised eMudhra intermediate CAs]: https://emudhra.we-have-a-problem.com/
 [Debian's fix]: https://bugs.debian.org/1151413
