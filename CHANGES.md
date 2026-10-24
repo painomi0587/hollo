@@ -1,6 +1,27 @@
 Hollo changelog
 ===============
 
+Version 0.9.25
+--------------
+
+Released on October 24, 2026.
+
+ -  Upgraded Fedify to 2.2.20 to address a security vulnerability in SSRF
+    protection.  [[GHSA-r48c-xx2h-fv4g]]
+ -  Updated the Docker image to Node.js 24.22.1, which fixes the
+    [October 2026 Node.js security vulnerabilities].
+ -  Distrusted the [compromised eMudhra intermediate CAs] in
+    the Docker image's system certificate store, following [Debian's fix].
+    Updated the build tool mise to 2026.10.18, which also includes the
+    certificate fix for its bundled npm backend.  The Node.js 24.22.1
+    update also includes its own fix for the compromised intermediates.
+
+[GHSA-r48c-xx2h-fv4g]: https://github.com/fedify-dev/fedify/security/advisories/GHSA-r48c-xx2h-fv4g
+[October 2026 Node.js security vulnerabilities]: https://nodejs.org/en/blog/vulnerability/october-2026-security-releases
+[compromised eMudhra intermediate CAs]: https://emudhra.we-have-a-problem.com/
+[Debian's fix]: https://bugs.debian.org/1151413
+
+
 Version 0.9.24
 --------------
 
@@ -839,6 +860,22 @@ Released on May 20, 2026.
 [#491]: https://github.com/fedify-dev/hollo/pull/491
 [#492]: https://github.com/fedify-dev/hollo/issues/492
 [#493]: https://github.com/fedify-dev/hollo/pull/493
+
+
+Version 0.8.17
+--------------
+
+Released on October 24, 2026.
+
+ -  Upgraded Fedify to 2.1.31 to address a security vulnerability in SSRF
+    protection.  [[GHSA-r48c-xx2h-fv4g]]
+ -  Updated the Docker image to Node.js 24.22.1, which fixes the
+    [October 2026 Node.js security vulnerabilities].
+ -  Distrusted the [compromised eMudhra intermediate CAs] in
+    the Docker image's system certificate store, following [Debian's fix].
+    Updated the build tool mise to 2026.10.18, which also includes the
+    certificate fix for its bundled npm backend.  The Node.js 24.22.1
+    update also includes its own fix for the compromised intermediates.
 
 
 Version 0.8.16
