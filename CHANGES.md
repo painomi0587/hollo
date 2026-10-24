@@ -6,6 +6,18 @@ Version 0.8.17
 
 To be released.
 
+ -  Updated the Docker image to Node.js 24.22.1, which fixes the
+    [October 2026 Node.js security vulnerabilities].
+ -  Distrusted the [compromised eMudhra intermediate CAs] in
+    the Docker image's system certificate store, following [Debian's fix].
+    Updated the build tool mise to 2026.10.18, which also includes the
+    certificate fix for its bundled npm backend.  The Node.js 24.22.1
+    update also includes its own fix for the compromised intermediates.
+
+[October 2026 Node.js security vulnerabilities]: https://nodejs.org/en/blog/vulnerability/october-2026-security-releases
+[compromised eMudhra intermediate CAs]: https://emudhra.we-have-a-problem.com/
+[Debian's fix]: https://bugs.debian.org/1151413
+
 
 Version 0.8.16
 --------------
